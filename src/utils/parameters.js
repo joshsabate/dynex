@@ -90,16 +90,24 @@ export function normalizeParameterKey(value) {
 }
 
 export function normalizeManagedParameter(parameter = {}) {
-  return {
+  const normalizedKey = normalizeParameterKey(parameter.key);
+  const normalizedDefaultValue =
+    parameter.defaultValue == null ? "" : parameter.defaultValue;
+
+  const defaults = {
     id: "",
     key: "",
     label: "",
     inputType: "number",
     unit: "",
     defaultValue: "",
+  };
+
+  return {
+    ...defaults,
     ...parameter,
-    key: normalizeParameterKey(parameter.key),
-    defaultValue: parameter.defaultValue == null ? "" : parameter.defaultValue,
+    key: normalizedKey,
+    defaultValue: normalizedDefaultValue,
   };
 }
 

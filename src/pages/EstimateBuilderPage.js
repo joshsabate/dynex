@@ -209,8 +209,6 @@ function EstimateBuilderPage({
     stages.find((stage) => stage.id === stageId)?.name || fallback || "Unassigned";
   const getTradeName = (tradeId, fallback = "") =>
     trades.find((trade) => trade.id === tradeId)?.name || fallback || "Unassigned";
-  const getElementName = (elementId, fallback = "") =>
-    elements.find((element) => element.id === elementId)?.name || fallback || "Unassigned";
   const getCostCodeName = (costCodeId, fallback = "") =>
     costCodes.find((costCode) => costCode.id === costCodeId)?.name || fallback || "Unassigned";
   const getUnitName = (unitId, fallback = "") =>
@@ -753,12 +751,12 @@ function EstimateBuilderPage({
 
   const removeSection = (sectionId) => {
     const sectionIdsToRemove = new Set([sectionId]);
-    let foundChild = true;
+    let foundChild;
 
-    while (foundChild) {
+    do {
       foundChild = false;
 
-      sections.forEach((section) => {
+      for (const section of sections) {
         if (
           section.parentSectionId &&
           sectionIdsToRemove.has(section.parentSectionId) &&
@@ -767,8 +765,8 @@ function EstimateBuilderPage({
           sectionIdsToRemove.add(section.id);
           foundChild = true;
         }
-      });
-    }
+      }
+    } while (foundChild);
 
     onSectionsChange(sections.filter((section) => !sectionIdsToRemove.has(section.id)));
     onManualLinesChange(manualLines.filter((line) => !sectionIdsToRemove.has(line.sectionId)));

@@ -161,6 +161,36 @@ test("supports parameter and derived metric quantity sources for template manual
   });
 });
 
+test("supports arithmetic formulas for template manual item quantities", () => {
+  const rows = generateEstimateRows(
+    [
+      {
+        ...rooms[0],
+        manualItems: [
+          {
+            id: "manual-formula-1",
+            costItemId: "cost-1",
+            itemName: "Floor Tile Installation",
+            unit: "sq m",
+            quantitySourceType: "formula",
+            formula: "(floorArea + length) / 2",
+            include: true,
+            sortOrder: 50,
+          },
+        ],
+      },
+    ],
+    assemblyRows,
+    costRows
+  );
+
+  expect(rows.find((row) => row.id === "room-1-manual-formula-1")).toMatchObject({
+    source: "manual-room",
+    quantity: 4,
+    total: 400,
+  });
+});
+
 test("applies row overrides while keeping generated values", () => {
   const rows = generateEstimateRows(rooms, assemblyRows, costRows, {
     "room-1-assembly-bathroom-floor-assembly-row-1": {
