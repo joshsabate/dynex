@@ -5,6 +5,7 @@ import SectionCard from "../components/SectionCard";
 import { qtyRules } from "../data/seedData";
 import { getAssemblyGroupId } from "../utils/assemblyGroups";
 import { convertAssembliesToCSV, parseCSV } from "../utils/csvUtils";
+import { getStructuredItemPresentation, workTypeOptions } from "../utils/itemNaming";
 import { calculateRoomMetrics, getQtyRuleQuantity } from "../utils/roomMetrics";
 import { getStagePresentation } from "../utils/stages";
 import { getUnitAbbreviation, isHourUnit } from "../utils/units";
@@ -19,6 +20,12 @@ const defaultForm = {
   costCodeId: "cost-code-finishes",
   costItemId: "",
   itemName: "",
+  workType: "Supply",
+  itemFamily: "",
+  specification: "",
+  gradeOrQuality: "",
+  brand: "",
+  finishOrVariant: "",
   laborHoursPerUnit: "0",
   laborCostItemId: "",
   laborCostItemName: "",
@@ -168,6 +175,7 @@ function AssemblyLibraryPage({
   elements,
   roomTypes,
   costCodes,
+  itemFamilies = [],
   units,
   costs,
   onAssembliesChange,
@@ -203,6 +211,11 @@ function AssemblyLibraryPage({
   const activeUnits = [...units]
     .filter((unit) => unit.isActive)
     .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name));
+  const activeItemFamilies = [...itemFamilies]
+    .filter((itemFamily) => itemFamily.isActive !== false)
+    .sort(
+      (left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name)
+    );
 
   const getStageName = (stageId, fallback = "") =>
     stages.find((stage) => stage.id === stageId)?.name || fallback || "Unassigned";
@@ -236,6 +249,7 @@ function AssemblyLibraryPage({
   const sortedCosts = [...costs].sort(
     (left, right) => left.itemName.localeCompare(right.itemName) || left.id.localeCompare(right.id)
   );
+  const getDisplayName = (item) => getStructuredItemPresentation(item).displayName;
 
   const updateField = (key, value) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -248,6 +262,15 @@ function AssemblyLibraryPage({
       ...current,
       costItemId: value,
       itemName: selectedCost?.itemName || "",
+      itemFamily: selectedCost?.itemFamily || current.itemFamily,
+      specification: selectedCost?.specification || current.specification,
+      gradeOrQuality: selectedCost?.gradeOrQuality || current.gradeOrQuality,
+      brand: selectedCost?.brand || current.brand,
+      finishOrVariant: selectedCost?.finishOrVariant || current.finishOrVariant,
+      workType:
+        selectedCost && isHourUnit(units, selectedCost.unitId, selectedCost.unit)
+          ? "Labour"
+          : selectedCost?.workType || current.workType,
       unitId: selectedCost?.unitId || "",
       unit: getUnitLabel(selectedCost?.unitId, selectedCost?.unit || ""),
     }));
@@ -326,6 +349,12 @@ function AssemblyLibraryPage({
         costCode: getCostCodeName(form.costCodeId),
         costItemId: form.costItemId,
         itemName: form.itemName,
+        workType: form.workType,
+        itemFamily: form.itemFamily,
+        specification: form.specification,
+        gradeOrQuality: form.gradeOrQuality,
+        brand: form.brand,
+        finishOrVariant: form.finishOrVariant,
         laborHoursPerUnit: Number(form.laborHoursPerUnit),
         laborCostItemId: form.laborCostItemId,
         laborCostItemName: form.laborCostItemName,
@@ -470,6 +499,12 @@ function AssemblyLibraryPage({
           costCode: getCostCodeName(defaultForm.costCodeId),
           costItemId: linkedCost?.id || "",
           itemName: row.itemName,
+          workType: "",
+          itemFamily: "",
+          specification: "",
+          gradeOrQuality: "",
+          brand: "",
+          finishOrVariant: "",
           description: row.description,
           laborHoursPerUnit: 0,
           laborCostItemId: "",
@@ -521,6 +556,12 @@ function AssemblyLibraryPage({
         costCode: templateRow.costCode,
         costItemId: "",
         itemName: "",
+        workType: templateRow.workType || "",
+        itemFamily: templateRow.itemFamily || "",
+        specification: templateRow.specification || "",
+        gradeOrQuality: templateRow.gradeOrQuality || "",
+        brand: templateRow.brand || "",
+        finishOrVariant: templateRow.finishOrVariant || "",
         laborHoursPerUnit: 0,
         laborCostItemId: templateRow.laborCostItemId || "",
         laborCostItemName: "",
@@ -544,6 +585,15 @@ function AssemblyLibraryPage({
                   ...assembly,
                   costItemId: value,
                   itemName: selectedCost?.itemName || "",
+                  itemFamily: selectedCost?.itemFamily || assembly.itemFamily,
+                  specification: selectedCost?.specification || assembly.specification,
+                  gradeOrQuality: selectedCost?.gradeOrQuality || assembly.gradeOrQuality,
+                  brand: selectedCost?.brand || assembly.brand,
+                  finishOrVariant: selectedCost?.finishOrVariant || assembly.finishOrVariant,
+                  workType:
+                    selectedCost && isHourUnit(units, selectedCost.unitId, selectedCost.unit)
+                      ? "Labour"
+                      : selectedCost?.workType || assembly.workType,
                   unitId: selectedCost?.unitId || "",
                   unit: getUnitLabel(selectedCost?.unitId, selectedCost?.unit || ""),
                 };
@@ -609,7 +659,14 @@ function AssemblyLibraryPage({
       const matchesSearch =
         !normalizedSearchTerm ||
         (assembly.itemName || "").toLowerCase().includes(normalizedSearchTerm) ||
-        (assembly.assemblyName || "").toLowerCase().includes(normalizedSearchTerm);
+        (assembly.assemblyName || "").toLowerCase().includes(normalizedSearchTerm) ||
+        getDisplayName(assembly).toLowerCase().includes(normalizedSearchTerm) ||
+        String(assembly.workType || "").toLowerCase().includes(normalizedSearchTerm) ||
+        String(assembly.itemFamily || "").toLowerCase().includes(normalizedSearchTerm) ||
+        String(assembly.specification || "").toLowerCase().includes(normalizedSearchTerm) ||
+        String(assembly.gradeOrQuality || "").toLowerCase().includes(normalizedSearchTerm) ||
+        String(assembly.brand || "").toLowerCase().includes(normalizedSearchTerm) ||
+        String(assembly.finishOrVariant || "").toLowerCase().includes(normalizedSearchTerm);
 
       return matchesStage && matchesRoomType && matchesTrade && matchesCostCode && matchesSearch;
     });
@@ -633,7 +690,7 @@ function AssemblyLibraryPage({
         }
 
         if (sortConfig.key === "itemName") {
-          return assembly.itemName || "";
+          return getDisplayName(assembly);
         }
 
         return "";
@@ -782,10 +839,70 @@ function AssemblyLibraryPage({
                 <option value="">Select cost item</option>
                 {sortedCosts.map((cost) => (
                   <option key={cost.id} value={cost.id}>
-                    {cost.itemName}
+                    {getDisplayName(cost)}
                   </option>
                 ))}
               </select>
+            </FormField>
+
+            <FormField label="Work type">
+              <select
+                value={form.workType}
+                onChange={(event) => updateField("workType", event.target.value)}
+              >
+                <option value="">Unassigned</option>
+                {workTypeOptions.map((workType) => (
+                  <option key={workType} value={workType}>
+                    {workType}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+
+            <FormField label="Item family">
+              <select
+                value={form.itemFamily}
+                onChange={(event) => updateField("itemFamily", event.target.value)}
+              >
+                <option value="">Unassigned</option>
+                {activeItemFamilies.map((itemFamily) => (
+                  <option key={itemFamily.id} value={itemFamily.name}>
+                    {itemFamily.name}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+
+            <FormField label="Specification">
+              <input
+                value={form.specification}
+                onChange={(event) => updateField("specification", event.target.value)}
+                placeholder="90x45"
+              />
+            </FormField>
+
+            <FormField label="Grade / quality">
+              <input
+                value={form.gradeOrQuality}
+                onChange={(event) => updateField("gradeOrQuality", event.target.value)}
+                placeholder="MGP10 LOSP"
+              />
+            </FormField>
+
+            <FormField label="Brand">
+              <input
+                value={form.brand}
+                onChange={(event) => updateField("brand", event.target.value)}
+                placeholder="Caroma"
+              />
+            </FormField>
+
+            <FormField label="Finish / variant">
+              <input
+                value={form.finishOrVariant}
+                onChange={(event) => updateField("finishOrVariant", event.target.value)}
+                placeholder="Matt Black"
+              />
             </FormField>
 
             <FormField label="Trade">
@@ -834,7 +951,7 @@ function AssemblyLibraryPage({
               >
                 {activeUnits.map((unit) => (
                   <option key={unit.id} value={unit.id}>
-                    {unit.abbreviation} - {unit.name}
+                    {unit.abbreviation}
                   </option>
                 ))}
               </select>
@@ -871,7 +988,7 @@ function AssemblyLibraryPage({
                 <option value="">None</option>
                 {labourCosts.map((cost) => (
                   <option key={cost.id} value={cost.id}>
-                    {cost.itemName}
+                    {getDisplayName(cost)}
                   </option>
                 ))}
               </select>
@@ -1079,7 +1196,7 @@ function AssemblyLibraryPage({
                               <option value="">Select cost item</option>
                               {sortedCosts.map((cost) => (
                                 <option key={cost.id} value={cost.id}>
-                                  {cost.itemName}
+                                  {getDisplayName(cost)}
                                 </option>
                               ))}
                             </select>
@@ -1172,7 +1289,7 @@ function AssemblyLibraryPage({
                               <option value="">Unassigned</option>
                               {activeUnits.map((unit) => (
                                 <option key={unit.id} value={unit.id}>
-                                  {unit.abbreviation} - {unit.name}
+                                  {unit.abbreviation}
                                 </option>
                               ))}
                             </select>
@@ -1208,7 +1325,7 @@ function AssemblyLibraryPage({
                               <option value="">None</option>
                               {labourCosts.map((cost) => (
                                 <option key={cost.id} value={cost.id}>
-                                  {cost.itemName}
+                                  {getDisplayName(cost)}
                                 </option>
                               ))}
                             </select>

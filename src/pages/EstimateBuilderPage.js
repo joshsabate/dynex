@@ -3,6 +3,7 @@ import FormField from "../components/FormField";
 import SectionCard from "../components/SectionCard";
 import { getStagePresentation } from "../utils/stages";
 import { getAssemblyGroupId, getAssemblyGroups } from "../utils/assemblyGroups";
+import { getStructuredItemPresentation, getWorkTypeTone, workTypeOptions } from "../utils/itemNaming";
 import { instantiateRoomTemplate } from "../utils/roomTemplates";
 import { getUnitAbbreviation, isHourUnit } from "../utils/units";
 
@@ -15,6 +16,12 @@ const defaultSectionForm = {
 
 const defaultManualLineForm = {
   itemName: "",
+  workType: "Supply",
+  itemFamily: "",
+  specification: "",
+  gradeOrQuality: "",
+  brand: "",
+  finishOrVariant: "",
   unitId: "",
   unit: "",
   quantity: "1",
@@ -68,6 +75,14 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(parsedValue) ? parsedValue : fallback;
 }
 
+function getDefaultWorkTypeFromCost(cost, units) {
+  if (!cost) {
+    return "";
+  }
+
+  return isHourUnit(units, cost.unitId, cost.unit) ? "Labour" : "Supply";
+}
+
 function renderIconActionButton({
   label,
   icon,
@@ -109,6 +124,7 @@ function EstimateBuilderPage({
   trades,
   elements,
   costCodes,
+  itemFamilies = [],
   units,
   costs = [],
   assemblies = [],
@@ -192,6 +208,15 @@ function EstimateBuilderPage({
         .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name)),
     [units]
   );
+  const activeItemFamilies = useMemo(
+    () =>
+      [...itemFamilies]
+        .filter((itemFamily) => itemFamily.isActive !== false)
+        .sort(
+          (left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name)
+        ),
+    [itemFamilies]
+  );
   const sortedCosts = useMemo(
     () =>
       [...costs].sort(
@@ -213,10 +238,13 @@ function EstimateBuilderPage({
     costCodes.find((costCode) => costCode.id === costCodeId)?.name || fallback || "Unassigned";
   const getUnitName = (unitId, fallback = "") =>
     getUnitAbbreviation(units, unitId, fallback, fallback) || "Unassigned";
+  const getCostDisplayName = (cost) => getStructuredItemPresentation(cost).displayName;
   const getRowRate = (row) => row.unitRate ?? row.rate ?? "";
   const sortEstimateRows = (left, right) =>
     Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0) ||
-    String(left.itemName || "").localeCompare(String(right.itemName || ""));
+    getStructuredItemPresentation(left).displayName.localeCompare(
+      getStructuredItemPresentation(right).displayName
+    );
 
   const updateManualLine = (lineId, key, value) => {
     onManualLinesChange(
@@ -335,6 +363,8 @@ function EstimateBuilderPage({
       options.sourceType === "manual-builder"
         ? (key, value) => updateManualLine(row.id, key, value)
         : (key, value) => updateGeneratedRow(row, key, value);
+    const itemPresentation = getStructuredItemPresentation(row);
+    const workTypeTone = getWorkTypeTone(row.workType);
 
     return (
     <div
@@ -347,13 +377,12 @@ function EstimateBuilderPage({
       role="row"
     >
       <div className="estimate-builder-grid-cell estimate-builder-col-item">
-        <input
-          className="estimate-builder-inline-control"
-          aria-label={`Item name for ${row.itemName}`}
-          type="text"
-          value={row.itemName}
-          onChange={(event) => onRowFieldChange("itemName", event.target.value)}
-        />
+        {row.workType ? (
+          <span className={`estimate-builder-worktype-badge is-${workTypeTone || "default"}`}>
+            {row.workType}
+          </span>
+        ) : null}
+        <span className="estimate-builder-item-label">{itemPresentation.displayName}</span>
       </div>
       <div className="estimate-builder-grid-cell estimate-builder-col-stage">
         <select
@@ -632,6 +661,7 @@ function EstimateBuilderPage({
     }
 
     return sortedCosts.filter((cost) =>
+      getCostDisplayName(cost).toLowerCase().includes(normalizedSearch) ||
       cost.itemName.toLowerCase().includes(normalizedSearch)
     );
   };
@@ -848,6 +878,12 @@ function EstimateBuilderPage({
 
     appendManualLine({
       itemName: selectedCost.itemName,
+      workType: getDefaultWorkTypeFromCost(selectedCost, units),
+      itemFamily: selectedCost.itemFamily || "",
+      specification: selectedCost.specification || "",
+      gradeOrQuality: selectedCost.gradeOrQuality || "",
+      brand: selectedCost.brand || "",
+      finishOrVariant: selectedCost.finishOrVariant || "",
       unitId: selectedCost.unitId || "",
       unit: getUnitAbbreviation(units, selectedCost.unitId, selectedCost.unit, ""),
       quantity: Number(sectionCostForm.quantity || 0),
@@ -875,6 +911,12 @@ function EstimateBuilderPage({
 
     appendManualLine({
       itemName: manualLineForm.itemName,
+      workType: manualLineForm.workType,
+      itemFamily: manualLineForm.itemFamily,
+      specification: manualLineForm.specification,
+      gradeOrQuality: manualLineForm.gradeOrQuality,
+      brand: manualLineForm.brand,
+      finishOrVariant: manualLineForm.finishOrVariant,
       unitId: manualLineForm.unitId,
       unit: getUnitAbbreviation(units, manualLineForm.unitId, manualLineForm.unit, ""),
       quantity: Number(manualLineForm.quantity),
@@ -904,6 +946,12 @@ function EstimateBuilderPage({
 
     appendManualLine({
       itemName: selectedCost.itemName,
+      workType: "Labour",
+      itemFamily: selectedCost.itemFamily || "",
+      specification: selectedCost.specification || "",
+      gradeOrQuality: selectedCost.gradeOrQuality || "",
+      brand: selectedCost.brand || "",
+      finishOrVariant: selectedCost.finishOrVariant || "",
       unitId: selectedCost.unitId || "unit-hr",
       unit: getUnitAbbreviation(units, selectedCost.unitId || "unit-hr", selectedCost.unit || "HR", ""),
       quantity: Number(manualLabourForm.quantity),
@@ -953,6 +1001,12 @@ function EstimateBuilderPage({
       const line = {
         id: `manual-estimate-line-${Date.now()}-${assemblyRow.id}-${nextSortOrder}`,
         itemName: assemblyRow.itemName,
+        workType: assemblyRow.workType || "",
+        itemFamily: assemblyRow.itemFamily || "",
+        specification: assemblyRow.specification || "",
+        gradeOrQuality: assemblyRow.gradeOrQuality || "",
+        brand: assemblyRow.brand || "",
+        finishOrVariant: assemblyRow.finishOrVariant || "",
         unitId: assemblyRow.unitId || linkedCost?.unitId || "",
         unit: getUnitAbbreviation(
           units,
@@ -1302,7 +1356,7 @@ function EstimateBuilderPage({
                           <option value="">Select cost item</option>
                           {getFilteredCosts(section.id).map((cost) => (
                             <option key={cost.id} value={cost.id}>
-                              {cost.itemName}
+                              {getCostDisplayName(cost)}
                             </option>
                           ))}
                         </select>
@@ -1310,7 +1364,7 @@ function EstimateBuilderPage({
 
                       {selectedCost ? (
                         <p className="empty-state">
-                          {selectedCost.itemName} | {getUnitName(selectedCost.unitId, selectedCost.unit)} | Rate {selectedCost.rate}
+                          {getCostDisplayName(selectedCost)} | {getUnitName(selectedCost.unitId, selectedCost.unit)} | Rate {selectedCost.rate}
                         </p>
                       ) : null}
 
@@ -1428,6 +1482,70 @@ function EstimateBuilderPage({
                           />
                         </FormField>
 
+                        <FormField label="Work type">
+                          <select
+                            value={manualLineForm.workType}
+                            onChange={(event) => updateManualLineForm("workType", event.target.value)}
+                          >
+                            <option value="">Unassigned</option>
+                            {workTypeOptions.map((workType) => (
+                              <option key={workType} value={workType}>
+                                {workType}
+                              </option>
+                            ))}
+                          </select>
+                        </FormField>
+
+                        <FormField label="Item family">
+                          <select
+                            value={manualLineForm.itemFamily}
+                            onChange={(event) => updateManualLineForm("itemFamily", event.target.value)}
+                          >
+                            <option value="">Unassigned</option>
+                            {activeItemFamilies.map((itemFamily) => (
+                              <option key={itemFamily.id} value={itemFamily.name}>
+                                {itemFamily.name}
+                              </option>
+                            ))}
+                          </select>
+                        </FormField>
+
+                        <FormField label="Specification">
+                          <input
+                            value={manualLineForm.specification}
+                            onChange={(event) => updateManualLineForm("specification", event.target.value)}
+                            placeholder="90x45"
+                          />
+                        </FormField>
+
+                        <FormField label="Grade / quality">
+                          <input
+                            value={manualLineForm.gradeOrQuality}
+                            onChange={(event) =>
+                              updateManualLineForm("gradeOrQuality", event.target.value)
+                            }
+                            placeholder="MGP10 LOSP"
+                          />
+                        </FormField>
+
+                        <FormField label="Brand">
+                          <input
+                            value={manualLineForm.brand}
+                            onChange={(event) => updateManualLineForm("brand", event.target.value)}
+                            placeholder="Caroma"
+                          />
+                        </FormField>
+
+                        <FormField label="Finish / variant">
+                          <input
+                            value={manualLineForm.finishOrVariant}
+                            onChange={(event) =>
+                              updateManualLineForm("finishOrVariant", event.target.value)
+                            }
+                            placeholder="Matt Black"
+                          />
+                        </FormField>
+
                         <FormField label="Unit">
                           <select
                             value={manualLineForm.unitId}
@@ -1436,7 +1554,7 @@ function EstimateBuilderPage({
                             <option value="">Select unit</option>
                             {activeUnits.map((unit) => (
                               <option key={unit.id} value={unit.id}>
-                                {unit.abbreviation} - {unit.name}
+                                {unit.abbreviation}
                               </option>
                             ))}
                           </select>
@@ -1553,7 +1671,7 @@ function EstimateBuilderPage({
                             <option value="">Select labour cost item</option>
                             {labourCosts.map((cost) => (
                               <option key={cost.id} value={cost.id}>
-                                {cost.itemName}
+                                {getCostDisplayName(cost)}
                               </option>
                             ))}
                           </select>

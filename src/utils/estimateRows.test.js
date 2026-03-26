@@ -595,3 +595,77 @@ test("builds estimate rows for estimate builder manual lines", () => {
     total: 5000,
   });
 });
+
+test("builds structured display labels for assembly-generated rows", () => {
+  const rows = generateEstimateRows(
+    rooms,
+    [
+      {
+        id: "assembly-row-structured",
+        assemblyId: "assembly-bathroom-floor",
+        assemblyCategory: "Finishes",
+        assemblyName: "Bathroom Floor",
+        costItemId: "cost-1",
+        itemName: "Wall Frame Stud",
+        workType: "Supply",
+        itemFamily: "Timber",
+        specification: "90x45",
+        gradeOrQuality: "MGP10 LOSP",
+        brand: "Dynex",
+        finishOrVariant: "Primed",
+        qtyRule: "FloorArea",
+        unitId: "unit-sqm",
+        unit: "sq m",
+        sortOrder: 1,
+      },
+    ],
+    [{ id: "cost-1", itemName: "Floor Tile Installation", unitId: "unit-sqm", unit: "SQM", rate: 100 }],
+    {},
+    [],
+    [],
+    [],
+    units
+  );
+
+  expect(rows[0]).toMatchObject({
+    workType: "Supply",
+    itemFamily: "Timber",
+    specification: "90x45",
+    gradeOrQuality: "MGP10 LOSP",
+    brand: "Dynex",
+    finishOrVariant: "Primed",
+    displayPrimary: "Timber Wall Frame Stud",
+    displayMeta: "90x45 MGP10 LOSP Dynex Primed",
+    displayName: "Timber Wall Frame Stud 90x45 MGP10 LOSP Dynex Primed",
+  });
+});
+
+test("keeps legacy item names as fallback when structured fields are absent", () => {
+  const rows = generateManualEstimateBuilderRows(
+    [
+      {
+        id: "builder-line-legacy",
+        itemName: "Legacy Typed Name",
+        unitId: "unit-ea",
+        unit: "EA",
+        quantity: 1,
+        rate: 10,
+        sectionId: "section-1",
+      },
+    ],
+    {},
+    [{ id: "section-1", name: "Preliminaries" }],
+    [],
+    [],
+    [],
+    units,
+    []
+  );
+
+  expect(rows[0]).toMatchObject({
+    itemName: "Legacy Typed Name",
+    displayPrimary: "Legacy Typed Name",
+    displayMeta: "",
+    displayName: "Legacy Typed Name",
+  });
+});

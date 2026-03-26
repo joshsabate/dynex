@@ -14,6 +14,7 @@ import RoomInputsPage from "./pages/RoomInputsPage";
 import SummaryDashboardPage from "./pages/SummaryDashboardPage";
 import ElementLibraryPage from "./pages/ElementLibraryPage";
 import HomePage from "./pages/HomePage";
+import ItemFamilyLibraryPage from "./pages/ItemFamilyLibraryPage";
 import StageLibraryPage from "./pages/StageLibraryPage";
 import TradeLibraryPage from "./pages/TradeLibraryPage";
 import UnitLibraryPage from "./pages/UnitLibraryPage";
@@ -22,6 +23,7 @@ import {
   initialCostCodes,
   initialCosts,
   initialElements,
+  initialItemFamilies,
   initialParameters,
   initialRoomTypes,
   initialRooms,
@@ -57,6 +59,7 @@ const pages = [
   { id: "units", label: "Unit Library", icon: "#", group: "Core Libraries" },
   { id: "cost-codes", label: "Cost Code Library", icon: "⌗", group: "Core Libraries" },
   { id: "costs", label: "Cost Library", icon: "$", group: "Core Libraries" },
+  { id: "item-families", label: "Item Family Library", icon: "@", group: "Core Libraries" },
   { id: "room-types", label: "Room Type Library", icon: "⌂", group: "Room Setup" },
   { id: "rooms", label: "Room Library", icon: "▤", group: "Room Setup" },
   { id: "assemblies", label: "Assembly Library", icon: "▦", group: "Room Setup" },
@@ -70,6 +73,7 @@ function getDefaultGlobalLibraries() {
     costCodes: initialCostCodes,
     stages: initialStages,
     trades: initialTrades,
+    itemFamilies: initialItemFamilies,
     elements: initialElements,
   };
 }
@@ -164,6 +168,7 @@ function loadGlobalLibraries() {
         costCodes: savedLibraries.costCodes || defaultGlobalLibraries.costCodes,
         stages: savedLibraries.stages || defaultGlobalLibraries.stages,
         trades: savedLibraries.trades || defaultGlobalLibraries.trades,
+        itemFamilies: savedLibraries.itemFamilies || defaultGlobalLibraries.itemFamilies,
         elements: savedLibraries.elements || defaultGlobalLibraries.elements,
       },
       {
@@ -173,6 +178,7 @@ function loadGlobalLibraries() {
         costCodes: "localStorage:global-libraries",
         stages: "localStorage:global-libraries",
         trades: "localStorage:global-libraries",
+        itemFamilies: "localStorage:global-libraries",
         elements: "localStorage:global-libraries",
       }
     );
@@ -188,6 +194,7 @@ function loadGlobalLibraries() {
       costCodes: "seed/default",
       stages: "seed/default",
       trades: "seed/default",
+      itemFamilies: "seed/default",
       elements: "seed/default",
     });
   }
@@ -201,6 +208,7 @@ function loadGlobalLibraries() {
       costCodes: legacyProjectState.costCodes || defaultGlobalLibraries.costCodes,
       stages: legacyProjectState.stages || defaultGlobalLibraries.stages,
       trades: legacyProjectState.trades || defaultGlobalLibraries.trades,
+      itemFamilies: legacyProjectState.itemFamilies || defaultGlobalLibraries.itemFamilies,
       elements: legacyProjectState.elements || defaultGlobalLibraries.elements,
     },
     {
@@ -210,6 +218,7 @@ function loadGlobalLibraries() {
       costCodes: legacyProjectState.costCodes ? "localStorage:legacy-project" : "seed/default",
       stages: legacyProjectState.stages ? "localStorage:legacy-project" : "seed/default",
       trades: legacyProjectState.trades ? "localStorage:legacy-project" : "seed/default",
+      itemFamilies: legacyProjectState.itemFamilies ? "localStorage:legacy-project" : "seed/default",
       elements: legacyProjectState.elements ? "localStorage:legacy-project" : "seed/default",
     }
   );
@@ -432,6 +441,9 @@ function normalizeAppState(source = {}) {
       : defaultGlobalLibraries.costCodes,
     stages: Array.isArray(source.stages) ? source.stages : defaultGlobalLibraries.stages,
     trades: Array.isArray(source.trades) ? source.trades : defaultGlobalLibraries.trades,
+    itemFamilies: Array.isArray(source.itemFamilies)
+      ? source.itemFamilies
+      : defaultGlobalLibraries.itemFamilies,
     elements: Array.isArray(source.elements)
       ? source.elements
       : defaultGlobalLibraries.elements,
@@ -485,6 +497,7 @@ function splitAppStateForStorage(appState) {
       costCodes: appState.costCodes,
       stages: appState.stages,
       trades: appState.trades,
+      itemFamilies: appState.itemFamilies,
       elements: appState.elements,
     },
     libraryData: {
@@ -585,6 +598,7 @@ function buildComparableAppState(appState) {
     costCodes: appState.costCodes,
     stages: appState.stages,
     trades: appState.trades,
+    itemFamilies: appState.itemFamilies,
     elements: appState.elements,
     roomTemplates: appState.roomTemplates,
     assemblies: appState.assemblies,
@@ -643,6 +657,7 @@ function App() {
   const [parameters, setParameters] = useState(initialProjectState.parameters);
   const [units, setUnits] = useState(initialProjectState.units);
   const [costCodes, setCostCodes] = useState(initialProjectState.costCodes);
+  const [itemFamilies, setItemFamilies] = useState(initialProjectState.itemFamilies);
   const [localProjectId, setLocalProjectId] = useState(initialProjectState.localProjectId);
   const [createdAt, setCreatedAt] = useState(initialProjectState.createdAt);
   const [updatedAt, setUpdatedAt] = useState(initialProjectState.updatedAt);
@@ -688,6 +703,7 @@ function App() {
       parameters,
       units,
       costCodes,
+      itemFamilies,
       projectName,
       estimateName,
       clientName,
@@ -720,6 +736,7 @@ function App() {
       parameters,
       units,
       costCodes,
+      itemFamilies,
       projectName,
       estimateName,
       clientName,
@@ -879,6 +896,7 @@ function App() {
     setParameters(normalizedAppState.parameters);
     setUnits(normalizedAppState.units);
     setCostCodes(normalizedAppState.costCodes);
+    setItemFamilies(normalizedAppState.itemFamilies);
     setProjectName(normalizedAppState.projectName);
     setEstimateName(normalizedAppState.estimateName);
     setClientName(normalizedAppState.clientName);
@@ -1168,6 +1186,13 @@ function App() {
           <TradeLibraryPage trades={trades} onTradesChange={setTrades} />
         )}
 
+        {activePage === "item-families" && (
+          <ItemFamilyLibraryPage
+            itemFamilies={itemFamilies}
+            onItemFamiliesChange={setItemFamilies}
+          />
+        )}
+
         {activePage === "elements" && (
           <ElementLibraryPage elements={elements} onElementsChange={setElements} />
         )}
@@ -1222,6 +1247,7 @@ function App() {
             elements={elements}
             roomTypes={roomTypes}
             costCodes={costCodes}
+            itemFamilies={itemFamilies}
             units={units}
             costs={costs}
             onAssembliesChange={setAssemblies}
@@ -1229,7 +1255,13 @@ function App() {
         )}
 
         {activePage === "costs" && (
-          <CostLibraryPage costs={costs} units={units} onCostsChange={setCosts} />
+          <CostLibraryPage
+            costs={costs}
+            units={units}
+            itemFamilies={itemFamilies}
+            onCostsChange={setCosts}
+            onItemFamiliesChange={setItemFamilies}
+          />
         )}
 
         {activePage === "estimate-builder" && (
@@ -1242,6 +1274,7 @@ function App() {
             trades={trades}
             elements={elements}
             costCodes={costCodes}
+            itemFamilies={itemFamilies}
             units={units}
             costs={costs}
             assemblies={assemblies}

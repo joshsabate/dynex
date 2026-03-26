@@ -472,7 +472,7 @@ test("estimate builder renders project rooms inside their section with generated
   await expandMainWorksSection();
   await expandEnsuiteRoom();
   expect(screen.getByDisplayValue("Ensuite 01")).toBeInTheDocument();
-  expect(screen.getByDisplayValue("Tile Installation")).toBeInTheDocument();
+  expect(screen.getByText("Tile Installation")).toBeInTheDocument();
   expect(screen.getAllByText("Bathroom").length).toBeGreaterThan(0);
 });
 
@@ -609,7 +609,7 @@ test("estimate builder visually marks excluded generated rows", async () => {
   await expandMainWorksSection();
   await expandEnsuiteRoom();
   expect(screen.getByRole("button", { name: /include/i })).toBeInTheDocument();
-  expect(screen.getByDisplayValue("Tile Installation").closest(".estimate-builder-grid-row")).toHaveClass(
+  expect(screen.getByText("Tile Installation").closest(".estimate-builder-grid-row")).toHaveClass(
     "estimate-builder-grid-row-excluded"
   );
 });
@@ -881,7 +881,7 @@ test("estimate builder moves manual rows up within a section", async () => {
   );
 
   await expandMainWorksSection();
-  const secondItemRow = screen.getByDisplayValue("Second Item").closest(".estimate-builder-grid-row");
+  const secondItemRow = screen.getByText("Second Item").closest(".estimate-builder-grid-row");
   await userEvent.click(within(secondItemRow).getByRole("button", { name: /move up/i }));
 
   expect(onManualLinesChange).toHaveBeenCalledWith([
@@ -968,6 +968,6 @@ test("estimate builder uses one shared estimate header per section", async () =>
   await expandEnsuiteRoom();
   expect(screen.getAllByRole("columnheader", { name: "Item" })).toHaveLength(1);
   expect(screen.getAllByRole("columnheader", { name: "Stage" })).toHaveLength(1);
-  expect(screen.getByDisplayValue("Tile Installation")).toBeInTheDocument();
-  expect(screen.getByDisplayValue("Scaffold Hire")).toBeInTheDocument();
+  expect(screen.getByText("Tile Installation")).toBeInTheDocument();
+  expect(screen.getByText("Scaffold Hire")).toBeInTheDocument();
 });

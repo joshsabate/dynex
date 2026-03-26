@@ -8,6 +8,19 @@ const assemblyCsvHeaders = [
   "Item Type",
 ];
 
+const costCsvHeaders = [
+  "Item Family",
+  "Core Name",
+  "Work Type",
+  "Specification",
+  "Grade / Quality",
+  "Brand",
+  "Finish / Variant",
+  "Unit",
+  "Rate",
+  "Item Name",
+];
+
 function escapeCsvValue(value) {
   const normalizedValue = String(value ?? "");
 
@@ -98,6 +111,30 @@ export function convertAssembliesToCSV(assemblies = []) {
         assembly.unit,
         assembly.unitCost,
         assembly.itemType,
+      ]
+        .map(escapeCsvValue)
+        .join(",")
+    ),
+  ];
+
+  return rows.join("\n");
+}
+
+export function convertCostsToCSV(costs = []) {
+  const rows = [
+    costCsvHeaders.join(","),
+    ...costs.map((cost) =>
+      [
+        cost.itemFamily,
+        cost.itemName,
+        cost.workType,
+        cost.specification,
+        cost.gradeOrQuality,
+        cost.brand,
+        cost.finishOrVariant,
+        cost.unit,
+        cost.rate,
+        cost.displayName,
       ]
         .map(escapeCsvValue)
         .join(",")

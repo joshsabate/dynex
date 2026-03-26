@@ -1,5 +1,6 @@
 import { calculateRoomMetrics, getQtyRuleQuantity } from "./roomMetrics";
 import { getAssemblyGroupId } from "./assemblyGroups";
+import { getStructuredItemPresentation } from "./itemNaming";
 import { resolveQuantitySource } from "./quantitySources";
 import { getTemplateLabourItems, getTemplateManualItems } from "./roomTemplates";
 import { getUnitAbbreviation, unitsMatch } from "./units";
@@ -89,6 +90,21 @@ function buildEstimateRow(baseRow, rowOverride) {
     : baseRow.costCode;
   const unitId = hasOverride(rowOverride, "unitId") ? rowOverride.unitId : baseRow.unitId;
   const unit = hasOverride(rowOverride, "unit") ? rowOverride.unit : baseRow.unit;
+  const itemName = hasOverride(rowOverride, "itemName") ? rowOverride.itemName : baseRow.itemName;
+  const workType = hasOverride(rowOverride, "workType") ? rowOverride.workType : baseRow.workType;
+  const itemFamily = hasOverride(rowOverride, "itemFamily")
+    ? rowOverride.itemFamily
+    : baseRow.itemFamily;
+  const specification = hasOverride(rowOverride, "specification")
+    ? rowOverride.specification
+    : baseRow.specification;
+  const gradeOrQuality = hasOverride(rowOverride, "gradeOrQuality")
+    ? rowOverride.gradeOrQuality
+    : baseRow.gradeOrQuality;
+  const brand = hasOverride(rowOverride, "brand") ? rowOverride.brand : baseRow.brand;
+  const finishOrVariant = hasOverride(rowOverride, "finishOrVariant")
+    ? rowOverride.finishOrVariant
+    : baseRow.finishOrVariant;
   const sortOrder =
     rowOverride?.sortOrder === "" || rowOverride?.sortOrder == null
       ? baseRow.sortOrder
@@ -97,6 +113,15 @@ function buildEstimateRow(baseRow, rowOverride) {
   const quantity = roundValue(quantityOverride ?? baseRow.generatedQuantity);
   const unitRate = roundValue(rateOverride ?? baseRow.generatedRate);
   const total = include ? roundValue(quantity * unitRate) : 0;
+  const itemPresentation = getStructuredItemPresentation({
+    itemName,
+    workType,
+    itemFamily,
+    specification,
+    gradeOrQuality,
+    brand,
+    finishOrVariant,
+  });
 
   return {
     ...baseRow,
@@ -106,6 +131,13 @@ function buildEstimateRow(baseRow, rowOverride) {
     trade,
     costCodeId,
     costCode,
+    itemName,
+    workType,
+    itemFamily,
+    specification,
+    gradeOrQuality,
+    brand,
+    finishOrVariant,
     unitId,
     unit,
     includeOverride,
@@ -114,6 +146,11 @@ function buildEstimateRow(baseRow, rowOverride) {
     removed,
     sortOrder,
     notes: hasOverride(rowOverride, "notes") ? rowOverride.notes : baseRow.notes || "",
+    displayName: itemPresentation.displayName,
+    displayPrimary: itemPresentation.primaryLabel,
+    displayMeta: itemPresentation.metaLabel,
+    hasStructuredNaming: itemPresentation.hasStructuredNaming,
+    itemSortKey: itemPresentation.sortKey || String(itemName || "").toLowerCase(),
     include,
     quantity,
     unitRate,
@@ -159,6 +196,12 @@ function buildTemplateLineRow({
       costCodeId: line.costCodeId || "",
       costCode: getCostCodeName(costCodes, line.costCodeId, line.costCode),
       itemName: costRow?.itemName || line.itemName || "Unassigned",
+      workType: line.workType || (source === "manual-room-labour" ? "Labour" : ""),
+      itemFamily: line.itemFamily || "",
+      specification: line.specification || "",
+      gradeOrQuality: line.gradeOrQuality || "",
+      brand: line.brand || "",
+      finishOrVariant: line.finishOrVariant || "",
       qtyRule:
         line.quantitySourceType === "fixed"
           ? "Manual"
@@ -207,6 +250,12 @@ function buildLaborRow({
       costCodeId: assemblyRow.costCodeId || "",
       costCode: assemblyRow.costCode,
       itemName: laborCostRow?.itemName || assemblyRow.laborCostItemName,
+      workType: "Labour",
+      itemFamily: assemblyRow.itemFamily || "",
+      specification: assemblyRow.specification || "",
+      gradeOrQuality: assemblyRow.gradeOrQuality || "",
+      brand: assemblyRow.brand || "",
+      finishOrVariant: assemblyRow.finishOrVariant || "",
       qtyRule: "LaborHours",
       unitId: laborCostRow?.unitId || "unit-hr",
       unit: getUnitAbbreviation(units, laborCostRow?.unitId || "unit-hr", laborCostRow?.unit || "HR"),
@@ -289,6 +338,12 @@ export function generateEstimateRows(
                   assemblyRow.costCode
                 ),
                 itemName: assemblyRow.itemName,
+                workType: assemblyRow.workType || "",
+                itemFamily: assemblyRow.itemFamily || "",
+                specification: assemblyRow.specification || "",
+                gradeOrQuality: assemblyRow.gradeOrQuality || "",
+                brand: assemblyRow.brand || "",
+                finishOrVariant: assemblyRow.finishOrVariant || "",
                 qtyRule: assemblyRow.qtyRule,
                 unitId: assemblyRow.unitId || costRow?.unitId || "",
                 unit: getUnitAbbreviation(
@@ -412,6 +467,12 @@ export function generateManualEstimateBuilderRows(
         costCodeId: line.costCodeId || "",
         costCode: getCostCodeName(costCodes, line.costCodeId, ""),
         itemName: line.itemName,
+        workType: line.workType || "",
+        itemFamily: line.itemFamily || "",
+        specification: line.specification || "",
+        gradeOrQuality: line.gradeOrQuality || "",
+        brand: line.brand || "",
+        finishOrVariant: line.finishOrVariant || "",
         qtyRule: "Manual Builder",
         unitId: line.unitId || "",
         unit: getUnitAbbreviation(units, line.unitId, line.unit),

@@ -107,6 +107,18 @@ export const initialTrades = [
   { id: "trade-install", name: "Install", sortOrder: 11, isActive: true },
 ];
 
+export const initialItemFamilies = [
+  { id: "item-family-timber", name: "Timber", sortOrder: 1, isActive: true },
+  { id: "item-family-plumbing", name: "Plumbing", sortOrder: 2, isActive: true },
+  { id: "item-family-electrical", name: "Electrical", sortOrder: 3, isActive: true },
+  { id: "item-family-cladding", name: "Cladding", sortOrder: 4, isActive: true },
+  { id: "item-family-roofing", name: "Roofing", sortOrder: 5, isActive: true },
+  { id: "item-family-joinery", name: "Joinery", sortOrder: 6, isActive: true },
+  { id: "item-family-tiles", name: "Tiles", sortOrder: 7, isActive: true },
+  { id: "item-family-painting", name: "Painting", sortOrder: 8, isActive: true },
+  { id: "item-family-hardware", name: "Hardware", sortOrder: 9, isActive: true },
+];
+
 export const initialElements = [
   { id: "element-floor", name: "Floor", sortOrder: 1, isActive: true },
   { id: "element-wall", name: "Wall", sortOrder: 2, isActive: true },
