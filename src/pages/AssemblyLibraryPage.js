@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import DataTable from "../components/DataTable";
 import FormField from "../components/FormField";
 import SectionCard from "../components/SectionCard";
 import { qtyRules } from "../data/seedData";
 import { getAssemblyGroupId } from "../utils/assemblyGroups";
+import { convertAssembliesToCSV, parseCSV } from "../utils/csvUtils";
 import { calculateRoomMetrics, getQtyRuleQuantity } from "../utils/roomMetrics";
 import { getStagePresentation } from "../utils/stages";
 import { getUnitAbbreviation, isHourUnit } from "../utils/units";
@@ -171,6 +172,7 @@ function AssemblyLibraryPage({
   costs,
   onAssembliesChange,
 }) {
+  const importFileInputRef = useRef(null);
   const [form, setForm] = useState(defaultForm);
   const [filters, setFilters] = useState(defaultFilters);
   const [searchTerm, setSearchTerm] = useState("");
@@ -178,6 +180,7 @@ function AssemblyLibraryPage({
   const [collapsedAssemblyGroups, setCollapsedAssemblyGroups] = useState({});
   const [previewAssemblyGroupId, setPreviewAssemblyGroupId] = useState("");
   const [previewInputsByGroup, setPreviewInputsByGroup] = useState({});
+  const [csvStatus, setCsvStatus] = useState("");
   const activeStages = [...stages]
     .filter((stage) => stage.isActive)
     .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name));
@@ -218,6 +221,18 @@ function AssemblyLibraryPage({
     costs.find((cost) => cost.id === costItemId) ||
     costs.find((cost) => cost.itemName === fallbackName) ||
     null;
+  const getUnitIdFromValue = (value) => {
+    const normalizedValue = String(value || "").trim().toLowerCase();
+
+    return (
+      units.find(
+        (unit) =>
+          unit.id === value ||
+          String(unit.abbreviation || "").trim().toLowerCase() === normalizedValue ||
+          String(unit.name || "").trim().toLowerCase() === normalizedValue
+      )?.id || ""
+    );
+  };
   const sortedCosts = [...costs].sort(
     (left, right) => left.itemName.localeCompare(right.itemName) || left.id.localeCompare(right.id)
   );
@@ -338,6 +353,150 @@ function AssemblyLibraryPage({
 
   const removeAssembly = (assemblyId) => {
     onAssembliesChange(assemblies.filter((assembly) => assembly.id !== assemblyId));
+  };
+
+  const readFileAsText = (file) => {
+    if (typeof file?.text === "function") {
+      return file.text();
+    }
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Unable to read file"));
+      reader.readAsText(file);
+    });
+  };
+
+  const exportAssembliesAsCsv = () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const csvText = convertAssembliesToCSV(
+      assemblies.map((assembly) => {
+        const linkedCost = getCostItem(assembly.costItemId, assembly.itemName);
+
+        return {
+          assemblyName: assembly.assemblyName || "",
+          itemName: assembly.itemName || "",
+          description: assembly.description || "",
+          qtyRule: assembly.qtyRule || "",
+          unit: getUnitLabel(assembly.unitId, assembly.unit || ""),
+          unitCost: assembly.unitCost ?? linkedCost?.rate ?? "",
+          itemType: assembly.itemType || assembly.assemblyCategory || "",
+        };
+      })
+    );
+    const csvBlob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
+    const downloadUrl = window.URL.createObjectURL(csvBlob);
+    const link = document.createElement("a");
+
+    link.href = downloadUrl;
+    link.download = "assemblies-export.csv";
+    link.click();
+    window.URL.revokeObjectURL(downloadUrl);
+    setCsvStatus(`Exported ${assemblies.length} assembly rows.`);
+  };
+
+  const importAssembliesFromCsv = async (file) => {
+    if (!file) {
+      return;
+    }
+
+    try {
+      const csvText = await readFileAsText(file);
+      const parsedRows = parseCSV(csvText);
+      const validRows = [];
+      let skippedRows = 0;
+
+      parsedRows.forEach((row, index) => {
+        const assemblyName = String(row["Assembly Name"] || "").trim();
+        const itemName = String(row["Item Name"] || "").trim();
+
+        if (!assemblyName || !itemName) {
+          skippedRows += 1;
+          return;
+        }
+
+        validRows.push({
+          rowNumber: index + 2,
+          assemblyName,
+          itemName,
+          description: String(row.Description || "").trim(),
+          qtyRule: String(row["Quantity Formula"] || "").trim() || defaultForm.qtyRule,
+          unit: String(row.Unit || "").trim(),
+          unitCost: String(row["Unit Cost"] || "").trim(),
+          itemType: String(row["Item Type"] || "").trim() || defaultForm.assemblyCategory,
+        });
+      });
+
+      if (!validRows.length) {
+        setCsvStatus("Unable to import CSV. No valid assembly rows were found.");
+        return;
+      }
+
+      const assemblyIdByName = new Map();
+      const nextAssemblies = validRows.map((row, index) => {
+        const unitId = getUnitIdFromValue(row.unit);
+        const linkedCost =
+          costs.find((cost) => cost.itemName === row.itemName && (!unitId || cost.unitId === unitId)) ||
+          costs.find((cost) => cost.itemName === row.itemName) ||
+          null;
+        const assemblyId =
+          assemblyIdByName.get(row.assemblyName) ||
+          getAssemblyGroupId({
+            assemblyName: row.assemblyName,
+            appliesToRoomTypeId: defaultForm.appliesToRoomTypeId,
+          });
+
+        assemblyIdByName.set(row.assemblyName, assemblyId);
+
+        return {
+          id: `assembly-row-import-${Date.now()}-${index}`,
+          assemblyId,
+          assemblyCategory: row.itemType,
+          assemblyName: row.assemblyName,
+          appliesToRoomTypeId: defaultForm.appliesToRoomTypeId,
+          appliesToRoomType: getRoomTypeName(defaultForm.appliesToRoomTypeId),
+          stageId: defaultForm.stageId,
+          stage: getStageName(defaultForm.stageId),
+          elementId: defaultForm.elementId,
+          element: getElementName(defaultForm.elementId),
+          tradeId: defaultForm.tradeId,
+          trade: getTradeName(defaultForm.tradeId),
+          costCodeId: defaultForm.costCodeId,
+          costCode: getCostCodeName(defaultForm.costCodeId),
+          costItemId: linkedCost?.id || "",
+          itemName: row.itemName,
+          description: row.description,
+          laborHoursPerUnit: 0,
+          laborCostItemId: "",
+          laborCostItemName: "",
+          unitId: unitId || linkedCost?.unitId || "",
+          unit: row.unit || getUnitLabel(linkedCost?.unitId, linkedCost?.unit || ""),
+          qtyRule: row.qtyRule,
+          sortOrder: assemblies.length + index + 1,
+          unitCost:
+            row.unitCost === ""
+              ? linkedCost?.rate ?? ""
+              : Number.isFinite(Number(row.unitCost))
+                ? Number(row.unitCost)
+                : row.unitCost,
+          itemType: row.itemType,
+        };
+      });
+
+      onAssembliesChange([...assemblies, ...nextAssemblies]);
+      setCsvStatus(
+        `${assemblyIdByName.size} assemblies imported${
+          skippedRows ? `. ${skippedRows} invalid row${skippedRows === 1 ? "" : "s"} skipped.` : "."
+        }`
+      );
+    } catch (error) {
+      setCsvStatus("Unable to import CSV. Please choose a valid CSV file.");
+    }
   };
 
   const addItemToAssembly = (assemblyGroup) => {
@@ -572,18 +731,6 @@ function AssemblyLibraryPage({
 
     return numericValue.toFixed(2);
   };
-
-  const renderCompactIconButton = ({ label, icon, onClick }) => (
-    <button
-      type="button"
-      className="estimate-builder-icon-button secondary-button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-    >
-      <span aria-hidden="true">{icon}</span>
-    </button>
-  );
 
   return (
     <SectionCard
@@ -821,20 +968,59 @@ function AssemblyLibraryPage({
             </FormField>
           </div>
 
-          {groupedAssemblies.length ? (
-            <div className="action-row assembly-library-toolbar-actions">
-              {renderCompactIconButton({
-                label: "Expand All",
-                icon: "+",
-                onClick: () => setAllAssemblyGroupsCollapsed(false),
-              })}
-              {renderCompactIconButton({
-                label: "Collapse All",
-                icon: "-",
-                onClick: () => setAllAssemblyGroupsCollapsed(true),
-              })}
-            </div>
-          ) : null}
+          <div className="action-row assembly-library-toolbar-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={exportAssembliesAsCsv}
+            >
+              Export CSV
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => importFileInputRef.current?.click()}
+            >
+              Import CSV
+            </button>
+            {groupedAssemblies.length ? (
+              <>
+              <button
+                type="button"
+                className="estimate-builder-icon-button secondary-button"
+                aria-label="Expand All"
+                title="Expand All"
+                onClick={() => setAllAssemblyGroupsCollapsed(false)}
+              >
+                <span aria-hidden="true">+</span>
+              </button>
+              <button
+                type="button"
+                className="estimate-builder-icon-button secondary-button"
+                aria-label="Collapse All"
+                title="Collapse All"
+                onClick={() => setAllAssemblyGroupsCollapsed(true)}
+              >
+                <span aria-hidden="true">-</span>
+              </button>
+              </>
+            ) : null}
+          </div>
+
+          <input
+            ref={importFileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            aria-label="Import Assembly CSV"
+            style={{ position: "absolute", left: "-9999px" }}
+            onChange={(event) => {
+              const [file] = Array.from(event.target.files || []);
+              importAssembliesFromCsv(file || null);
+              event.target.value = "";
+            }}
+          />
+
+          {csvStatus ? <p className="sidebar-status">{csvStatus}</p> : null}
 
           {groupedAssemblies.length ? (
             <div className="assembly-groups">

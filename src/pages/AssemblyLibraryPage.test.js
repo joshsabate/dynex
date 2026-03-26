@@ -1,6 +1,10 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import AssemblyLibraryPage from "./AssemblyLibraryPage";
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
 
 const stages = [
   { id: "stage-demo", name: "Demolition", sortOrder: 1, isActive: true, color: "#d78476" },
@@ -265,4 +269,101 @@ test("assembly library previews derived values and live calculated quantities", 
 
   expect(screen.getByText("12.00 sq m")).toBeInTheDocument();
   expect(screen.getAllByText("12.00")).toHaveLength(2);
+});
+
+test("assembly library exports assembly rows to csv", async () => {
+  const originalCreateObjectURL = window.URL.createObjectURL;
+  const originalRevokeObjectURL = window.URL.revokeObjectURL;
+  const originalCreateElement = document.createElement.bind(document);
+  const anchorClickMock = jest.fn();
+  let capturedAnchor = null;
+
+  window.URL.createObjectURL = jest.fn(() => "blob:assemblies-export");
+  window.URL.revokeObjectURL = jest.fn();
+  jest.spyOn(document, "createElement").mockImplementation((tagName, options) => {
+    const element = originalCreateElement(tagName, options);
+
+    if (tagName === "a") {
+      element.click = anchorClickMock;
+      capturedAnchor = element;
+    }
+
+    return element;
+  });
+
+  try {
+    renderPage();
+
+    await userEvent.click(screen.getByRole("button", { name: /export csv/i }));
+
+    expect(window.URL.createObjectURL).toHaveBeenCalledTimes(1);
+    expect(capturedAnchor?.download).toBe("assemblies-export.csv");
+    expect(anchorClickMock).toHaveBeenCalledTimes(1);
+    expect(window.URL.revokeObjectURL).toHaveBeenCalledWith("blob:assemblies-export");
+    expect(screen.getByText(/exported 4 assembly rows\./i)).toBeInTheDocument();
+  } finally {
+    window.URL.createObjectURL = originalCreateObjectURL;
+    window.URL.revokeObjectURL = originalRevokeObjectURL;
+    document.createElement.mockRestore();
+  }
+});
+
+test("assembly library imports csv rows by assembly name and appends valid rows", async () => {
+  const { onAssembliesChange } = renderPage();
+  const fileInput = screen.getByLabelText(/import assembly csv/i);
+  const csvFile = new File(
+    [
+      [
+        "Assembly Name,Item Name,Description,Quantity Formula,Unit,Unit Cost,Item Type",
+        "Bathroom - Tiling,Tile Adhesive,General bedding,FloorArea,SQM,65,Finishes",
+        "Bathroom - Tiling,Tile Grout,Joint finish,FloorArea,SQM,25,Finishes",
+        ",Missing Assembly,Ignore me,FloorArea,SQM,10,Finishes",
+      ].join("\n"),
+    ],
+    "assemblies.csv",
+    { type: "text/csv" }
+  );
+
+  fireEvent.change(fileInput, {
+    target: {
+      files: [csvFile],
+    },
+  });
+
+  await waitFor(() => expect(onAssembliesChange).toHaveBeenCalledTimes(1));
+
+  const nextAssemblies = onAssembliesChange.mock.calls[0][0];
+  const importedRows = nextAssemblies.slice(assemblies.length);
+
+  expect(importedRows).toHaveLength(2);
+  expect(importedRows[0]).toMatchObject({
+    assemblyName: "Bathroom - Tiling",
+    itemName: "Tile Adhesive",
+    description: "General bedding",
+    qtyRule: "FloorArea",
+    unit: "SQM",
+    unitCost: 65,
+    itemType: "Finishes",
+  });
+  expect(importedRows[0].assemblyId).toBe(importedRows[1].assemblyId);
+  expect(screen.getByText(/1 assemblies imported\. 1 invalid row skipped\./i)).toBeInTheDocument();
+});
+
+test("assembly library shows an error for invalid csv files", async () => {
+  renderPage();
+
+  const fileInput = screen.getByLabelText(/import assembly csv/i);
+  const invalidFile = new File(['"unterminated'], "broken.csv", { type: "text/csv" });
+
+  fireEvent.change(fileInput, {
+    target: {
+      files: [invalidFile],
+    },
+  });
+
+  await waitFor(() => {
+    expect(
+      screen.getByText(/unable to import csv\. no valid assembly rows were found\./i)
+    ).toBeInTheDocument();
+  });
 });

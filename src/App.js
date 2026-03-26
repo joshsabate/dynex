@@ -13,6 +13,7 @@ import RoomTypeLibraryPage from "./pages/RoomTypeLibraryPage";
 import RoomInputsPage from "./pages/RoomInputsPage";
 import SummaryDashboardPage from "./pages/SummaryDashboardPage";
 import ElementLibraryPage from "./pages/ElementLibraryPage";
+import HomePage from "./pages/HomePage";
 import StageLibraryPage from "./pages/StageLibraryPage";
 import TradeLibraryPage from "./pages/TradeLibraryPage";
 import UnitLibraryPage from "./pages/UnitLibraryPage";
@@ -144,40 +145,74 @@ function readStoredJson(storageKey) {
   }
 }
 
+function createLoadResult(data, sources) {
+  return { data, sources };
+}
+
 function loadGlobalLibraries() {
   const defaultGlobalLibraries = getDefaultGlobalLibraries();
   const savedLibraries = readStoredJson(globalLibrariesStorageKey);
 
   if (savedLibraries) {
-    return {
-      ...defaultGlobalLibraries,
-      ...savedLibraries,
-      roomTypes: savedLibraries.roomTypes || defaultGlobalLibraries.roomTypes,
-      parameters: savedLibraries.parameters || defaultGlobalLibraries.parameters,
-      units: savedLibraries.units || defaultGlobalLibraries.units,
-      costCodes: savedLibraries.costCodes || defaultGlobalLibraries.costCodes,
-      stages: savedLibraries.stages || defaultGlobalLibraries.stages,
-      trades: savedLibraries.trades || defaultGlobalLibraries.trades,
-      elements: savedLibraries.elements || defaultGlobalLibraries.elements,
-    };
+    return createLoadResult(
+      {
+        ...defaultGlobalLibraries,
+        ...savedLibraries,
+        roomTypes: savedLibraries.roomTypes || defaultGlobalLibraries.roomTypes,
+        parameters: savedLibraries.parameters || defaultGlobalLibraries.parameters,
+        units: savedLibraries.units || defaultGlobalLibraries.units,
+        costCodes: savedLibraries.costCodes || defaultGlobalLibraries.costCodes,
+        stages: savedLibraries.stages || defaultGlobalLibraries.stages,
+        trades: savedLibraries.trades || defaultGlobalLibraries.trades,
+        elements: savedLibraries.elements || defaultGlobalLibraries.elements,
+      },
+      {
+        roomTypes: "localStorage:global-libraries",
+        parameters: "localStorage:global-libraries",
+        units: "localStorage:global-libraries",
+        costCodes: "localStorage:global-libraries",
+        stages: "localStorage:global-libraries",
+        trades: "localStorage:global-libraries",
+        elements: "localStorage:global-libraries",
+      }
+    );
   }
 
   const legacyProjectState = readStoredJson(legacyLocalStorageKey);
 
   if (!legacyProjectState) {
-    return defaultGlobalLibraries;
+    return createLoadResult(defaultGlobalLibraries, {
+      roomTypes: "seed/default",
+      parameters: "seed/default",
+      units: "seed/default",
+      costCodes: "seed/default",
+      stages: "seed/default",
+      trades: "seed/default",
+      elements: "seed/default",
+    });
   }
 
-  return {
-    ...defaultGlobalLibraries,
-    roomTypes: legacyProjectState.roomTypes || defaultGlobalLibraries.roomTypes,
-    parameters: defaultGlobalLibraries.parameters,
-    units: legacyProjectState.units || defaultGlobalLibraries.units,
-    costCodes: legacyProjectState.costCodes || defaultGlobalLibraries.costCodes,
-    stages: legacyProjectState.stages || defaultGlobalLibraries.stages,
-    trades: legacyProjectState.trades || defaultGlobalLibraries.trades,
-    elements: legacyProjectState.elements || defaultGlobalLibraries.elements,
-  };
+  return createLoadResult(
+    {
+      ...defaultGlobalLibraries,
+      roomTypes: legacyProjectState.roomTypes || defaultGlobalLibraries.roomTypes,
+      parameters: defaultGlobalLibraries.parameters,
+      units: legacyProjectState.units || defaultGlobalLibraries.units,
+      costCodes: legacyProjectState.costCodes || defaultGlobalLibraries.costCodes,
+      stages: legacyProjectState.stages || defaultGlobalLibraries.stages,
+      trades: legacyProjectState.trades || defaultGlobalLibraries.trades,
+      elements: legacyProjectState.elements || defaultGlobalLibraries.elements,
+    },
+    {
+      roomTypes: legacyProjectState.roomTypes ? "localStorage:legacy-project" : "seed/default",
+      parameters: "seed/default",
+      units: legacyProjectState.units ? "localStorage:legacy-project" : "seed/default",
+      costCodes: legacyProjectState.costCodes ? "localStorage:legacy-project" : "seed/default",
+      stages: legacyProjectState.stages ? "localStorage:legacy-project" : "seed/default",
+      trades: legacyProjectState.trades ? "localStorage:legacy-project" : "seed/default",
+      elements: legacyProjectState.elements ? "localStorage:legacy-project" : "seed/default",
+    }
+  );
 }
 
 function loadLibraryData() {
@@ -185,30 +220,51 @@ function loadLibraryData() {
   const savedLibraryData = readStoredJson(libraryDataStorageKey);
 
   if (savedLibraryData) {
-    return {
-      ...defaultLibraryData,
-      ...savedLibraryData,
-      roomTemplates: savedLibraryData.roomTemplates || defaultLibraryData.roomTemplates,
-      assemblies: savedLibraryData.assemblies || defaultLibraryData.assemblies,
-      costs: savedLibraryData.costs || defaultLibraryData.costs,
-    };
+    return createLoadResult(
+      {
+        ...defaultLibraryData,
+        ...savedLibraryData,
+        roomTemplates: savedLibraryData.roomTemplates || defaultLibraryData.roomTemplates,
+        assemblies: savedLibraryData.assemblies || defaultLibraryData.assemblies,
+        costs: savedLibraryData.costs || defaultLibraryData.costs,
+      },
+      {
+        roomTemplates: "localStorage:library-data",
+        assemblies: "localStorage:library-data",
+        costs: "localStorage:library-data",
+      }
+    );
   }
 
   const legacyProjectState = readStoredJson(legacyLocalStorageKey);
 
   if (!legacyProjectState) {
-    return defaultLibraryData;
+    return createLoadResult(defaultLibraryData, {
+      roomTemplates: "seed/default",
+      assemblies: "seed/default",
+      costs: "seed/default",
+    });
   }
 
-  return {
-    ...defaultLibraryData,
-    roomTemplates:
-      legacyProjectState.roomTemplates ||
-      legacyProjectState.rooms ||
-      defaultLibraryData.roomTemplates,
-    assemblies: legacyProjectState.assemblies || defaultLibraryData.assemblies,
-    costs: legacyProjectState.costs || defaultLibraryData.costs,
-  };
+  return createLoadResult(
+    {
+      ...defaultLibraryData,
+      roomTemplates:
+        legacyProjectState.roomTemplates ||
+        legacyProjectState.rooms ||
+        defaultLibraryData.roomTemplates,
+      assemblies: legacyProjectState.assemblies || defaultLibraryData.assemblies,
+      costs: legacyProjectState.costs || defaultLibraryData.costs,
+    },
+    {
+      roomTemplates:
+        legacyProjectState.roomTemplates || legacyProjectState.rooms
+          ? "localStorage:legacy-project"
+          : "seed/default",
+      assemblies: legacyProjectState.assemblies ? "localStorage:legacy-project" : "seed/default",
+      costs: legacyProjectState.costs ? "localStorage:legacy-project" : "seed/default",
+    }
+  );
 }
 
 function loadProjectData() {
@@ -216,97 +272,121 @@ function loadProjectData() {
   const savedProjectData = readStoredJson(projectDataStorageKey);
 
   if (savedProjectData) {
-    return {
-      ...defaultProjectData,
-      ...savedProjectData,
-      localProjectId: savedProjectData.localProjectId || defaultProjectData.localProjectId,
-      createdAt: savedProjectData.createdAt || defaultProjectData.createdAt,
-      updatedAt: savedProjectData.updatedAt || defaultProjectData.updatedAt,
-      estimateName:
-        savedProjectData.estimateName ||
-        savedProjectData.projectName ||
-        defaultProjectData.estimateName,
-      projectAddress: savedProjectData.projectAddress || defaultProjectData.projectAddress,
-      contactDetails: savedProjectData.contactDetails || defaultProjectData.contactDetails,
-      projectManager: savedProjectData.projectManager || defaultProjectData.projectManager,
-      estimator: savedProjectData.estimator || defaultProjectData.estimator,
-      revisionNumber:
-        savedProjectData.revisionNumber ?? getRevisionNumber(savedProjectData.revision, 0),
-      projectRooms: savedProjectData.projectRooms || defaultProjectData.projectRooms,
-      estimateSections: savedProjectData.estimateSections || defaultProjectData.estimateSections,
-      manualEstimateLines:
-        savedProjectData.manualEstimateLines || defaultProjectData.manualEstimateLines,
-      generatedRowSectionAssignments:
-        savedProjectData.generatedRowSectionAssignments ||
-        defaultProjectData.generatedRowSectionAssignments,
-      estimateRowOverrides:
-        savedProjectData.estimateRowOverrides || defaultProjectData.estimateRowOverrides,
-      lastSavedAt: savedProjectData.lastSavedAt || defaultProjectData.lastSavedAt,
-      lastBackupAt: savedProjectData.lastBackupAt || defaultProjectData.lastBackupAt,
-      lastFileName: savedProjectData.lastFileName || defaultProjectData.lastFileName,
-    };
+    return createLoadResult(
+      {
+        ...defaultProjectData,
+        ...savedProjectData,
+        localProjectId: savedProjectData.localProjectId || defaultProjectData.localProjectId,
+        createdAt: savedProjectData.createdAt || defaultProjectData.createdAt,
+        updatedAt: savedProjectData.updatedAt || defaultProjectData.updatedAt,
+        estimateName:
+          savedProjectData.estimateName ||
+          savedProjectData.projectName ||
+          defaultProjectData.estimateName,
+        projectAddress: savedProjectData.projectAddress || defaultProjectData.projectAddress,
+        contactDetails: savedProjectData.contactDetails || defaultProjectData.contactDetails,
+        projectManager: savedProjectData.projectManager || defaultProjectData.projectManager,
+        estimator: savedProjectData.estimator || defaultProjectData.estimator,
+        revisionNumber:
+          savedProjectData.revisionNumber ?? getRevisionNumber(savedProjectData.revision, 0),
+        projectRooms: savedProjectData.projectRooms || defaultProjectData.projectRooms,
+        estimateSections: savedProjectData.estimateSections || defaultProjectData.estimateSections,
+        manualEstimateLines:
+          savedProjectData.manualEstimateLines || defaultProjectData.manualEstimateLines,
+        generatedRowSectionAssignments:
+          savedProjectData.generatedRowSectionAssignments ||
+          defaultProjectData.generatedRowSectionAssignments,
+        estimateRowOverrides:
+          savedProjectData.estimateRowOverrides || defaultProjectData.estimateRowOverrides,
+        lastSavedAt: savedProjectData.lastSavedAt || defaultProjectData.lastSavedAt,
+        lastBackupAt: savedProjectData.lastBackupAt || defaultProjectData.lastBackupAt,
+        lastFileName: savedProjectData.lastFileName || defaultProjectData.lastFileName,
+      },
+      { projectData: "localStorage:project-data" }
+    );
   }
 
   const legacyProjectState = readStoredJson(legacyLocalStorageKey);
 
   if (!legacyProjectState) {
-    return defaultProjectData;
+    return createLoadResult(defaultProjectData, { projectData: "seed/default" });
   }
 
-  return {
-    ...defaultProjectData,
-    localProjectId: legacyProjectState.localProjectId || defaultProjectData.localProjectId,
-    createdAt: legacyProjectState.createdAt || defaultProjectData.createdAt,
-    updatedAt: legacyProjectState.updatedAt || defaultProjectData.updatedAt,
-    projectName: legacyProjectState.projectName || defaultProjectData.projectName,
-    estimateName:
-      legacyProjectState.estimateName ||
-      legacyProjectState.projectName ||
-      defaultProjectData.estimateName,
-    clientName: legacyProjectState.clientName || defaultProjectData.clientName,
-    projectAddress: defaultProjectData.projectAddress,
-    contactDetails: defaultProjectData.contactDetails,
-    projectManager: defaultProjectData.projectManager,
-    estimator: defaultProjectData.estimator,
-    revision: legacyProjectState.revision || defaultProjectData.revision,
-    revisionNumber:
-      legacyProjectState.revisionNumber ??
-      getRevisionNumber(legacyProjectState.revision, defaultProjectData.revisionNumber),
-    projectRooms: defaultProjectData.projectRooms,
-    estimateSections: legacyProjectState.estimateSections || defaultProjectData.estimateSections,
-    manualEstimateLines:
-      legacyProjectState.manualEstimateLines || defaultProjectData.manualEstimateLines,
-    generatedRowSectionAssignments:
-      legacyProjectState.generatedRowSectionAssignments ||
-      defaultProjectData.generatedRowSectionAssignments,
-    estimateRowOverrides:
-      legacyProjectState.estimateRowOverrides || defaultProjectData.estimateRowOverrides,
-    lastSavedAt: legacyProjectState.lastSavedAt || defaultProjectData.lastSavedAt,
-    lastBackupAt: legacyProjectState.lastBackupAt || defaultProjectData.lastBackupAt,
-    lastFileName: legacyProjectState.lastFileName || defaultProjectData.lastFileName,
-  };
+  return createLoadResult(
+    {
+      ...defaultProjectData,
+      localProjectId: legacyProjectState.localProjectId || defaultProjectData.localProjectId,
+      createdAt: legacyProjectState.createdAt || defaultProjectData.createdAt,
+      updatedAt: legacyProjectState.updatedAt || defaultProjectData.updatedAt,
+      projectName: legacyProjectState.projectName || defaultProjectData.projectName,
+      estimateName:
+        legacyProjectState.estimateName ||
+        legacyProjectState.projectName ||
+        defaultProjectData.estimateName,
+      clientName: legacyProjectState.clientName || defaultProjectData.clientName,
+      projectAddress: defaultProjectData.projectAddress,
+      contactDetails: defaultProjectData.contactDetails,
+      projectManager: defaultProjectData.projectManager,
+      estimator: defaultProjectData.estimator,
+      revision: legacyProjectState.revision || defaultProjectData.revision,
+      revisionNumber:
+        legacyProjectState.revisionNumber ??
+        getRevisionNumber(legacyProjectState.revision, defaultProjectData.revisionNumber),
+      projectRooms: defaultProjectData.projectRooms,
+      estimateSections: legacyProjectState.estimateSections || defaultProjectData.estimateSections,
+      manualEstimateLines:
+        legacyProjectState.manualEstimateLines || defaultProjectData.manualEstimateLines,
+      generatedRowSectionAssignments:
+        legacyProjectState.generatedRowSectionAssignments ||
+        defaultProjectData.generatedRowSectionAssignments,
+      estimateRowOverrides:
+        legacyProjectState.estimateRowOverrides || defaultProjectData.estimateRowOverrides,
+      lastSavedAt: legacyProjectState.lastSavedAt || defaultProjectData.lastSavedAt,
+      lastBackupAt: legacyProjectState.lastBackupAt || defaultProjectData.lastBackupAt,
+      lastFileName: legacyProjectState.lastFileName || defaultProjectData.lastFileName,
+    },
+    { projectData: "localStorage:legacy-project" }
+  );
 }
 
 function loadAppState() {
+  const globalLibraries = loadGlobalLibraries();
+  const libraryData = loadLibraryData();
+  const projectData = loadProjectData();
+
   return {
-    ...loadGlobalLibraries(),
-    ...loadLibraryData(),
-    ...loadProjectData(),
+    appState: {
+      ...globalLibraries.data,
+      ...libraryData.data,
+      ...projectData.data,
+    },
+    startupSources: {
+      ...globalLibraries.sources,
+      ...libraryData.sources,
+      ...projectData.sources,
+      startupPrecedence: [
+        "1. localStorage:global-libraries / library-data / project-data",
+        "2. localStorage:legacy-project",
+        "3. seed/default",
+      ],
+    },
   };
 }
 
-function getInitialRestoreStatus() {
-  if (typeof window === "undefined") {
-    return "";
+function getInitialRestoreStatus(startupSources = {}) {
+  const costCodesSource = startupSources.costCodes || "seed/default";
+  const costsSource = startupSources.costs || "seed/default";
+  const assembliesSource = startupSources.assemblies || "seed/default";
+
+  return `Startup sources: Cost Codes ${costCodesSource}; Costs ${costsSource}; Assemblies ${assembliesSource}.`;
+}
+
+function logStartupSources(startupSources = {}) {
+  if (typeof console === "undefined") {
+    return;
   }
 
-  const hasLocalBackup =
-    window.localStorage.getItem(globalLibrariesStorageKey) ||
-    window.localStorage.getItem(libraryDataStorageKey) ||
-    window.localStorage.getItem(projectDataStorageKey) ||
-    window.localStorage.getItem(legacyLocalStorageKey);
-
-  return hasLocalBackup ? "Recovered from local backup." : "";
+  console.info("[Dynex] Startup library sources", startupSources);
 }
 
 function formatLastSaved(value) {
@@ -545,13 +625,20 @@ function normalizeImportedProjectFile(fileData) {
 }
 
 function App() {
-  const initialProjectState = useMemo(() => normalizeAppState(loadAppState()), []);
-  const initialProjectStatus = useMemo(() => getInitialRestoreStatus(), []);
+  const initialLoadResult = useMemo(() => loadAppState(), []);
+  const initialProjectState = useMemo(
+    () => normalizeAppState(initialLoadResult.appState),
+    [initialLoadResult]
+  );
+  const initialProjectStatus = useMemo(
+    () => getInitialRestoreStatus(initialLoadResult.startupSources),
+    [initialLoadResult]
+  );
   const initialSavedSnapshot = useMemo(
     () => buildComparableAppState(initialProjectState),
     [initialProjectState]
   );
-  const [activePage, setActivePage] = useState("estimate-builder");
+  const [activePage, setActivePage] = useState("home");
   const [roomTypes, setRoomTypes] = useState(initialProjectState.roomTypes);
   const [parameters, setParameters] = useState(initialProjectState.parameters);
   const [units, setUnits] = useState(initialProjectState.units);
@@ -591,6 +678,7 @@ function App() {
   const [projectStatus, setProjectStatus] = useState(initialProjectStatus);
   const [savedSnapshot, setSavedSnapshot] = useState(initialSavedSnapshot);
   const previousComparableSnapshotRef = useRef(initialSavedSnapshot);
+  const startupSourcesRef = useRef(initialLoadResult.startupSources);
   const currentAppState = useMemo(
     () => ({
       localProjectId,
@@ -769,6 +857,10 @@ function App() {
   }, [currentAppState]);
 
   useEffect(() => {
+    logStartupSources(startupSourcesRef.current);
+  }, []);
+
+  useEffect(() => {
     if (comparableSnapshot === previousComparableSnapshotRef.current) {
       return;
     }
@@ -940,6 +1032,13 @@ function App() {
       applyAppState(nextProjectState, `Opened project file: ${file.name}`, {
         markAsSaved: true,
       });
+      console.info("[Dynex] Imported project file source", {
+        projectData: "imported-project-file",
+        costCodes: "imported-project-file",
+        costs: "imported-project-file",
+        assemblies: "imported-project-file",
+        fileName: file.name,
+      });
     } catch (error) {
       setProjectStatus("Unable to open project file. Please choose a valid project JSON file.");
     }
@@ -961,6 +1060,17 @@ function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
+        <div className="sidebar-brand">
+          <button
+            type="button"
+            className="sidebar-brand-button"
+            onClick={() => setActivePage("home")}
+          >
+            <span className="sidebar-brand-mark">Dynex</span>
+            <span className="sidebar-brand-tagline">dynamic estimating system</span>
+          </button>
+        </div>
+
         <button
           type="button"
           className={["nav-button", activePage === "project-details" ? "active" : ""].filter(Boolean).join(" ")}
@@ -1005,6 +1115,13 @@ function App() {
       </aside>
 
       <main className="content">
+        {activePage === "home" && (
+          <HomePage
+            onStartProject={() => setActivePage("project-details")}
+            onViewDemo={() => setActivePage("estimate-builder")}
+          />
+        )}
+
         {activePage === "project-details" && (
           <ProjectDetailsPage
             projectName={projectName}

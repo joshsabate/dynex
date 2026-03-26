@@ -10,13 +10,49 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-test("renders primary navigation and default estimate builder page", () => {
+test("renders primary navigation and default home page", () => {
   render(<App />);
-  expect(screen.getByRole("button", { name: /estimate builder/i })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Dynex dynamic estimating system/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /project details/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /room library/i })).toBeInTheDocument();
-  expect(screen.getByLabelText(/estimate name/i)).toBeInTheDocument();
-  expect(screen.getByLabelText(/^rev$/i)).toBeInTheDocument();
+  expect(screen.getByText(/build smarter estimates\./i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /start project/i })).toBeInTheDocument();
+});
+
+test("logs and surfaces startup library sources from local storage", async () => {
+  const consoleInfoSpy = jest.spyOn(console, "info").mockImplementation(() => {});
+
+  window.localStorage.setItem(
+    "estimator-app-global-libraries",
+    JSON.stringify({
+      costCodes: [{ id: "cost-code-custom", name: "Custom Cost Code", sortOrder: 1, isActive: true }],
+    })
+  );
+  window.localStorage.setItem(
+    "estimator-app-library-data",
+    JSON.stringify({
+      assemblies: [{ id: "assembly-1", assemblyName: "Imported Assembly" }],
+      costs: [{ id: "cost-1", itemName: "Imported Cost", rate: 100 }],
+    })
+  );
+
+  render(<App />);
+
+  await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+
+  expect(
+    screen.getByText(
+      /startup sources: cost codes localstorage:global-libraries; costs localstorage:library-data; assemblies localstorage:library-data\./i
+    )
+  ).toBeInTheDocument();
+  expect(consoleInfoSpy).toHaveBeenCalledWith(
+    "[Dynex] Startup library sources",
+    expect.objectContaining({
+      costCodes: "localStorage:global-libraries",
+      costs: "localStorage:library-data",
+      assemblies: "localStorage:library-data",
+    })
+  );
 });
 
 test("auto-saves project changes to localStorage without manual save", async () => {
