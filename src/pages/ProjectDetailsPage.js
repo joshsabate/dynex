@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import FormField from "../components/FormField";
 import SectionCard from "../components/SectionCard";
 
@@ -19,9 +20,11 @@ function ProjectDetailsPage({
   onEstimatorChange,
   onRevisionChange,
   onSaveProject,
-  onLoadProject,
+  onOpenProject,
   onResetProject,
 }) {
+  const openFileInputRef = useRef(null);
+
   return (
     <SectionCard
       title="Project Details"
@@ -80,13 +83,30 @@ function ProjectDetailsPage({
             <button type="button" className="secondary-button" onClick={onSaveProject}>
               Save Project
             </button>
-            <button type="button" className="secondary-button" onClick={onLoadProject}>
-              Load Project
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => openFileInputRef.current?.click()}
+            >
+              Open Project
             </button>
             <button type="button" className="danger-button" onClick={onResetProject}>
               New Project
             </button>
           </div>
+
+          <input
+            ref={openFileInputRef}
+            type="file"
+            accept=".json,application/json"
+            aria-label="Open Project File"
+            style={{ position: "absolute", left: "-9999px" }}
+            onChange={(event) => {
+              const [file] = Array.from(event.target.files || []);
+              onOpenProject(file || null);
+              event.target.value = "";
+            }}
+          />
         </div>
 
         <div className="library-table-panel">

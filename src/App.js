@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 import AssemblyLibraryPage from "./pages/AssemblyLibraryPage";
 import CostLibraryPage from "./pages/CostLibraryPage";
@@ -38,6 +38,8 @@ const legacyLocalStorageKey = "estimator-app-project";
 const globalLibrariesStorageKey = "estimator-app-global-libraries";
 const libraryDataStorageKey = "estimator-app-library-data";
 const projectDataStorageKey = "estimator-app-project-data";
+const projectFileFormat = "estimator-app-project-file";
+const projectFileVersion = 1;
 
 const pages = [
   { id: "estimate-builder", label: "Estimate Builder", icon: "◫", group: "Workflow" },
@@ -255,6 +257,177 @@ function formatLastSaved(value) {
   return parsedValue.toLocaleString();
 }
 
+function isRecord(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeAppState(source = {}) {
+  const defaultGlobalLibraries = getDefaultGlobalLibraries();
+  const defaultLibraryData = getDefaultLibraryData();
+  const defaultProjectData = getDefaultProjectData();
+
+  return {
+    ...defaultGlobalLibraries,
+    ...defaultLibraryData,
+    ...defaultProjectData,
+    ...source,
+    roomTypes: Array.isArray(source.roomTypes)
+      ? source.roomTypes
+      : defaultGlobalLibraries.roomTypes,
+    parameters: Array.isArray(source.parameters)
+      ? source.parameters
+      : defaultGlobalLibraries.parameters,
+    units: Array.isArray(source.units) ? source.units : defaultGlobalLibraries.units,
+    costCodes: Array.isArray(source.costCodes)
+      ? source.costCodes
+      : defaultGlobalLibraries.costCodes,
+    stages: Array.isArray(source.stages) ? source.stages : defaultGlobalLibraries.stages,
+    trades: Array.isArray(source.trades) ? source.trades : defaultGlobalLibraries.trades,
+    elements: Array.isArray(source.elements)
+      ? source.elements
+      : defaultGlobalLibraries.elements,
+    roomTemplates: Array.isArray(source.roomTemplates)
+      ? source.roomTemplates
+      : Array.isArray(source.rooms)
+        ? source.rooms
+        : defaultLibraryData.roomTemplates,
+    assemblies: Array.isArray(source.assemblies)
+      ? source.assemblies
+      : defaultLibraryData.assemblies,
+    costs: Array.isArray(source.costs) ? source.costs : defaultLibraryData.costs,
+    projectName: source.projectName ?? defaultProjectData.projectName,
+    clientName: source.clientName ?? defaultProjectData.clientName,
+    projectAddress: source.projectAddress ?? defaultProjectData.projectAddress,
+    contactDetails: source.contactDetails ?? defaultProjectData.contactDetails,
+    projectManager: source.projectManager ?? defaultProjectData.projectManager,
+    estimator: source.estimator ?? defaultProjectData.estimator,
+    revision: source.revision ?? defaultProjectData.revision,
+    projectRooms: Array.isArray(source.projectRooms)
+      ? source.projectRooms
+      : defaultProjectData.projectRooms,
+    estimateSections: Array.isArray(source.estimateSections)
+      ? source.estimateSections
+      : defaultProjectData.estimateSections,
+    manualEstimateLines: Array.isArray(source.manualEstimateLines)
+      ? source.manualEstimateLines
+      : defaultProjectData.manualEstimateLines,
+    generatedRowSectionAssignments: isRecord(source.generatedRowSectionAssignments)
+      ? source.generatedRowSectionAssignments
+      : defaultProjectData.generatedRowSectionAssignments,
+    estimateRowOverrides: isRecord(source.estimateRowOverrides)
+      ? source.estimateRowOverrides
+      : defaultProjectData.estimateRowOverrides,
+    lastSavedAt: source.lastSavedAt ?? defaultProjectData.lastSavedAt,
+  };
+}
+
+function splitAppStateForStorage(appState) {
+  return {
+    globalLibraries: {
+      roomTypes: appState.roomTypes,
+      parameters: appState.parameters,
+      units: appState.units,
+      costCodes: appState.costCodes,
+      stages: appState.stages,
+      trades: appState.trades,
+      elements: appState.elements,
+    },
+    libraryData: {
+      roomTemplates: appState.roomTemplates,
+      assemblies: appState.assemblies,
+      costs: appState.costs,
+    },
+    projectData: {
+      projectName: appState.projectName,
+      clientName: appState.clientName,
+      projectAddress: appState.projectAddress,
+      contactDetails: appState.contactDetails,
+      projectManager: appState.projectManager,
+      estimator: appState.estimator,
+      revision: appState.revision,
+      projectRooms: appState.projectRooms,
+      estimateSections: appState.estimateSections,
+      manualEstimateLines: appState.manualEstimateLines,
+      generatedRowSectionAssignments: appState.generatedRowSectionAssignments,
+      estimateRowOverrides: appState.estimateRowOverrides,
+      lastSavedAt: appState.lastSavedAt,
+    },
+  };
+}
+
+function persistAppStateToLocalStorage(appState) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const { globalLibraries, libraryData, projectData } = splitAppStateForStorage(appState);
+
+  window.localStorage.setItem(globalLibrariesStorageKey, JSON.stringify(globalLibraries));
+  window.localStorage.setItem(libraryDataStorageKey, JSON.stringify(libraryData));
+  window.localStorage.setItem(projectDataStorageKey, JSON.stringify(projectData));
+  window.localStorage.removeItem(legacyLocalStorageKey);
+}
+
+function sanitizeFileNamePart(value) {
+  return String(value || "")
+    .trim()
+    .split("")
+    .filter((character) => character.charCodeAt(0) >= 32)
+    .join("")
+    .replace(/[<>:"/\\|?*]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function readFileAsText(file) {
+  if (typeof file?.text === "function") {
+    return file.text();
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Unable to read file"));
+    reader.readAsText(file);
+  });
+}
+
+function buildProjectFileName(projectName, revision) {
+  const normalizedProjectName = sanitizeFileNamePart(projectName);
+  const normalizedRevision = sanitizeFileNamePart(revision);
+  const fileName = [normalizedProjectName, normalizedRevision].filter(Boolean).join(" ");
+
+  return `${fileName || "estimator-project"}.json`;
+}
+
+function buildProjectFilePayload(appState, savedAt) {
+  return {
+    format: projectFileFormat,
+    version: projectFileVersion,
+    savedAt,
+    appState: {
+      ...appState,
+      lastSavedAt: savedAt,
+    },
+  };
+}
+
+function normalizeImportedProjectFile(fileData) {
+  if (!isRecord(fileData)) {
+    throw new Error("Invalid project file");
+  }
+
+  const importedAppState = isRecord(fileData.appState)
+    ? {
+        ...fileData.appState,
+        lastSavedAt: fileData.appState.lastSavedAt ?? fileData.savedAt ?? "",
+      }
+    : fileData;
+
+  return normalizeAppState(importedAppState);
+}
+
 function App() {
   const initialProjectState = useMemo(() => loadAppState(), []);
   const [activePage, setActivePage] = useState("estimate-builder");
@@ -288,6 +461,58 @@ function App() {
   );
   const [lastSavedAt, setLastSavedAt] = useState(initialProjectState.lastSavedAt);
   const [projectStatus, setProjectStatus] = useState("");
+  const currentAppState = useMemo(
+    () => ({
+      roomTypes,
+      parameters,
+      units,
+      costCodes,
+      projectName,
+      clientName,
+      projectAddress,
+      contactDetails,
+      projectManager,
+      estimator,
+      revision,
+      roomTemplates,
+      projectRooms,
+      estimateSections,
+      manualEstimateLines,
+      generatedRowSectionAssignments,
+      stages,
+      trades,
+      elements,
+      assemblies,
+      costs,
+      estimateRowOverrides,
+      lastSavedAt,
+    }),
+    [
+      roomTypes,
+      parameters,
+      units,
+      costCodes,
+      projectName,
+      clientName,
+      projectAddress,
+      contactDetails,
+      projectManager,
+      estimator,
+      revision,
+      roomTemplates,
+      projectRooms,
+      estimateSections,
+      manualEstimateLines,
+      generatedRowSectionAssignments,
+      stages,
+      trades,
+      elements,
+      assemblies,
+      costs,
+      estimateRowOverrides,
+      lastSavedAt,
+    ]
+  );
   const pageGroups = useMemo(
     () =>
       pages.reduce((groups, page) => {
@@ -379,126 +604,88 @@ function App() {
     }));
   };
 
-  const buildGlobalLibrariesPayload = () => ({
-    roomTypes,
-    parameters,
-    units,
-    costCodes,
-    stages,
-    trades,
-    elements,
-  });
+  useEffect(() => {
+    persistAppStateToLocalStorage(currentAppState);
+  }, [currentAppState]);
 
-  const buildLibraryDataPayload = () => ({
-    roomTemplates,
-    assemblies,
-    costs,
-  });
+  const applyAppState = (nextAppState, statusMessage) => {
+    setRoomTypes(nextAppState.roomTypes);
+    setParameters(nextAppState.parameters);
+    setUnits(nextAppState.units);
+    setCostCodes(nextAppState.costCodes);
+    setProjectName(nextAppState.projectName);
+    setClientName(nextAppState.clientName);
+    setProjectAddress(nextAppState.projectAddress);
+    setContactDetails(nextAppState.contactDetails);
+    setProjectManager(nextAppState.projectManager);
+    setEstimator(nextAppState.estimator);
+    setRevision(nextAppState.revision);
+    setRoomTemplates(nextAppState.roomTemplates);
+    setProjectRooms(nextAppState.projectRooms);
+    setEstimateSections(nextAppState.estimateSections);
+    setManualEstimateLines(nextAppState.manualEstimateLines);
+    setGeneratedRowSectionAssignments(nextAppState.generatedRowSectionAssignments);
+    setStages(nextAppState.stages);
+    setTrades(nextAppState.trades);
+    setElements(nextAppState.elements);
+    setAssemblies(nextAppState.assemblies);
+    setCosts(nextAppState.costs);
+    setEstimateRowOverrides(nextAppState.estimateRowOverrides);
+    setLastSavedAt(nextAppState.lastSavedAt);
+    persistAppStateToLocalStorage(nextAppState);
+    setProjectStatus(statusMessage);
+  };
 
-  const buildProjectDataPayload = () => ({
-    projectName,
-    clientName,
-    projectAddress,
-    contactDetails,
-    projectManager,
-    estimator,
-    revision,
-    projectRooms,
-    estimateSections,
-    manualEstimateLines,
-    generatedRowSectionAssignments,
-    estimateRowOverrides,
-    lastSavedAt,
-  });
-
-  const saveProject = () => {
+  const saveProjectToFile = () => {
     if (typeof window === "undefined") {
       return;
     }
 
     const savedAt = new Date().toISOString();
-    const projectPayload = {
-      ...buildProjectDataPayload(),
+    const nextAppState = {
+      ...currentAppState,
       lastSavedAt: savedAt,
     };
+    const projectFilePayload = buildProjectFilePayload(nextAppState, savedAt);
+    const fileBlob = new Blob([JSON.stringify(projectFilePayload, null, 2)], {
+      type: "application/json",
+    });
+    const downloadUrl = window.URL.createObjectURL(fileBlob);
+    const link = document.createElement("a");
 
-    window.localStorage.setItem(
-      globalLibrariesStorageKey,
-      JSON.stringify(buildGlobalLibrariesPayload())
-    );
-    window.localStorage.setItem(libraryDataStorageKey, JSON.stringify(buildLibraryDataPayload()));
-    window.localStorage.setItem(projectDataStorageKey, JSON.stringify(projectPayload));
-    window.localStorage.removeItem(legacyLocalStorageKey);
+    link.href = downloadUrl;
+    link.download = buildProjectFileName(projectName, revision);
+    link.click();
+    window.URL.revokeObjectURL(downloadUrl);
+
+    persistAppStateToLocalStorage(nextAppState);
     setLastSavedAt(savedAt);
-    setProjectStatus("Project saved.");
+    setProjectStatus("Project file saved.");
   };
 
-  const loadProject = () => {
-    if (typeof window === "undefined") {
+  const openProjectFromFile = async (file) => {
+    if (!file) {
       return;
     }
 
-    const hasStoredData =
-      window.localStorage.getItem(globalLibrariesStorageKey) ||
-      window.localStorage.getItem(libraryDataStorageKey) ||
-      window.localStorage.getItem(projectDataStorageKey) ||
-      window.localStorage.getItem(legacyLocalStorageKey);
+    try {
+      const fileContents = await readFileAsText(file);
+      const parsedFile = JSON.parse(fileContents);
+      const nextProjectState = normalizeImportedProjectFile(parsedFile);
 
-    if (!hasStoredData) {
-      setProjectStatus("No saved project found.");
-      return;
+      applyAppState(nextProjectState, `Opened project file: ${file.name}`);
+    } catch (error) {
+      setProjectStatus("Unable to open project file. Please choose a valid project JSON file.");
     }
-
-    const nextProjectState = loadAppState();
-
-    setRoomTypes(nextProjectState.roomTypes);
-    setParameters(nextProjectState.parameters);
-    setUnits(nextProjectState.units);
-    setCostCodes(nextProjectState.costCodes);
-    setProjectName(nextProjectState.projectName);
-    setClientName(nextProjectState.clientName);
-    setProjectAddress(nextProjectState.projectAddress);
-    setContactDetails(nextProjectState.contactDetails);
-    setProjectManager(nextProjectState.projectManager);
-    setEstimator(nextProjectState.estimator);
-    setRevision(nextProjectState.revision);
-    setRoomTemplates(nextProjectState.roomTemplates);
-    setProjectRooms(nextProjectState.projectRooms);
-    setEstimateSections(nextProjectState.estimateSections);
-    setManualEstimateLines(nextProjectState.manualEstimateLines);
-    setGeneratedRowSectionAssignments(nextProjectState.generatedRowSectionAssignments);
-    setStages(nextProjectState.stages);
-    setTrades(nextProjectState.trades);
-    setElements(nextProjectState.elements);
-    setAssemblies(nextProjectState.assemblies);
-    setCosts(nextProjectState.costs);
-    setEstimateRowOverrides(nextProjectState.estimateRowOverrides);
-    setLastSavedAt(nextProjectState.lastSavedAt);
-    setProjectStatus("Project loaded.");
   };
 
   const resetProject = () => {
-    const defaultProjectState = getDefaultProjectData();
+    const nextProjectState = {
+      ...currentAppState,
+      ...getDefaultProjectData(),
+    };
 
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(projectDataStorageKey, JSON.stringify(defaultProjectState));
-      window.localStorage.removeItem(legacyLocalStorageKey);
-    }
-
-    setProjectName(defaultProjectState.projectName);
-    setClientName(defaultProjectState.clientName);
-    setProjectAddress(defaultProjectState.projectAddress);
-    setContactDetails(defaultProjectState.contactDetails);
-    setProjectManager(defaultProjectState.projectManager);
-    setEstimator(defaultProjectState.estimator);
-    setRevision(defaultProjectState.revision);
-    setProjectRooms(defaultProjectState.projectRooms);
-    setEstimateSections(defaultProjectState.estimateSections);
-    setManualEstimateLines(defaultProjectState.manualEstimateLines);
-    setGeneratedRowSectionAssignments(defaultProjectState.generatedRowSectionAssignments);
-    setEstimateRowOverrides(defaultProjectState.estimateRowOverrides);
-    setLastSavedAt(defaultProjectState.lastSavedAt);
-    setProjectStatus("Started a new project.");
+    applyAppState(nextProjectState, "Started a new project.");
   };
 
   return (
@@ -566,8 +753,8 @@ function App() {
             onProjectManagerChange={setProjectManager}
             onEstimatorChange={setEstimator}
             onRevisionChange={setRevision}
-            onSaveProject={saveProject}
-            onLoadProject={loadProject}
+            onSaveProject={saveProjectToFile}
+            onOpenProject={openProjectFromFile}
             onResetProject={resetProject}
           />
         )}

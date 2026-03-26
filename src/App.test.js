@@ -1,9 +1,14 @@
 import { render, screen } from "@testing-library/react";
+import { fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 
 beforeEach(() => {
   window.localStorage.clear();
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
 });
 
 test("renders primary navigation and default estimate builder page", () => {
@@ -13,6 +18,122 @@ test("renders primary navigation and default estimate builder page", () => {
   expect(screen.getByRole("button", { name: /room library/i })).toBeInTheDocument();
   expect(screen.getByLabelText(/estimate name/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/^rev$/i)).toBeInTheDocument();
+});
+
+test("auto-saves project changes to localStorage without manual save", async () => {
+  render(<App />);
+
+  await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+  await userEvent.clear(screen.getByLabelText(/project name/i));
+  await userEvent.type(screen.getByLabelText(/project name/i), "Autosave Project");
+
+  expect(JSON.parse(window.localStorage.getItem("estimator-app-project-data"))).toMatchObject({
+    projectName: "Autosave Project",
+  });
+});
+
+test("save project exports the current app state to a json file", async () => {
+  const originalCreateObjectURL = window.URL.createObjectURL;
+  const originalRevokeObjectURL = window.URL.revokeObjectURL;
+  const originalCreateElement = document.createElement.bind(document);
+  const anchorClickMock = jest.fn();
+  let capturedAnchor = null;
+
+  window.URL.createObjectURL = jest.fn(() => "blob:project-file");
+  window.URL.revokeObjectURL = jest.fn();
+
+  jest.spyOn(document, "createElement").mockImplementation((tagName, options) => {
+    const element = originalCreateElement(tagName, options);
+
+    if (tagName !== "a") {
+      return element;
+    }
+
+    element.click = anchorClickMock;
+    capturedAnchor = element;
+    return element;
+  });
+
+  try {
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+    await userEvent.clear(screen.getByLabelText(/project name/i));
+    await userEvent.type(screen.getByLabelText(/project name/i), "Preliminary Estimate");
+    await userEvent.clear(screen.getByLabelText(/revision/i));
+    await userEvent.type(screen.getByLabelText(/revision/i), "Rev 1");
+    await userEvent.click(screen.getByRole("button", { name: /save project/i }));
+
+    expect(window.URL.createObjectURL).toHaveBeenCalledTimes(1);
+    expect(capturedAnchor?.download).toBe("Preliminary Estimate Rev 1.json");
+    expect(anchorClickMock).toHaveBeenCalledTimes(1);
+    expect(window.URL.revokeObjectURL).toHaveBeenCalledWith("blob:project-file");
+    expect(screen.getByText(/project file saved\./i)).toBeInTheDocument();
+  } finally {
+    window.URL.createObjectURL = originalCreateObjectURL;
+    window.URL.revokeObjectURL = originalRevokeObjectURL;
+  }
+});
+
+test("open project restores app state from a saved json file", async () => {
+  render(<App />);
+
+  await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+
+  const fileInput = screen.getByLabelText(/open project file/i);
+  const projectFile = new File(
+    [
+      JSON.stringify({
+        format: "estimator-app-project-file",
+        version: 1,
+        savedAt: "2026-03-26T01:02:03.000Z",
+        appState: {
+          projectName: "Imported Project",
+          clientName: "Imported Client",
+          revision: "Rev 2",
+          projectRooms: [],
+          estimateSections: [],
+          manualEstimateLines: [],
+          generatedRowSectionAssignments: {},
+          estimateRowOverrides: {},
+        },
+      }),
+    ],
+    "imported-project.json",
+    { type: "application/json" }
+  );
+
+  fireEvent.change(fileInput, {
+    target: {
+      files: [projectFile],
+    },
+  });
+
+  expect(await screen.findByDisplayValue("Imported Project")).toBeInTheDocument();
+  expect(screen.getByDisplayValue("Imported Client")).toBeInTheDocument();
+  expect(screen.getByDisplayValue("Rev 2")).toBeInTheDocument();
+  expect(screen.getByText(/opened project file: imported-project\.json/i)).toBeInTheDocument();
+});
+
+test("open project shows a friendly error for invalid json files", async () => {
+  render(<App />);
+
+  await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+
+  const fileInput = screen.getByLabelText(/open project file/i);
+  const invalidFile = new File(["not valid json"], "broken-project.json", {
+    type: "application/json",
+  });
+
+  fireEvent.change(fileInput, {
+    target: {
+      files: [invalidFile],
+    },
+  });
+
+  expect(
+    await screen.findByText(/unable to open project file\. please choose a valid project json file\./i)
+  ).toBeInTheDocument();
 });
 
 test("new project resets project data without clearing global libraries", async () => {
