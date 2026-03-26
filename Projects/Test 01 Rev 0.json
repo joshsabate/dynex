@@ -1,0 +1,1485 @@
+{
+  "format": "estimator-app-project-file",
+  "version": 1,
+  "savedAt": "2026-03-26T10:42:47.541Z",
+  "appState": {
+    "roomTypes": [
+      {
+        "id": "room-type-bedroom",
+        "name": "Bedroom",
+        "sortOrder": 1,
+        "isActive": true,
+        "parameterDefinitions": [
+          {
+            "parameterId": "parameter-length",
+            "defaultValue": 0,
+            "isRequired": true,
+            "sortOrder": 1
+          },
+          {
+            "parameterId": "parameter-width",
+            "defaultValue": 0,
+            "isRequired": true,
+            "sortOrder": 2
+          },
+          {
+            "parameterId": "parameter-height",
+            "defaultValue": 2.7,
+            "isRequired": true,
+            "sortOrder": 3
+          }
+        ]
+      },
+      {
+        "id": "room-type-bathroom",
+        "name": "Bathroom",
+        "sortOrder": 2,
+        "isActive": true,
+        "parameterDefinitions": [
+          {
+            "parameterId": "parameter-length",
+            "defaultValue": 0,
+            "isRequired": true,
+            "sortOrder": 1
+          },
+          {
+            "parameterId": "parameter-width",
+            "defaultValue": 0,
+            "isRequired": true,
+            "sortOrder": 2
+          },
+          {
+            "parameterId": "parameter-height",
+            "defaultValue": 2.7,
+            "isRequired": true,
+            "sortOrder": 3
+          },
+          {
+            "parameterId": "parameter-tile-height",
+            "defaultValue": 2.1,
+            "isRequired": false,
+            "sortOrder": 10
+          },
+          {
+            "parameterId": "parameter-waterproof-wall-height",
+            "defaultValue": 1.2,
+            "isRequired": false,
+            "sortOrder": 11
+          }
+        ]
+      },
+      {
+        "id": "room-type-kitchen",
+        "name": "Kitchen",
+        "sortOrder": 3,
+        "isActive": true,
+        "parameterDefinitions": [
+          {
+            "parameterId": "parameter-length",
+            "defaultValue": 0,
+            "isRequired": true,
+            "sortOrder": 1
+          },
+          {
+            "parameterId": "parameter-width",
+            "defaultValue": 0,
+            "isRequired": true,
+            "sortOrder": 2
+          },
+          {
+            "parameterId": "parameter-height",
+            "defaultValue": 2.7,
+            "isRequired": true,
+            "sortOrder": 3
+          },
+          {
+            "parameterId": "parameter-tile-height",
+            "defaultValue": 0.6,
+            "isRequired": false,
+            "sortOrder": 10
+          },
+          {
+            "parameterId": "parameter-waterproof-wall-height",
+            "defaultValue": 0,
+            "isRequired": false,
+            "sortOrder": 11
+          },
+          {
+            "parameterId": "parameter-base-cabinet-length",
+            "defaultValue": 0,
+            "isRequired": false,
+            "sortOrder": 20
+          },
+          {
+            "parameterId": "parameter-overhead-cabinet-length",
+            "defaultValue": 0,
+            "isRequired": false,
+            "sortOrder": 21
+          },
+          {
+            "parameterId": "parameter-benchtop-length",
+            "defaultValue": 0,
+            "isRequired": false,
+            "sortOrder": 22
+          },
+          {
+            "parameterId": "parameter-splashback-length",
+            "defaultValue": 0,
+            "isRequired": false,
+            "sortOrder": 23
+          },
+          {
+            "parameterId": "parameter-splashback-height",
+            "defaultValue": 0.6,
+            "isRequired": false,
+            "sortOrder": 24
+          }
+        ]
+      },
+      {
+        "id": "room-type-living",
+        "name": "Living",
+        "sortOrder": 4,
+        "isActive": true,
+        "parameterDefinitions": [
+          {
+            "parameterId": "parameter-length",
+            "defaultValue": 0,
+            "isRequired": true,
+            "sortOrder": 1
+          },
+          {
+            "parameterId": "parameter-width",
+            "defaultValue": 0,
+            "isRequired": true,
+            "sortOrder": 2
+          },
+          {
+            "parameterId": "parameter-height",
+            "defaultValue": 2.7,
+            "isRequired": true,
+            "sortOrder": 3
+          }
+        ]
+      },
+      {
+        "id": "room-type-service",
+        "name": "Service",
+        "sortOrder": 5,
+        "isActive": true,
+        "parameterDefinitions": [
+          {
+            "parameterId": "parameter-length",
+            "defaultValue": 0,
+            "isRequired": true,
+            "sortOrder": 1
+          },
+          {
+            "parameterId": "parameter-width",
+            "defaultValue": 0,
+            "isRequired": true,
+            "sortOrder": 2
+          },
+          {
+            "parameterId": "parameter-height",
+            "defaultValue": 2.7,
+            "isRequired": true,
+            "sortOrder": 3
+          },
+          {
+            "parameterId": "parameter-tile-height",
+            "defaultValue": 0.6,
+            "isRequired": false,
+            "sortOrder": 10
+          },
+          {
+            "parameterId": "parameter-waterproof-wall-height",
+            "defaultValue": 0,
+            "isRequired": false,
+            "sortOrder": 11
+          },
+          {
+            "parameterId": "parameter-base-cabinet-length",
+            "defaultValue": 0,
+            "isRequired": false,
+            "sortOrder": 20
+          },
+          {
+            "parameterId": "parameter-overhead-cabinet-length",
+            "defaultValue": 0,
+            "isRequired": false,
+            "sortOrder": 21
+          },
+          {
+            "parameterId": "parameter-benchtop-length",
+            "defaultValue": 0,
+            "isRequired": false,
+            "sortOrder": 22
+          },
+          {
+            "parameterId": "parameter-splashback-length",
+            "defaultValue": 0,
+            "isRequired": false,
+            "sortOrder": 23
+          },
+          {
+            "parameterId": "parameter-splashback-height",
+            "defaultValue": 0.6,
+            "isRequired": false,
+            "sortOrder": 24
+          }
+        ]
+      },
+      {
+        "id": "room-type-exterior",
+        "name": "Exterior",
+        "sortOrder": 6,
+        "isActive": true,
+        "parameterDefinitions": []
+      }
+    ],
+    "parameters": [
+      {
+        "id": "parameter-length",
+        "key": "length",
+        "label": "Length",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0
+      },
+      {
+        "id": "parameter-width",
+        "key": "width",
+        "label": "Width",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0
+      },
+      {
+        "id": "parameter-height",
+        "key": "height",
+        "label": "Height",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 2.7
+      },
+      {
+        "id": "parameter-tile-height",
+        "key": "tileHeight",
+        "label": "Tile Height",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0
+      },
+      {
+        "id": "parameter-waterproof-wall-height",
+        "key": "waterproofWallHeight",
+        "label": "Waterproof Wall Height",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0
+      },
+      {
+        "id": "parameter-base-cabinet-length",
+        "key": "baseCabinetLength",
+        "label": "Base Cabinet Length",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0
+      },
+      {
+        "id": "parameter-overhead-cabinet-length",
+        "key": "overheadCabinetLength",
+        "label": "Overhead Cabinet Length",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0
+      },
+      {
+        "id": "parameter-benchtop-length",
+        "key": "benchtopLength",
+        "label": "Benchtop Length",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0
+      },
+      {
+        "id": "parameter-splashback-length",
+        "key": "splashbackLength",
+        "label": "Splashback Length",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0
+      },
+      {
+        "id": "parameter-splashback-height",
+        "key": "splashbackHeight",
+        "label": "Splashback Height",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0.6
+      }
+    ],
+    "units": [
+      {
+        "id": "unit-sqm",
+        "name": "Square Metre",
+        "abbreviation": "SQM",
+        "sortOrder": 1,
+        "isActive": true
+      },
+      {
+        "id": "unit-lm",
+        "name": "Lineal Metre",
+        "abbreviation": "LM",
+        "sortOrder": 2,
+        "isActive": true
+      },
+      {
+        "id": "unit-ea",
+        "name": "Each",
+        "abbreviation": "EA",
+        "sortOrder": 3,
+        "isActive": true
+      },
+      {
+        "id": "unit-set",
+        "name": "Set",
+        "abbreviation": "SET",
+        "sortOrder": 4,
+        "isActive": true
+      },
+      {
+        "id": "unit-hr",
+        "name": "Hour",
+        "abbreviation": "HR",
+        "sortOrder": 5,
+        "isActive": true
+      }
+    ],
+    "costCodes": [
+      {
+        "id": "cost-code-prelims",
+        "name": "Preliminaries",
+        "sortOrder": 1,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-demo",
+        "name": "Demolition",
+        "sortOrder": 2,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-joinery",
+        "name": "Joinery",
+        "sortOrder": 3,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-finishes",
+        "name": "Finishes",
+        "sortOrder": 4,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-fixtures",
+        "name": "Fixtures",
+        "sortOrder": 5,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-plumbing",
+        "name": "Plumbing",
+        "sortOrder": 6,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-electrical",
+        "name": "Electrical",
+        "sortOrder": 7,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-labour",
+        "name": "Labour",
+        "sortOrder": 8,
+        "isActive": true
+      }
+    ],
+    "projectName": "Test 01",
+    "clientName": "Internal",
+    "projectAddress": "Talomo",
+    "contactDetails": "sbac@gmail.com",
+    "projectManager": "Josh",
+    "estimator": "Josh",
+    "revision": "Rev 0",
+    "roomTemplates": [
+      {
+        "id": "room-001",
+        "name": "Toilet & Bath",
+        "roomTypeId": "room-type-bathroom",
+        "roomType": "Bathroom",
+        "length": 2.4,
+        "width": 1.8,
+        "height": 2.7,
+        "tileHeight": 2.1,
+        "waterproofWallHeight": 1.2,
+        "quantity": 2,
+        "include": true,
+        "assemblyIds": [
+          "assembly-bathroom-bathroom-floor-tile",
+          "assembly-bathroom-bathroom-floor-waterproofing",
+          "assembly-bathroom-bathroom-wall-tile",
+          "assembly-bathroom-bathroom-wall-waterproofing"
+        ],
+        "customItems": [
+          {
+            "id": "custom-room-001-001",
+            "stage": "Finishes",
+            "element": "Accessory",
+            "trade": "Install",
+            "itemName": "Mirror Supply and Install",
+            "unit": "each",
+            "quantity": 2,
+            "rate": 3500,
+            "include": true,
+            "sortOrder": 90
+          }
+        ]
+      },
+      {
+        "id": "room-002",
+        "name": "Kitchen",
+        "roomTypeId": "room-type-kitchen",
+        "roomType": "Kitchen",
+        "length": 3.2,
+        "width": 2.8,
+        "height": 2.7,
+        "tileHeight": 0.6,
+        "waterproofWallHeight": 0,
+        "baseCabinetLength": 2.4,
+        "overheadCabinetLength": 1.8,
+        "benchtopLength": 2.4,
+        "splashbackLength": 2.2,
+        "splashbackHeight": 0.6,
+        "quantity": 1,
+        "include": true,
+        "assemblyIds": [
+          "assembly-kitchen-kitchen-backsplash-tile",
+          "assembly-kitchen-kitchen-floor-tile"
+        ],
+        "customItems": []
+      },
+      {
+        "id": "room-003",
+        "name": "Bedroom",
+        "roomTypeId": "room-type-bedroom",
+        "roomType": "Bedroom",
+        "length": 3.6,
+        "width": 3.2,
+        "height": 2.7,
+        "tileHeight": 0,
+        "waterproofWallHeight": 0,
+        "quantity": 3,
+        "include": true,
+        "assemblyIds": [
+          "assembly-bedroom-bedroom-ceiling-paint",
+          "assembly-bedroom-bedroom-skirting"
+        ],
+        "customItems": []
+      }
+    ],
+    "projectRooms": [],
+    "estimateSections": [],
+    "manualEstimateLines": [],
+    "generatedRowSectionAssignments": {},
+    "stages": [
+      {
+        "id": "stage-demolition",
+        "name": "Demolition",
+        "sortOrder": 1,
+        "isActive": true,
+        "color": "#d78476"
+      },
+      {
+        "id": "stage-structural",
+        "name": "Structural",
+        "sortOrder": 2,
+        "isActive": true,
+        "color": "#7e9685"
+      },
+      {
+        "id": "stage-rough-in",
+        "name": "Rough-In",
+        "sortOrder": 3,
+        "isActive": true,
+        "color": "#6f96bf"
+      },
+      {
+        "id": "stage-waterproofing",
+        "name": "Waterproofing",
+        "sortOrder": 4,
+        "isActive": true,
+        "color": "#69a6b2"
+      },
+      {
+        "id": "stage-finishes",
+        "name": "Finishes",
+        "sortOrder": 5,
+        "isActive": true,
+        "color": "#d7aa5a"
+      },
+      {
+        "id": "stage-fixtures",
+        "name": "Fixtures",
+        "sortOrder": 6,
+        "isActive": true,
+        "color": "#aa87c4"
+      },
+      {
+        "id": "stage-services",
+        "name": "Services",
+        "sortOrder": 7,
+        "isActive": true,
+        "color": "#7ea06f"
+      },
+      {
+        "id": "stage-final",
+        "name": "Final",
+        "sortOrder": 8,
+        "isActive": true,
+        "color": "#a98a69"
+      }
+    ],
+    "trades": [
+      {
+        "id": "trade-general",
+        "name": "General",
+        "sortOrder": 1,
+        "isActive": true
+      },
+      {
+        "id": "trade-demolition",
+        "name": "Demolition",
+        "sortOrder": 2,
+        "isActive": true
+      },
+      {
+        "id": "trade-carpentry",
+        "name": "Carpentry",
+        "sortOrder": 3,
+        "isActive": true
+      },
+      {
+        "id": "trade-joinery",
+        "name": "Joinery",
+        "sortOrder": 4,
+        "isActive": true
+      },
+      {
+        "id": "trade-stone",
+        "name": "Stone",
+        "sortOrder": 5,
+        "isActive": true
+      },
+      {
+        "id": "trade-tile",
+        "name": "Tile",
+        "sortOrder": 6,
+        "isActive": true
+      },
+      {
+        "id": "trade-waterproofing",
+        "name": "Waterproofing",
+        "sortOrder": 7,
+        "isActive": true
+      },
+      {
+        "id": "trade-painting",
+        "name": "Painting",
+        "sortOrder": 8,
+        "isActive": true
+      },
+      {
+        "id": "trade-plumbing",
+        "name": "Plumbing",
+        "sortOrder": 9,
+        "isActive": true
+      },
+      {
+        "id": "trade-electrical",
+        "name": "Electrical",
+        "sortOrder": 10,
+        "isActive": true
+      },
+      {
+        "id": "trade-install",
+        "name": "Install",
+        "sortOrder": 11,
+        "isActive": true
+      }
+    ],
+    "elements": [
+      {
+        "id": "element-floor",
+        "name": "Floor",
+        "sortOrder": 1,
+        "isActive": true
+      },
+      {
+        "id": "element-wall",
+        "name": "Wall",
+        "sortOrder": 2,
+        "isActive": true
+      },
+      {
+        "id": "element-ceiling",
+        "name": "Ceiling",
+        "sortOrder": 3,
+        "isActive": true
+      },
+      {
+        "id": "element-trim",
+        "name": "Trim",
+        "sortOrder": 4,
+        "isActive": true
+      },
+      {
+        "id": "element-cabinetry",
+        "name": "Cabinetry",
+        "sortOrder": 5,
+        "isActive": true
+      },
+      {
+        "id": "element-benchtop",
+        "name": "Benchtop",
+        "sortOrder": 6,
+        "isActive": true
+      },
+      {
+        "id": "element-sink",
+        "name": "Sink",
+        "sortOrder": 7,
+        "isActive": true
+      },
+      {
+        "id": "element-mixer",
+        "name": "Mixer",
+        "sortOrder": 8,
+        "isActive": true
+      },
+      {
+        "id": "element-appliances",
+        "name": "Appliances",
+        "sortOrder": 9,
+        "isActive": true
+      },
+      {
+        "id": "element-electrical",
+        "name": "Electrical",
+        "sortOrder": 10,
+        "isActive": true
+      },
+      {
+        "id": "element-accessory",
+        "name": "Accessory",
+        "sortOrder": 11,
+        "isActive": true
+      }
+    ],
+    "assemblies": [
+      {
+        "id": "assembly-row-001",
+        "assemblyId": "assembly-bathroom-bathroom-floor-tile",
+        "assemblyCategory": "Finishes",
+        "assemblyName": "Bathroom Floor Tile",
+        "appliesToRoomTypeId": "room-type-bathroom",
+        "appliesToRoomType": "Bathroom",
+        "stageId": "stage-finishes",
+        "stage": "Finishes",
+        "elementId": "element-floor",
+        "element": "Floor",
+        "tradeId": "trade-tile",
+        "trade": "Tile",
+        "costCodeId": "cost-code-finishes",
+        "costCode": "Finishes",
+        "itemName": "Floor Tile Installation",
+        "unit": "SQM",
+        "qtyRule": "FloorArea",
+        "laborHoursPerUnit": 0,
+        "laborCostItemName": "",
+        "sortOrder": 1,
+        "unitId": "unit-sqm"
+      },
+      {
+        "id": "assembly-row-002",
+        "assemblyId": "assembly-bathroom-bathroom-floor-waterproofing",
+        "assemblyCategory": "Waterproofing",
+        "assemblyName": "Bathroom Floor Waterproofing",
+        "appliesToRoomTypeId": "room-type-bathroom",
+        "appliesToRoomType": "Bathroom",
+        "stageId": "stage-waterproofing",
+        "stage": "Waterproofing",
+        "elementId": "element-floor",
+        "element": "Floor",
+        "tradeId": "trade-waterproofing",
+        "trade": "Waterproofing",
+        "costCodeId": "cost-code-finishes",
+        "costCode": "Finishes",
+        "itemName": "Floor Waterproofing",
+        "unit": "SQM",
+        "qtyRule": "WaterproofFloorArea",
+        "laborHoursPerUnit": 0,
+        "laborCostItemName": "",
+        "sortOrder": 2,
+        "unitId": "unit-sqm"
+      },
+      {
+        "id": "assembly-row-003",
+        "assemblyId": "assembly-bathroom-bathroom-wall-tile",
+        "assemblyCategory": "Finishes",
+        "assemblyName": "Bathroom Wall Tile",
+        "appliesToRoomTypeId": "room-type-bathroom",
+        "appliesToRoomType": "Bathroom",
+        "stageId": "stage-finishes",
+        "stage": "Finishes",
+        "elementId": "element-wall",
+        "element": "Wall",
+        "tradeId": "trade-tile",
+        "trade": "Tile",
+        "costCodeId": "cost-code-finishes",
+        "costCode": "Finishes",
+        "itemName": "Wall Tile Installation",
+        "unit": "SQM",
+        "qtyRule": "TileWallArea",
+        "laborHoursPerUnit": 0,
+        "laborCostItemName": "",
+        "sortOrder": 3,
+        "unitId": "unit-sqm"
+      },
+      {
+        "id": "assembly-row-004",
+        "assemblyId": "assembly-bathroom-bathroom-wall-waterproofing",
+        "assemblyCategory": "Waterproofing",
+        "assemblyName": "Bathroom Wall Waterproofing",
+        "appliesToRoomTypeId": "room-type-bathroom",
+        "appliesToRoomType": "Bathroom",
+        "stageId": "stage-waterproofing",
+        "stage": "Waterproofing",
+        "elementId": "element-wall",
+        "element": "Wall",
+        "tradeId": "trade-waterproofing",
+        "trade": "Waterproofing",
+        "costCodeId": "cost-code-finishes",
+        "costCode": "Finishes",
+        "itemName": "Wall Waterproofing",
+        "unit": "SQM",
+        "qtyRule": "WaterproofWallArea",
+        "laborHoursPerUnit": 0,
+        "laborCostItemName": "",
+        "sortOrder": 4,
+        "unitId": "unit-sqm"
+      },
+      {
+        "id": "assembly-row-005",
+        "assemblyId": "assembly-kitchen-kitchen-backsplash-tile",
+        "assemblyCategory": "Finishes",
+        "assemblyName": "Kitchen Backsplash Tile",
+        "appliesToRoomTypeId": "room-type-kitchen",
+        "appliesToRoomType": "Kitchen",
+        "stageId": "stage-finishes",
+        "stage": "Finishes",
+        "elementId": "element-wall",
+        "element": "Wall",
+        "tradeId": "trade-tile",
+        "trade": "Tile",
+        "costCodeId": "cost-code-finishes",
+        "costCode": "Finishes",
+        "itemName": "Wall Tile Installation",
+        "unit": "SQM",
+        "qtyRule": "TileWallArea",
+        "laborHoursPerUnit": 0,
+        "laborCostItemName": "",
+        "sortOrder": 1,
+        "unitId": "unit-sqm"
+      },
+      {
+        "id": "assembly-row-006",
+        "assemblyId": "assembly-kitchen-kitchen-floor-tile",
+        "assemblyCategory": "Finishes",
+        "assemblyName": "Kitchen Floor Tile",
+        "appliesToRoomTypeId": "room-type-kitchen",
+        "appliesToRoomType": "Kitchen",
+        "stageId": "stage-finishes",
+        "stage": "Finishes",
+        "elementId": "element-floor",
+        "element": "Floor",
+        "tradeId": "trade-tile",
+        "trade": "Tile",
+        "costCodeId": "cost-code-finishes",
+        "costCode": "Finishes",
+        "itemName": "Floor Tile Installation",
+        "unit": "SQM",
+        "qtyRule": "FloorArea",
+        "laborHoursPerUnit": 0,
+        "laborCostItemName": "",
+        "sortOrder": 2,
+        "unitId": "unit-sqm"
+      },
+      {
+        "id": "assembly-row-009",
+        "assemblyId": "assembly-kitchen-kitchen-base-cabinets",
+        "assemblyCategory": "Joinery",
+        "assemblyName": "Kitchen Base Cabinets",
+        "appliesToRoomTypeId": "room-type-kitchen",
+        "appliesToRoomType": "Kitchen",
+        "stageId": "stage-finishes",
+        "stage": "Finishes",
+        "elementId": "element-cabinetry",
+        "element": "Cabinetry",
+        "tradeId": "trade-joinery",
+        "trade": "Joinery",
+        "costCodeId": "cost-code-joinery",
+        "costCode": "Joinery",
+        "itemName": "Kitchen Base Cabinets",
+        "unit": "LM",
+        "qtyRule": "BaseCabinetLength",
+        "laborHoursPerUnit": 1.4,
+        "laborCostItemName": "Carpentry Labour",
+        "sortOrder": 3,
+        "unitId": "unit-lm"
+      },
+      {
+        "id": "assembly-row-010",
+        "assemblyId": "assembly-kitchen-kitchen-overhead-cabinets",
+        "assemblyCategory": "Joinery",
+        "assemblyName": "Kitchen Overhead Cabinets",
+        "appliesToRoomTypeId": "room-type-kitchen",
+        "appliesToRoomType": "Kitchen",
+        "stageId": "stage-finishes",
+        "stage": "Finishes",
+        "elementId": "element-cabinetry",
+        "element": "Cabinetry",
+        "tradeId": "trade-joinery",
+        "trade": "Joinery",
+        "costCodeId": "cost-code-joinery",
+        "costCode": "Joinery",
+        "itemName": "Kitchen Overhead Cabinets",
+        "unit": "LM",
+        "qtyRule": "OverheadCabinetLength",
+        "laborHoursPerUnit": 1.2,
+        "laborCostItemName": "Carpentry Labour",
+        "sortOrder": 4,
+        "unitId": "unit-lm"
+      },
+      {
+        "id": "assembly-row-011",
+        "assemblyId": "assembly-kitchen-kitchen-pantry-unit",
+        "assemblyCategory": "Joinery",
+        "assemblyName": "Kitchen Pantry Unit",
+        "appliesToRoomTypeId": "room-type-kitchen",
+        "appliesToRoomType": "Kitchen",
+        "stageId": "stage-finishes",
+        "stage": "Finishes",
+        "elementId": "element-cabinetry",
+        "element": "Cabinetry",
+        "tradeId": "trade-joinery",
+        "trade": "Joinery",
+        "costCodeId": "cost-code-joinery",
+        "costCode": "Joinery",
+        "itemName": "Kitchen Pantry Unit",
+        "unit": "EA",
+        "qtyRule": "1",
+        "laborHoursPerUnit": 6,
+        "laborCostItemName": "Carpentry Labour",
+        "sortOrder": 5,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "assembly-row-012",
+        "assemblyId": "assembly-kitchen-kitchen-benchtop",
+        "assemblyCategory": "Joinery",
+        "assemblyName": "Kitchen Benchtop",
+        "appliesToRoomTypeId": "room-type-kitchen",
+        "appliesToRoomType": "Kitchen",
+        "stageId": "stage-finishes",
+        "stage": "Finishes",
+        "elementId": "element-benchtop",
+        "element": "Benchtop",
+        "tradeId": "trade-stone",
+        "trade": "Stone",
+        "costCodeId": "cost-code-joinery",
+        "costCode": "Joinery",
+        "itemName": "Kitchen Benchtop",
+        "unit": "LM",
+        "qtyRule": "BenchtopLength",
+        "laborHoursPerUnit": 0.6,
+        "laborCostItemName": "Carpentry Labour",
+        "sortOrder": 6,
+        "unitId": "unit-lm"
+      },
+      {
+        "id": "assembly-row-013",
+        "assemblyId": "assembly-kitchen-kitchen-splashback-tiling",
+        "assemblyCategory": "Finishes",
+        "assemblyName": "Kitchen Splashback Tiling",
+        "appliesToRoomTypeId": "room-type-kitchen",
+        "appliesToRoomType": "Kitchen",
+        "stageId": "stage-finishes",
+        "stage": "Finishes",
+        "elementId": "element-wall",
+        "element": "Wall",
+        "tradeId": "trade-tile",
+        "trade": "Tile",
+        "costCodeId": "cost-code-finishes",
+        "costCode": "Finishes",
+        "itemName": "Kitchen Splashback Tiling",
+        "unit": "SQM",
+        "qtyRule": "SplashbackArea",
+        "laborHoursPerUnit": 0.8,
+        "laborCostItemName": "Trade Support",
+        "sortOrder": 7,
+        "unitId": "unit-sqm"
+      },
+      {
+        "id": "assembly-row-014",
+        "assemblyId": "assembly-kitchen-kitchen-sink-install",
+        "assemblyCategory": "Fixtures",
+        "assemblyName": "Kitchen Sink Install",
+        "appliesToRoomTypeId": "room-type-kitchen",
+        "appliesToRoomType": "Kitchen",
+        "stageId": "stage-fixtures",
+        "stage": "Fixtures",
+        "elementId": "element-sink",
+        "element": "Sink",
+        "tradeId": "trade-plumbing",
+        "trade": "Plumbing",
+        "costCodeId": "cost-code-plumbing",
+        "costCode": "Plumbing",
+        "itemName": "Kitchen Sink Install",
+        "unit": "EA",
+        "qtyRule": "1",
+        "laborHoursPerUnit": 1.5,
+        "laborCostItemName": "Trade Support",
+        "sortOrder": 8,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "assembly-row-015",
+        "assemblyId": "assembly-kitchen-kitchen-mixer-install",
+        "assemblyCategory": "Fixtures",
+        "assemblyName": "Kitchen Mixer Install",
+        "appliesToRoomTypeId": "room-type-kitchen",
+        "appliesToRoomType": "Kitchen",
+        "stageId": "stage-fixtures",
+        "stage": "Fixtures",
+        "elementId": "element-mixer",
+        "element": "Mixer",
+        "tradeId": "trade-plumbing",
+        "trade": "Plumbing",
+        "costCodeId": "cost-code-plumbing",
+        "costCode": "Plumbing",
+        "itemName": "Kitchen Mixer Install",
+        "unit": "EA",
+        "qtyRule": "1",
+        "laborHoursPerUnit": 0.8,
+        "laborCostItemName": "Trade Support",
+        "sortOrder": 9,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "assembly-row-016",
+        "assemblyId": "assembly-kitchen-kitchen-appliance-connections",
+        "assemblyCategory": "Services",
+        "assemblyName": "Kitchen Appliance Connections",
+        "appliesToRoomTypeId": "room-type-kitchen",
+        "appliesToRoomType": "Kitchen",
+        "stageId": "stage-services",
+        "stage": "Services",
+        "elementId": "element-appliances",
+        "element": "Appliances",
+        "tradeId": "trade-electrical",
+        "trade": "Electrical",
+        "costCodeId": "cost-code-electrical",
+        "costCode": "Electrical",
+        "itemName": "Kitchen Appliance Connections",
+        "unit": "EA",
+        "qtyRule": "1",
+        "laborHoursPerUnit": 1.2,
+        "laborCostItemName": "Trade Support",
+        "sortOrder": 10,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "assembly-row-017",
+        "assemblyId": "assembly-kitchen-kitchen-gpos-circuits",
+        "assemblyCategory": "Services",
+        "assemblyName": "Kitchen GPOs and Circuits",
+        "appliesToRoomTypeId": "room-type-kitchen",
+        "appliesToRoomType": "Kitchen",
+        "stageId": "stage-services",
+        "stage": "Services",
+        "elementId": "element-electrical",
+        "element": "Electrical",
+        "tradeId": "trade-electrical",
+        "trade": "Electrical",
+        "costCodeId": "cost-code-electrical",
+        "costCode": "Electrical",
+        "itemName": "Kitchen GPOs and Circuits",
+        "unit": "EA",
+        "qtyRule": "1",
+        "laborHoursPerUnit": 2,
+        "laborCostItemName": "Trade Support",
+        "sortOrder": 11,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "assembly-row-007",
+        "assemblyId": "assembly-bedroom-bedroom-ceiling-paint",
+        "assemblyCategory": "Finishes",
+        "assemblyName": "Bedroom Ceiling Paint",
+        "appliesToRoomTypeId": "room-type-bedroom",
+        "appliesToRoomType": "Bedroom",
+        "stageId": "stage-finishes",
+        "stage": "Finishes",
+        "elementId": "element-ceiling",
+        "element": "Ceiling",
+        "tradeId": "trade-painting",
+        "trade": "Painting",
+        "costCodeId": "cost-code-finishes",
+        "costCode": "Finishes",
+        "itemName": "Ceiling Paint",
+        "unit": "SQM",
+        "qtyRule": "CeilingArea",
+        "laborHoursPerUnit": 0,
+        "laborCostItemName": "",
+        "sortOrder": 1,
+        "unitId": "unit-sqm"
+      },
+      {
+        "id": "assembly-row-008",
+        "assemblyId": "assembly-bedroom-bedroom-skirting",
+        "assemblyCategory": "Finishes",
+        "assemblyName": "Bedroom Skirting",
+        "appliesToRoomTypeId": "room-type-bedroom",
+        "appliesToRoomType": "Bedroom",
+        "stageId": "stage-finishes",
+        "stage": "Finishes",
+        "elementId": "element-trim",
+        "element": "Trim",
+        "tradeId": "trade-carpentry",
+        "trade": "Carpentry",
+        "costCodeId": "cost-code-finishes",
+        "costCode": "Finishes",
+        "itemName": "Skirting Board",
+        "unit": "LM",
+        "qtyRule": "SkirtingLength",
+        "laborHoursPerUnit": 0,
+        "laborCostItemName": "",
+        "sortOrder": 2,
+        "unitId": "unit-lm"
+      },
+      {
+        "id": "assembly-row-018",
+        "assemblyId": "assembly-laundry-laundry-base-cabinets",
+        "assemblyCategory": "Joinery",
+        "assemblyName": "Laundry Base Cabinets",
+        "appliesToRoomTypeId": "room-type-service",
+        "appliesToRoomType": "Service",
+        "stageId": "stage-finishes",
+        "stage": "Finishes",
+        "elementId": "element-cabinetry",
+        "element": "Cabinetry",
+        "tradeId": "trade-joinery",
+        "trade": "Joinery",
+        "costCodeId": "cost-code-joinery",
+        "costCode": "Joinery",
+        "itemName": "Laundry Base Cabinets",
+        "unit": "LM",
+        "qtyRule": "BaseCabinetLength",
+        "laborHoursPerUnit": 1.2,
+        "laborCostItemName": "Carpentry Labour",
+        "sortOrder": 1,
+        "unitId": "unit-lm"
+      },
+      {
+        "id": "assembly-row-019",
+        "assemblyId": "assembly-laundry-laundry-overhead-cabinets",
+        "assemblyCategory": "Joinery",
+        "assemblyName": "Laundry Overhead Cabinets",
+        "appliesToRoomTypeId": "room-type-service",
+        "appliesToRoomType": "Service",
+        "stageId": "stage-finishes",
+        "stage": "Finishes",
+        "elementId": "element-cabinetry",
+        "element": "Cabinetry",
+        "tradeId": "trade-joinery",
+        "trade": "Joinery",
+        "costCodeId": "cost-code-joinery",
+        "costCode": "Joinery",
+        "itemName": "Laundry Overhead Cabinets",
+        "unit": "LM",
+        "qtyRule": "OverheadCabinetLength",
+        "laborHoursPerUnit": 1,
+        "laborCostItemName": "Carpentry Labour",
+        "sortOrder": 2,
+        "unitId": "unit-lm"
+      },
+      {
+        "id": "assembly-row-020",
+        "assemblyId": "assembly-laundry-laundry-benchtop",
+        "assemblyCategory": "Joinery",
+        "assemblyName": "Laundry Benchtop",
+        "appliesToRoomTypeId": "room-type-service",
+        "appliesToRoomType": "Service",
+        "stageId": "stage-finishes",
+        "stage": "Finishes",
+        "elementId": "element-benchtop",
+        "element": "Benchtop",
+        "tradeId": "trade-stone",
+        "trade": "Stone",
+        "costCodeId": "cost-code-joinery",
+        "costCode": "Joinery",
+        "itemName": "Laundry Benchtop",
+        "unit": "LM",
+        "qtyRule": "BenchtopLength",
+        "laborHoursPerUnit": 0.5,
+        "laborCostItemName": "Carpentry Labour",
+        "sortOrder": 3,
+        "unitId": "unit-lm"
+      },
+      {
+        "id": "assembly-row-021",
+        "assemblyId": "assembly-laundry-laundry-splashback",
+        "assemblyCategory": "Finishes",
+        "assemblyName": "Laundry Splashback",
+        "appliesToRoomTypeId": "room-type-service",
+        "appliesToRoomType": "Service",
+        "stageId": "stage-finishes",
+        "stage": "Finishes",
+        "elementId": "element-wall",
+        "element": "Wall",
+        "tradeId": "trade-tile",
+        "trade": "Tile",
+        "costCodeId": "cost-code-finishes",
+        "costCode": "Finishes",
+        "itemName": "Laundry Splashback",
+        "unit": "SQM",
+        "qtyRule": "SplashbackArea",
+        "laborHoursPerUnit": 0.6,
+        "laborCostItemName": "Trade Support",
+        "sortOrder": 4,
+        "unitId": "unit-sqm"
+      },
+      {
+        "id": "assembly-row-022",
+        "assemblyId": "assembly-laundry-laundry-tub-install",
+        "assemblyCategory": "Fixtures",
+        "assemblyName": "Laundry Tub Install",
+        "appliesToRoomTypeId": "room-type-service",
+        "appliesToRoomType": "Service",
+        "stageId": "stage-fixtures",
+        "stage": "Fixtures",
+        "elementId": "element-sink",
+        "element": "Sink",
+        "tradeId": "trade-plumbing",
+        "trade": "Plumbing",
+        "costCodeId": "cost-code-plumbing",
+        "costCode": "Plumbing",
+        "itemName": "Laundry Tub Install",
+        "unit": "EA",
+        "qtyRule": "1",
+        "laborHoursPerUnit": 1.2,
+        "laborCostItemName": "Trade Support",
+        "sortOrder": 5,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "assembly-row-023",
+        "assemblyId": "assembly-laundry-laundry-mixer-install",
+        "assemblyCategory": "Fixtures",
+        "assemblyName": "Laundry Mixer Install",
+        "appliesToRoomTypeId": "room-type-service",
+        "appliesToRoomType": "Service",
+        "stageId": "stage-fixtures",
+        "stage": "Fixtures",
+        "elementId": "element-mixer",
+        "element": "Mixer",
+        "tradeId": "trade-plumbing",
+        "trade": "Plumbing",
+        "costCodeId": "cost-code-plumbing",
+        "costCode": "Plumbing",
+        "itemName": "Laundry Mixer Install",
+        "unit": "EA",
+        "qtyRule": "1",
+        "laborHoursPerUnit": 0.6,
+        "laborCostItemName": "Trade Support",
+        "sortOrder": 6,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "assembly-row-024",
+        "assemblyId": "assembly-laundry-laundry-washing-machine-connection",
+        "assemblyCategory": "Services",
+        "assemblyName": "Laundry Washing Machine Connection",
+        "appliesToRoomTypeId": "room-type-service",
+        "appliesToRoomType": "Service",
+        "stageId": "stage-services",
+        "stage": "Services",
+        "elementId": "element-appliances",
+        "element": "Appliances",
+        "tradeId": "trade-plumbing",
+        "trade": "Plumbing",
+        "costCodeId": "cost-code-plumbing",
+        "costCode": "Plumbing",
+        "itemName": "Laundry Washing Machine Connection",
+        "unit": "EA",
+        "qtyRule": "1",
+        "laborHoursPerUnit": 1,
+        "laborCostItemName": "Trade Support",
+        "sortOrder": 7,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "assembly-row-025",
+        "assemblyId": "assembly-laundry-laundry-dryer-connection",
+        "assemblyCategory": "Services",
+        "assemblyName": "Laundry Dryer Connection",
+        "appliesToRoomTypeId": "room-type-service",
+        "appliesToRoomType": "Service",
+        "stageId": "stage-services",
+        "stage": "Services",
+        "elementId": "element-appliances",
+        "element": "Appliances",
+        "tradeId": "trade-electrical",
+        "trade": "Electrical",
+        "costCodeId": "cost-code-electrical",
+        "costCode": "Electrical",
+        "itemName": "Laundry Dryer Connection",
+        "unit": "EA",
+        "qtyRule": "1",
+        "laborHoursPerUnit": 0.8,
+        "laborCostItemName": "Trade Support",
+        "sortOrder": 8,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "assembly-row-026",
+        "assemblyId": "assembly-laundry-laundry-gpos-circuits",
+        "assemblyCategory": "Services",
+        "assemblyName": "Laundry GPOs and Circuits",
+        "appliesToRoomTypeId": "room-type-service",
+        "appliesToRoomType": "Service",
+        "stageId": "stage-services",
+        "stage": "Services",
+        "elementId": "element-electrical",
+        "element": "Electrical",
+        "tradeId": "trade-electrical",
+        "trade": "Electrical",
+        "costCodeId": "cost-code-electrical",
+        "costCode": "Electrical",
+        "itemName": "Laundry GPOs and Circuits",
+        "unit": "EA",
+        "qtyRule": "1",
+        "laborHoursPerUnit": 1.5,
+        "laborCostItemName": "Trade Support",
+        "sortOrder": 9,
+        "unitId": "unit-ea"
+      }
+    ],
+    "costs": [
+      {
+        "id": "cost-001",
+        "itemName": "Floor Tile Installation",
+        "unit": "SQM",
+        "rate": 1450,
+        "unitId": "unit-sqm"
+      },
+      {
+        "id": "cost-002",
+        "itemName": "Floor Waterproofing",
+        "unit": "SQM",
+        "rate": 420,
+        "unitId": "unit-sqm"
+      },
+      {
+        "id": "cost-003",
+        "itemName": "Wall Tile Installation",
+        "unit": "SQM",
+        "rate": 1525,
+        "unitId": "unit-sqm"
+      },
+      {
+        "id": "cost-004",
+        "itemName": "Wall Waterproofing",
+        "unit": "SQM",
+        "rate": 390,
+        "unitId": "unit-sqm"
+      },
+      {
+        "id": "cost-005",
+        "itemName": "Ceiling Paint",
+        "unit": "SQM",
+        "rate": 185,
+        "unitId": "unit-sqm"
+      },
+      {
+        "id": "cost-006",
+        "itemName": "Skirting Board",
+        "unit": "LM",
+        "rate": 210,
+        "unitId": "unit-lm"
+      },
+      {
+        "id": "cost-007",
+        "itemName": "Kitchen Base Cabinets",
+        "unit": "LM",
+        "rate": 6200,
+        "unitId": "unit-lm"
+      },
+      {
+        "id": "cost-008",
+        "itemName": "Kitchen Overhead Cabinets",
+        "unit": "LM",
+        "rate": 4100,
+        "unitId": "unit-lm"
+      },
+      {
+        "id": "cost-009",
+        "itemName": "Kitchen Pantry Unit",
+        "unit": "EA",
+        "rate": 28500,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "cost-010",
+        "itemName": "Kitchen Benchtop",
+        "unit": "LM",
+        "rate": 1850,
+        "unitId": "unit-lm"
+      },
+      {
+        "id": "cost-011",
+        "itemName": "Kitchen Splashback Tiling",
+        "unit": "SQM",
+        "rate": 1850,
+        "unitId": "unit-sqm"
+      },
+      {
+        "id": "cost-012",
+        "itemName": "Kitchen Sink Install",
+        "unit": "EA",
+        "rate": 3200,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "cost-013",
+        "itemName": "Kitchen Mixer Install",
+        "unit": "EA",
+        "rate": 1850,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "cost-014",
+        "itemName": "Kitchen Appliance Connections",
+        "unit": "EA",
+        "rate": 2600,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "cost-015",
+        "itemName": "Kitchen GPOs and Circuits",
+        "unit": "EA",
+        "rate": 4800,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "cost-016",
+        "itemName": "Laundry Base Cabinets",
+        "unit": "LM",
+        "rate": 4400,
+        "unitId": "unit-lm"
+      },
+      {
+        "id": "cost-017",
+        "itemName": "Laundry Overhead Cabinets",
+        "unit": "LM",
+        "rate": 3200,
+        "unitId": "unit-lm"
+      },
+      {
+        "id": "cost-018",
+        "itemName": "Laundry Benchtop",
+        "unit": "LM",
+        "rate": 1450,
+        "unitId": "unit-lm"
+      },
+      {
+        "id": "cost-019",
+        "itemName": "Laundry Splashback",
+        "unit": "SQM",
+        "rate": 1650,
+        "unitId": "unit-sqm"
+      },
+      {
+        "id": "cost-020",
+        "itemName": "Laundry Tub Install",
+        "unit": "EA",
+        "rate": 2800,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "cost-021",
+        "itemName": "Laundry Mixer Install",
+        "unit": "EA",
+        "rate": 1600,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "cost-022",
+        "itemName": "Laundry Washing Machine Connection",
+        "unit": "EA",
+        "rate": 2100,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "cost-023",
+        "itemName": "Laundry Dryer Connection",
+        "unit": "EA",
+        "rate": 1950,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "cost-024",
+        "itemName": "Laundry GPOs and Circuits",
+        "unit": "EA",
+        "rate": 3600,
+        "unitId": "unit-ea"
+      },
+      {
+        "id": "cost-025",
+        "itemName": "Site Supervision",
+        "unit": "HR",
+        "rate": 95,
+        "unitId": "unit-hr"
+      },
+      {
+        "id": "cost-026",
+        "itemName": "Trade Support",
+        "unit": "HR",
+        "rate": 62,
+        "unitId": "unit-hr"
+      },
+      {
+        "id": "cost-027",
+        "itemName": "Carpentry Labour",
+        "unit": "HR",
+        "rate": 78,
+        "unitId": "unit-hr"
+      }
+    ],
+    "estimateRowOverrides": {},
+    "lastSavedAt": "2026-03-26T10:42:47.541Z"
+  }
+}

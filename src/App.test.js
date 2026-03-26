@@ -1,5 +1,4 @@
-import { render, screen } from "@testing-library/react";
-import { fireEvent } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 
@@ -32,6 +31,18 @@ test("auto-saves project changes to localStorage without manual save", async () 
   });
 });
 
+test("project details shows saved state and unsaved changes automatically", async () => {
+  render(<App />);
+
+  await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+  expect(screen.getByText(/^saved$/i)).toBeInTheDocument();
+
+  await userEvent.clear(screen.getByLabelText(/project name/i));
+  await userEvent.type(screen.getByLabelText(/project name/i), "Dirty Project");
+
+  expect(screen.getByText(/unsaved changes/i)).toBeInTheDocument();
+});
+
 test("save project exports the current app state to a json file", async () => {
   const originalCreateObjectURL = window.URL.createObjectURL;
   const originalRevokeObjectURL = window.URL.revokeObjectURL;
@@ -58,8 +69,8 @@ test("save project exports the current app state to a json file", async () => {
     render(<App />);
 
     await userEvent.click(screen.getByRole("button", { name: /project details/i }));
-    await userEvent.clear(screen.getByLabelText(/project name/i));
-    await userEvent.type(screen.getByLabelText(/project name/i), "Preliminary Estimate");
+    await userEvent.clear(screen.getByLabelText(/estimate name/i));
+    await userEvent.type(screen.getByLabelText(/estimate name/i), "Preliminary Estimate");
     await userEvent.clear(screen.getByLabelText(/revision/i));
     await userEvent.type(screen.getByLabelText(/revision/i), "Rev 1");
     await userEvent.click(screen.getByRole("button", { name: /save project/i }));
@@ -70,6 +81,51 @@ test("save project exports the current app state to a json file", async () => {
     expect(window.URL.revokeObjectURL).toHaveBeenCalledWith("blob:project-file");
     expect(screen.getByText(/project file saved\./i)).toBeInTheDocument();
   } finally {
+    window.URL.createObjectURL = originalCreateObjectURL;
+    window.URL.revokeObjectURL = originalRevokeObjectURL;
+  }
+});
+
+test("save as revision increments the revision and exports a new file", async () => {
+  const originalPrompt = window.prompt;
+  const originalCreateObjectURL = window.URL.createObjectURL;
+  const originalRevokeObjectURL = window.URL.revokeObjectURL;
+  const originalCreateElement = document.createElement.bind(document);
+  const anchorClickMock = jest.fn();
+  let capturedAnchor = null;
+
+  window.prompt = jest.fn(() => "Revision Save Rev 1.json");
+  window.URL.createObjectURL = jest.fn(() => "blob:revision-file");
+  window.URL.revokeObjectURL = jest.fn();
+
+  jest.spyOn(document, "createElement").mockImplementation((tagName, options) => {
+    const element = originalCreateElement(tagName, options);
+
+    if (tagName !== "a") {
+      return element;
+    }
+
+    element.click = anchorClickMock;
+    capturedAnchor = element;
+    return element;
+  });
+
+  try {
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+    await userEvent.clear(screen.getByLabelText(/revision/i));
+    await userEvent.type(screen.getByLabelText(/revision/i), "Rev 0");
+    await userEvent.click(screen.getByRole("button", { name: /save as revision/i }));
+
+    expect(window.prompt).toHaveBeenCalled();
+    expect(anchorClickMock).toHaveBeenCalledTimes(1);
+    expect(capturedAnchor?.download).toBe("Revision Save Rev 1.json");
+    expect(screen.getByLabelText(/revision/i)).toHaveValue("Rev 1");
+    expect(screen.getByText(/saved as revision rev 1\./i)).toBeInTheDocument();
+    expect(screen.getByText(/^saved$/i)).toBeInTheDocument();
+  } finally {
+    window.prompt = originalPrompt;
     window.URL.createObjectURL = originalCreateObjectURL;
     window.URL.revokeObjectURL = originalRevokeObjectURL;
   }
@@ -109,10 +165,38 @@ test("open project restores app state from a saved json file", async () => {
     },
   });
 
-  expect(await screen.findByDisplayValue("Imported Project")).toBeInTheDocument();
-  expect(screen.getByDisplayValue("Imported Client")).toBeInTheDocument();
-  expect(screen.getByDisplayValue("Rev 2")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.getByLabelText(/project name/i)).toHaveValue("Imported Project");
+    expect(screen.getByLabelText(/estimate name/i)).toHaveValue("Imported Project");
+    expect(screen.getByLabelText(/client name/i)).toHaveValue("Imported Client");
+    expect(screen.getByLabelText(/revision/i)).toHaveValue("Rev 2");
+  });
   expect(screen.getByText(/opened project file: imported-project\.json/i)).toBeInTheDocument();
+});
+
+test("open project warns before discarding unsaved changes", async () => {
+  const originalConfirm = window.confirm;
+  const inputClickMock = jest.fn();
+
+  window.confirm = jest.fn(() => false);
+  jest.spyOn(HTMLInputElement.prototype, "click").mockImplementation(inputClickMock);
+
+  try {
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+    await userEvent.clear(screen.getByLabelText(/project name/i));
+    await userEvent.type(screen.getByLabelText(/project name/i), "Unsaved Draft");
+    await userEvent.click(screen.getByRole("button", { name: /open project/i }));
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringMatching(/unsaved changes/i)
+    );
+    expect(inputClickMock).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/project name/i)).toHaveValue("Unsaved Draft");
+  } finally {
+    window.confirm = originalConfirm;
+  }
 });
 
 test("open project shows a friendly error for invalid json files", async () => {
@@ -137,118 +221,147 @@ test("open project shows a friendly error for invalid json files", async () => {
 });
 
 test("new project resets project data without clearing global libraries", async () => {
-  window.localStorage.setItem(
-    "estimator-app-global-libraries",
-    JSON.stringify({
+  const originalConfirm = window.confirm;
+  window.confirm = jest.fn(() => true);
+
+  try {
+    window.localStorage.setItem(
+      "estimator-app-global-libraries",
+      JSON.stringify({
+        stages: [{ id: "stage-custom", name: "Custom Stage", sortOrder: 1, isActive: true }],
+        trades: [{ id: "trade-custom", name: "Custom Trade", sortOrder: 1, isActive: true }],
+        costCodes: [{ id: "cost-code-custom", name: "Custom Cost Code", sortOrder: 1, isActive: true }],
+        units: [{ id: "unit-custom", name: "Custom Unit", abbreviation: "CU", sortOrder: 1, isActive: true }],
+        elements: [{ id: "element-custom", name: "Custom Element", sortOrder: 1, isActive: true }],
+        roomTypes: [{ id: "room-type-custom", name: "Custom Room Type", sortOrder: 1, isActive: true }],
+      })
+    );
+    window.localStorage.setItem(
+      "estimator-app-library-data",
+      JSON.stringify({
+        roomTemplates: [
+          {
+            id: "template-custom",
+            name: "Custom Room",
+            roomTypeId: "room-type-custom",
+            roomType: "Custom Room Type",
+            length: 1,
+            width: 1,
+            height: 1,
+            tileHeight: 0,
+            waterproofWallHeight: 0,
+            quantity: 1,
+            include: true,
+            assemblyIds: [],
+            customItems: [],
+          },
+        ],
+        assemblies: [],
+        costs: [],
+      })
+    );
+    window.localStorage.setItem(
+      "estimator-app-project-data",
+      JSON.stringify({
+        projectName: "Saved Project",
+        clientName: "Saved Client",
+        projectAddress: "123 Example Street",
+        contactDetails: "saved@example.com",
+        projectManager: "PM Saved",
+        estimator: "Estimator Saved",
+        revision: "Rev 7",
+        projectRooms: [
+          {
+            id: "project-room-custom",
+            templateId: "template-custom",
+            name: "Custom Room",
+            sectionId: "",
+            roomTypeId: "room-type-custom",
+            roomType: "Custom Room Type",
+            length: 1,
+            width: 1,
+            height: 1,
+            tileHeight: 0,
+            waterproofWallHeight: 0,
+            quantity: 1,
+            include: true,
+            assemblyIds: [],
+            customItems: [],
+          },
+        ],
+        estimateRowOverrides: { "row-1": { rate: 123 } },
+        lastSavedAt: "2026-03-22T01:02:03.000Z",
+      })
+    );
+
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+
+    expect(screen.getByLabelText(/project name/i)).toHaveValue("Saved Project");
+    expect(screen.getByLabelText(/client name/i)).toHaveValue("Saved Client");
+    expect(screen.getByLabelText(/project address/i)).toHaveValue("123 Example Street");
+    expect(screen.getByLabelText(/contact details/i)).toHaveValue("saved@example.com");
+    expect(screen.getByLabelText(/project manager/i)).toHaveValue("PM Saved");
+    expect(screen.getByLabelText(/estimator/i)).toHaveValue("Estimator Saved");
+    expect(screen.getByLabelText(/revision/i)).toHaveValue("Rev 7");
+
+    await userEvent.click(screen.getByRole("button", { name: /new project/i }));
+
+    expect(screen.getByLabelText(/project name/i)).toHaveValue("Untitled Project");
+    expect(screen.getByLabelText(/client name/i)).toHaveValue("");
+    expect(screen.getByLabelText(/project address/i)).toHaveValue("");
+    expect(screen.getByLabelText(/contact details/i)).toHaveValue("");
+    expect(screen.getByLabelText(/project manager/i)).toHaveValue("");
+    expect(screen.getByLabelText(/estimator/i)).toHaveValue("");
+    expect(screen.getByLabelText(/revision/i)).toHaveValue("Rev 0");
+
+    await userEvent.click(screen.getByRole("button", { name: /stage library/i }));
+    expect(screen.getByDisplayValue("Custom Stage")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /room library/i }));
+    expect(screen.getAllByText("Custom Room").length).toBeGreaterThan(0);
+
+    expect(JSON.parse(window.localStorage.getItem("estimator-app-global-libraries"))).toMatchObject({
       stages: [{ id: "stage-custom", name: "Custom Stage", sortOrder: 1, isActive: true }],
-      trades: [{ id: "trade-custom", name: "Custom Trade", sortOrder: 1, isActive: true }],
-      costCodes: [{ id: "cost-code-custom", name: "Custom Cost Code", sortOrder: 1, isActive: true }],
-      units: [{ id: "unit-custom", name: "Custom Unit", abbreviation: "CU", sortOrder: 1, isActive: true }],
-      elements: [{ id: "element-custom", name: "Custom Element", sortOrder: 1, isActive: true }],
-      roomTypes: [{ id: "room-type-custom", name: "Custom Room Type", sortOrder: 1, isActive: true }],
-    })
-  );
-  window.localStorage.setItem(
-    "estimator-app-library-data",
-    JSON.stringify({
-      roomTemplates: [
-        {
-          id: "template-custom",
-          name: "Custom Room",
-          roomTypeId: "room-type-custom",
-          roomType: "Custom Room Type",
-          length: 1,
-          width: 1,
-          height: 1,
-          tileHeight: 0,
-          waterproofWallHeight: 0,
-          quantity: 1,
-          include: true,
-          assemblyIds: [],
-          customItems: [],
-        },
-      ],
-      assemblies: [],
-      costs: [],
-    })
-  );
-  window.localStorage.setItem(
-    "estimator-app-project-data",
-    JSON.stringify({
-      projectName: "Saved Project",
-      clientName: "Saved Client",
-      projectAddress: "123 Example Street",
-      contactDetails: "saved@example.com",
-      projectManager: "PM Saved",
-      estimator: "Estimator Saved",
-      revision: "Rev 7",
-      projectRooms: [
-        {
-          id: "project-room-custom",
-          templateId: "template-custom",
-          name: "Custom Room",
-          sectionId: "",
-          roomTypeId: "room-type-custom",
-          roomType: "Custom Room Type",
-          length: 1,
-          width: 1,
-          height: 1,
-          tileHeight: 0,
-          waterproofWallHeight: 0,
-          quantity: 1,
-          include: true,
-          assemblyIds: [],
-          customItems: [],
-        },
-      ],
-      estimateRowOverrides: { "row-1": { rate: 123 } },
-      lastSavedAt: "2026-03-22T01:02:03.000Z",
-    })
-  );
+    });
+    expect(JSON.parse(window.localStorage.getItem("estimator-app-project-data"))).toMatchObject({
+      estimateName: "Untitled Estimate",
+      projectName: "Untitled Project",
+      clientName: "",
+      projectAddress: "",
+      contactDetails: "",
+      projectManager: "",
+      estimator: "",
+      revision: "Rev 0",
+      projectRooms: [],
+      estimateRowOverrides: {},
+      lastSavedAt: "",
+    });
+  } finally {
+    window.confirm = originalConfirm;
+  }
+});
 
-  render(<App />);
+test("new project can be cancelled when unsaved changes exist", async () => {
+  const originalConfirm = window.confirm;
+  window.confirm = jest.fn(() => false);
 
-  await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+  try {
+    render(<App />);
 
-  expect(screen.getByLabelText(/project name/i)).toHaveValue("Saved Project");
-  expect(screen.getByLabelText(/client name/i)).toHaveValue("Saved Client");
-  expect(screen.getByLabelText(/project address/i)).toHaveValue("123 Example Street");
-  expect(screen.getByLabelText(/contact details/i)).toHaveValue("saved@example.com");
-  expect(screen.getByLabelText(/project manager/i)).toHaveValue("PM Saved");
-  expect(screen.getByLabelText(/estimator/i)).toHaveValue("Estimator Saved");
-  expect(screen.getByLabelText(/revision/i)).toHaveValue("Rev 7");
+    await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+    await userEvent.clear(screen.getByLabelText(/project name/i));
+    await userEvent.type(screen.getByLabelText(/project name/i), "Do Not Reset");
+    await userEvent.click(screen.getByRole("button", { name: /new project/i }));
 
-  await userEvent.click(screen.getByRole("button", { name: /new project/i }));
-
-  expect(screen.getByLabelText(/project name/i)).toHaveValue("Untitled Project");
-  expect(screen.getByLabelText(/client name/i)).toHaveValue("");
-  expect(screen.getByLabelText(/project address/i)).toHaveValue("");
-  expect(screen.getByLabelText(/contact details/i)).toHaveValue("");
-  expect(screen.getByLabelText(/project manager/i)).toHaveValue("");
-  expect(screen.getByLabelText(/estimator/i)).toHaveValue("");
-  expect(screen.getByLabelText(/revision/i)).toHaveValue("Rev 0");
-
-  await userEvent.click(screen.getByRole("button", { name: /stage library/i }));
-  expect(screen.getByDisplayValue("Custom Stage")).toBeInTheDocument();
-
-  await userEvent.click(screen.getByRole("button", { name: /room library/i }));
-  expect(screen.getAllByText("Custom Room").length).toBeGreaterThan(0);
-
-  expect(JSON.parse(window.localStorage.getItem("estimator-app-global-libraries"))).toMatchObject({
-    stages: [{ id: "stage-custom", name: "Custom Stage", sortOrder: 1, isActive: true }],
-  });
-  expect(JSON.parse(window.localStorage.getItem("estimator-app-project-data"))).toMatchObject({
-    projectName: "Untitled Project",
-    clientName: "",
-    projectAddress: "",
-    contactDetails: "",
-    projectManager: "",
-    estimator: "",
-    revision: "Rev 0",
-    projectRooms: [],
-    estimateRowOverrides: {},
-    lastSavedAt: "",
-  });
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringMatching(/unsaved changes/i)
+    );
+    expect(screen.getByLabelText(/project name/i)).toHaveValue("Do Not Reset");
+  } finally {
+    window.confirm = originalConfirm;
+  }
 });
 
 test("estimate output stays empty when only legacy room library data exists", async () => {

@@ -4,15 +4,23 @@ import SectionCard from "../components/SectionCard";
 
 function ProjectDetailsPage({
   projectName,
+  estimateName,
   clientName,
   projectAddress,
   contactDetails,
   projectManager,
   estimator,
   revision,
+  localProjectId,
+  createdAt,
+  updatedAt,
+  hasUnsavedChanges,
   lastSavedAt,
+  lastBackupAt,
+  lastFileName,
   projectStatus,
   onProjectNameChange,
+  onEstimateNameChange,
   onClientNameChange,
   onProjectAddressChange,
   onContactDetailsChange,
@@ -20,6 +28,9 @@ function ProjectDetailsPage({
   onEstimatorChange,
   onRevisionChange,
   onSaveProject,
+  onSaveProjectAs,
+  onSaveAsRevision,
+  onBeginOpenProject,
   onOpenProject,
   onResetProject,
 }) {
@@ -36,6 +47,12 @@ function ProjectDetailsPage({
             <div className="library-form-span-2">
               <FormField label="Project name">
                 <input value={projectName} onChange={(event) => onProjectNameChange(event.target.value)} />
+              </FormField>
+            </div>
+
+            <div className="library-form-span-2">
+              <FormField label="Estimate name">
+                <input value={estimateName} onChange={(event) => onEstimateNameChange(event.target.value)} />
               </FormField>
             </div>
 
@@ -83,10 +100,20 @@ function ProjectDetailsPage({
             <button type="button" className="secondary-button" onClick={onSaveProject}>
               Save Project
             </button>
+            <button type="button" className="secondary-button" onClick={onSaveProjectAs}>
+              Save As
+            </button>
+            <button type="button" className="secondary-button" onClick={onSaveAsRevision}>
+              Save As Revision
+            </button>
             <button
               type="button"
               className="secondary-button"
-              onClick={() => openFileInputRef.current?.click()}
+              onClick={() => {
+                if (onBeginOpenProject()) {
+                  openFileInputRef.current?.click();
+                }
+              }}
             >
               Open Project
             </button>
@@ -112,7 +139,15 @@ function ProjectDetailsPage({
         <div className="library-table-panel">
           <div className="summary-section">
             <h3>Project Summary</h3>
+            <p className={`project-save-state ${hasUnsavedChanges ? "is-dirty" : "is-saved"}`}>
+              {hasUnsavedChanges ? "Unsaved changes" : "Saved"}
+            </p>
             <p className="sidebar-meta">Last saved: {lastSavedAt}</p>
+            <p className="sidebar-meta">Local backup: {lastBackupAt}</p>
+            <p className="sidebar-meta">Current file: {lastFileName}</p>
+            <p className="sidebar-meta">Local ID: {localProjectId}</p>
+            <p className="sidebar-meta">Created: {createdAt ? new Date(createdAt).toLocaleString() : "Not set"}</p>
+            <p className="sidebar-meta">Updated: {updatedAt ? new Date(updatedAt).toLocaleString() : "Not set"}</p>
             {projectStatus ? <p className="sidebar-status">{projectStatus}</p> : null}
           </div>
         </div>
