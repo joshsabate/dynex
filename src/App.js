@@ -1079,16 +1079,18 @@ function App() {
     <div className={activePage === "home" ? "home-background" : ""}>
       <div className="app-shell">
         <aside className="sidebar">
-          <div className="sidebar-brand">
+        <div className="sidebar-brand">
           <button
             type="button"
             className="sidebar-brand-button"
             onClick={() => setActivePage("home")}
           >
             <span className="sidebar-brand-mark">Dynex</span>
-            <span className="sidebar-brand-tagline">dynamic estimating system</span>
+            <span className="sidebar-brand-tagline">
+              dynamic estimating system
+            </span>
           </button>
-          </div>
+        </div>
 
         <button
           type="button"
@@ -1133,7 +1135,7 @@ function App() {
         </nav>
       </aside>
 
-      <main className="content">
+        <main className="content">
         {activePage === "home" && (
           <HomePage
             onStartProject={() => setActivePage("project-details")}
@@ -1310,7 +1312,7 @@ function App() {
             onRowOverrideChange={handleEstimateRowChange}
           />
         )}
-      </main>
+        </main>
       </div>
     </div>
   );
