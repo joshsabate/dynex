@@ -1076,9 +1076,10 @@ function App() {
   };
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="sidebar-brand">
+    <div className={activePage === "home" ? "home-background" : ""}>
+      <div className="app-shell">
+        <aside className="sidebar">
+          <div className="sidebar-brand">
           <button
             type="button"
             className="sidebar-brand-button"
@@ -1087,7 +1088,7 @@ function App() {
             <span className="sidebar-brand-mark">Dynex</span>
             <span className="sidebar-brand-tagline">dynamic estimating system</span>
           </button>
-        </div>
+          </div>
 
         <button
           type="button"
@@ -1310,6 +1311,7 @@ function App() {
           />
         )}
       </main>
+      </div>
     </div>
   );
 }

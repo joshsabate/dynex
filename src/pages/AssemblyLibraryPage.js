@@ -182,6 +182,13 @@ function AssemblyLibraryPage({
 }) {
   const importFileInputRef = useRef(null);
   const [form, setForm] = useState(defaultForm);
+  const [drawerState, setDrawerState] = useState({
+    isOpen: false,
+    mode: "create-group",
+    assemblyId: "",
+    assemblyGroupId: "",
+  });
+  const [showExpandedColumns, setShowExpandedColumns] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: "", direction: "asc" });
@@ -250,9 +257,122 @@ function AssemblyLibraryPage({
     (left, right) => left.itemName.localeCompare(right.itemName) || left.id.localeCompare(right.id)
   );
   const getDisplayName = (item) => getStructuredItemPresentation(item).displayName;
+  const getCoreItemName = (item) => String(item?.itemName || "").trim() || "Unassigned";
+  const getAssemblyRate = (assembly) => {
+    const linkedCost = getCostItem(assembly.costItemId, assembly.itemName);
+    const numericRate = Number(linkedCost?.rate ?? assembly.unitCost ?? "");
+    return Number.isFinite(numericRate) ? numericRate : 0;
+  };
+  const isLaborRelatedWorkType = (workType) => {
+    const normalizedWorkType = String(workType || "").trim().toLowerCase();
+    return normalizedWorkType === "install" || normalizedWorkType === "labour";
+  };
 
   const updateField = (key, value) => {
     setForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const openCreateGroupDrawer = () => {
+    setForm(defaultForm);
+    setDrawerState({
+      isOpen: true,
+      mode: "create-group",
+      assemblyId: "",
+      assemblyGroupId: "",
+    });
+  };
+
+  const openCreateItemDrawer = (assemblyGroup) => {
+    const templateRow = assemblyGroup.rows[0];
+    setForm({
+      assemblyCategory: templateRow?.assemblyCategory || defaultForm.assemblyCategory,
+      assemblyName: templateRow?.assemblyName || "",
+      appliesToRoomTypeId: templateRow?.appliesToRoomTypeId || defaultForm.appliesToRoomTypeId,
+      stageId: templateRow?.stageId || defaultForm.stageId,
+      elementId: templateRow?.elementId || defaultForm.elementId,
+      tradeId: templateRow?.tradeId || defaultForm.tradeId,
+      costCodeId: templateRow?.costCodeId || defaultForm.costCodeId,
+      costItemId: "",
+      itemName: "",
+      workType: templateRow?.workType || defaultForm.workType,
+      itemFamily: templateRow?.itemFamily || "",
+      specification: "",
+      gradeOrQuality: "",
+      brand: "",
+      finishOrVariant: "",
+      laborHoursPerUnit: String(templateRow?.laborHoursPerUnit ?? "0"),
+      laborCostItemId: templateRow?.laborCostItemId || "",
+      laborCostItemName: templateRow?.laborCostItemName || "",
+      unitId: templateRow?.unitId || defaultForm.unitId,
+      qtyRule: templateRow?.qtyRule || defaultForm.qtyRule,
+      sortOrder: String(
+        Math.max(
+          ...assemblyGroup.rows
+            .filter((row) => !row.isAssemblyGroupSeed)
+            .map((row) => row.sortOrder ?? 0),
+          0
+        ) + 1
+      ),
+    });
+    setDrawerState({
+      isOpen: true,
+      mode: "create-item",
+      assemblyId: "",
+      assemblyGroupId: assemblyGroup.id,
+    });
+  };
+
+  const openRenameGroupModal = (assemblyGroup) => {
+    const templateRow = assemblyGroup.rows[0];
+    setForm((current) => ({
+      ...current,
+      assemblyName: templateRow?.assemblyName || "",
+      appliesToRoomTypeId: templateRow?.appliesToRoomTypeId || defaultForm.appliesToRoomTypeId,
+      assemblyCategory: templateRow?.assemblyCategory || defaultForm.assemblyCategory,
+    }));
+    setDrawerState({
+      isOpen: true,
+      mode: "rename-group",
+      assemblyId: "",
+      assemblyGroupId: assemblyGroup.id,
+    });
+  };
+
+  const openEditDrawer = (assembly) => {
+    setForm({
+      assemblyCategory: assembly.assemblyCategory || defaultForm.assemblyCategory,
+      assemblyName: assembly.assemblyName || "",
+      appliesToRoomTypeId: assembly.appliesToRoomTypeId || defaultForm.appliesToRoomTypeId,
+      stageId: assembly.stageId || defaultForm.stageId,
+      elementId: assembly.elementId || defaultForm.elementId,
+      tradeId: assembly.tradeId || defaultForm.tradeId,
+      costCodeId: assembly.costCodeId || defaultForm.costCodeId,
+      costItemId: assembly.costItemId || "",
+      itemName: assembly.itemName || "",
+      workType: assembly.workType || "",
+      itemFamily: assembly.itemFamily || "",
+      specification: assembly.specification || "",
+      gradeOrQuality: assembly.gradeOrQuality || "",
+      brand: assembly.brand || "",
+      finishOrVariant: assembly.finishOrVariant || "",
+      laborHoursPerUnit: String(assembly.laborHoursPerUnit ?? "0"),
+      laborCostItemId: assembly.laborCostItemId || "",
+      laborCostItemName: assembly.laborCostItemName || "",
+      unitId: assembly.unitId || defaultForm.unitId,
+      qtyRule: assembly.qtyRule || defaultForm.qtyRule,
+      sortOrder: String(assembly.sortOrder ?? defaultForm.sortOrder),
+    });
+    setDrawerState({
+      isOpen: true,
+      mode: "edit-item",
+      assemblyId: assembly.id,
+      assemblyGroupId: assembly.assemblyId || getAssemblyGroupId(assembly),
+    });
+  };
+
+  const closeDrawer = () => {
+    setDrawerState({ isOpen: false, mode: "create-group", assemblyId: "", assemblyGroupId: "" });
+    setForm(defaultForm);
   };
 
   const updateCostItemField = (value) => {
@@ -273,16 +393,6 @@ function AssemblyLibraryPage({
           : selectedCost?.workType || current.workType,
       unitId: selectedCost?.unitId || "",
       unit: getUnitLabel(selectedCost?.unitId, selectedCost?.unit || ""),
-    }));
-  };
-
-  const updateLaborCostItemField = (value) => {
-    const selectedCost = getCostItem(value);
-
-    setForm((current) => ({
-      ...current,
-      laborCostItemId: value,
-      laborCostItemName: selectedCost?.itemName || "",
     }));
   };
 
@@ -318,52 +428,137 @@ function AssemblyLibraryPage({
     }));
   };
 
-  const addAssemblyRow = (event) => {
+  const saveAssembly = (event) => {
     event.preventDefault();
-    if (!form.assemblyName || !form.costItemId) {
+    if (!form.assemblyName) {
       return;
     }
 
+    if (drawerState.mode === "create-group") {
+      const assemblyGroupId = getAssemblyGroupId(form);
+      const existingGroup = assemblies.some(
+        (assembly) => (assembly.assemblyId || getAssemblyGroupId(assembly)) === assemblyGroupId
+      );
+
+      if (existingGroup) {
+        closeDrawer();
+        return;
+      }
+
+      onAssembliesChange([
+        ...assemblies,
+        {
+          id: `assembly-group-seed-${Date.now()}`,
+          assemblyId: assemblyGroupId,
+          assemblyCategory: form.assemblyCategory,
+          assemblyName: form.assemblyName,
+          appliesToRoomTypeId: form.appliesToRoomTypeId,
+          appliesToRoomType: getRoomTypeName(form.appliesToRoomTypeId),
+          stageId: defaultForm.stageId,
+          stage: getStageName(defaultForm.stageId),
+          elementId: defaultForm.elementId,
+          element: getElementName(defaultForm.elementId),
+          tradeId: defaultForm.tradeId,
+          trade: getTradeName(defaultForm.tradeId),
+          costCodeId: defaultForm.costCodeId,
+          costCode: getCostCodeName(defaultForm.costCodeId),
+          costItemId: "",
+          itemName: "",
+          workType: "",
+          itemFamily: "",
+          specification: "",
+          gradeOrQuality: "",
+          brand: "",
+          finishOrVariant: "",
+          laborHoursPerUnit: 0,
+          laborCostItemId: "",
+          laborCostItemName: "",
+          unitId: "",
+          unit: "",
+          qtyRule: defaultForm.qtyRule,
+          sortOrder: 0,
+          isAssemblyGroupSeed: true,
+        },
+      ]);
+      closeDrawer();
+      return;
+    }
+
+    if (drawerState.mode === "rename-group") {
+      onAssembliesChange(
+        assemblies.map((assembly) =>
+          (assembly.assemblyId || getAssemblyGroupId(assembly)) === drawerState.assemblyGroupId
+            ? {
+                ...assembly,
+                assemblyName: form.assemblyName,
+                appliesToRoomTypeId: form.appliesToRoomTypeId,
+                appliesToRoomType: getRoomTypeName(form.appliesToRoomTypeId),
+                assemblyCategory: form.assemblyCategory,
+              }
+            : assembly
+        )
+      );
+      closeDrawer();
+      return;
+    }
+
+    if (!form.costItemId) {
+      return;
+    }
+
+    const editingAssembly = drawerState.assemblyId
+      ? assemblies.find((assembly) => assembly.id === drawerState.assemblyId)
+      : null;
+    const selectedCost = getCostItem(form.costItemId, form.itemName);
     const existingAssembly = assemblies.find(
       (assembly) =>
+        assembly.id !== drawerState.assemblyId &&
+        !assembly.isAssemblyGroupSeed &&
         assembly.assemblyName === form.assemblyName &&
         assembly.appliesToRoomTypeId === form.appliesToRoomTypeId
     );
+    const nextRow = {
+      id: editingAssembly?.id || `assembly-row-${Date.now()}`,
+      assemblyId:
+        existingAssembly?.assemblyId ||
+        editingAssembly?.assemblyId ||
+        getAssemblyGroupId(form),
+      assemblyCategory: form.assemblyCategory,
+      assemblyName: form.assemblyName,
+      appliesToRoomTypeId: form.appliesToRoomTypeId,
+      appliesToRoomType: getRoomTypeName(form.appliesToRoomTypeId),
+      stageId: form.stageId,
+      stage: getStageName(form.stageId),
+      elementId: form.elementId,
+      element: getElementName(form.elementId),
+      tradeId: form.tradeId,
+      trade: getTradeName(form.tradeId),
+      costCodeId: form.costCodeId,
+      costCode: getCostCodeName(form.costCodeId),
+      costItemId: form.costItemId,
+      itemName: form.itemName,
+      workType: form.workType,
+      itemFamily: form.itemFamily,
+      specification: form.specification,
+      gradeOrQuality: form.gradeOrQuality,
+      brand: form.brand,
+      finishOrVariant: form.finishOrVariant,
+      laborHoursPerUnit: Number(form.laborHoursPerUnit),
+      laborCostItemId: form.laborCostItemId,
+      laborCostItemName: form.laborCostItemName,
+      unitId: form.unitId,
+      unit: getUnitLabel(form.unitId),
+      unitCost: selectedCost?.rate ?? "",
+      qtyRule: form.qtyRule,
+      sortOrder: Number(form.sortOrder),
+      isAssemblyGroupSeed: false,
+    };
 
-    onAssembliesChange([
-      ...assemblies,
-      {
-        id: `assembly-row-${Date.now()}`,
-        assemblyId: existingAssembly?.assemblyId || getAssemblyGroupId(form),
-        assemblyCategory: form.assemblyCategory,
-        assemblyName: form.assemblyName,
-        appliesToRoomTypeId: form.appliesToRoomTypeId,
-        appliesToRoomType: getRoomTypeName(form.appliesToRoomTypeId),
-        stageId: form.stageId,
-        stage: getStageName(form.stageId),
-        elementId: form.elementId,
-        element: getElementName(form.elementId),
-        tradeId: form.tradeId,
-        trade: getTradeName(form.tradeId),
-        costCodeId: form.costCodeId,
-        costCode: getCostCodeName(form.costCodeId),
-        costItemId: form.costItemId,
-        itemName: form.itemName,
-        workType: form.workType,
-        itemFamily: form.itemFamily,
-        specification: form.specification,
-        gradeOrQuality: form.gradeOrQuality,
-        brand: form.brand,
-        finishOrVariant: form.finishOrVariant,
-        laborHoursPerUnit: Number(form.laborHoursPerUnit),
-        laborCostItemId: form.laborCostItemId,
-        laborCostItemName: form.laborCostItemName,
-        unitId: form.unitId,
-        unit: getUnitLabel(form.unitId),
-        qtyRule: form.qtyRule,
-        sortOrder: Number(form.sortOrder),
-      },
-    ]);
+    onAssembliesChange(
+      editingAssembly
+        ? assemblies.map((assembly) => (assembly.id === editingAssembly.id ? nextRow : assembly))
+        : [...assemblies, nextRow]
+    );
 
     setForm((current) => ({
       ...defaultForm,
@@ -378,10 +573,38 @@ function AssemblyLibraryPage({
       laborHoursPerUnit: current.laborHoursPerUnit,
       qtyRule: current.qtyRule,
     }));
+    setDrawerState({ isOpen: false, mode: "create-group", assemblyId: "", assemblyGroupId: "" });
   };
 
-  const removeAssembly = (assemblyId) => {
-    onAssembliesChange(assemblies.filter((assembly) => assembly.id !== assemblyId));
+  const deleteAssemblyRow = (assemblyId) => {
+    const assembly = assemblies.find((row) => row.id === assemblyId);
+    const label = assembly?.itemName || assembly?.assemblyName || "this assembly item";
+    if (!window.confirm(`Delete ${label}?`)) {
+      return;
+    }
+
+    onAssembliesChange(assemblies.filter((row) => row.id !== assemblyId));
+    if (drawerState.assemblyId === assemblyId) {
+      closeDrawer();
+    }
+  };
+
+  const deleteAssemblyGroup = (assemblyGroupId, shouldCloseDrawer = false) => {
+    if (!assemblyGroupId) {
+      return;
+    }
+
+    if (!window.confirm("Delete this entire assembly and all of its items?")) {
+      return;
+    }
+
+    onAssembliesChange(
+      assemblies.filter((row) => (row.assemblyId || getAssemblyGroupId(row)) !== assemblyGroupId)
+    );
+
+    if (shouldCloseDrawer || (drawerState.assemblyId && assemblies.find((row) => row.id === drawerState.assemblyId)?.assemblyId === assemblyGroupId)) {
+      closeDrawer();
+    }
   };
 
   const readFileAsText = (file) => {
@@ -535,42 +758,7 @@ function AssemblyLibraryPage({
   };
 
   const addItemToAssembly = (assemblyGroup) => {
-    const templateRow = assemblyGroup.rows[0];
-
-    onAssembliesChange([
-      ...assemblies,
-      {
-        id: `assembly-row-${Date.now()}`,
-        assemblyId: templateRow.assemblyId || assemblyGroup.id,
-        assemblyCategory: templateRow.assemblyCategory,
-        assemblyName: templateRow.assemblyName,
-        appliesToRoomTypeId: templateRow.appliesToRoomTypeId,
-        appliesToRoomType: templateRow.appliesToRoomType,
-        stageId: templateRow.stageId || "",
-        stage: templateRow.stage,
-        elementId: templateRow.elementId || "",
-        element: templateRow.element,
-        tradeId: templateRow.tradeId || "",
-        trade: templateRow.trade,
-        costCodeId: templateRow.costCodeId || "",
-        costCode: templateRow.costCode,
-        costItemId: "",
-        itemName: "",
-        workType: templateRow.workType || "",
-        itemFamily: templateRow.itemFamily || "",
-        specification: templateRow.specification || "",
-        gradeOrQuality: templateRow.gradeOrQuality || "",
-        brand: templateRow.brand || "",
-        finishOrVariant: templateRow.finishOrVariant || "",
-        laborHoursPerUnit: 0,
-        laborCostItemId: templateRow.laborCostItemId || "",
-        laborCostItemName: "",
-        unitId: "",
-        unit: "",
-        qtyRule: templateRow.qtyRule,
-        sortOrder: Math.max(...assemblyGroup.rows.map((row) => row.sortOrder ?? 0), 0) + 1,
-      },
-    ]);
+    openCreateItemDrawer(assemblyGroup);
   };
 
   const updateAssembly = (assemblyId, key, value) => {
@@ -596,16 +784,7 @@ function AssemblyLibraryPage({
                       : selectedCost?.workType || assembly.workType,
                   unitId: selectedCost?.unitId || "",
                   unit: getUnitLabel(selectedCost?.unitId, selectedCost?.unit || ""),
-                };
-              }
-
-              if (key === "laborCostItemId") {
-                const selectedCost = getCostItem(value);
-
-                return {
-                  ...assembly,
-                  laborCostItemId: value,
-                  laborCostItemName: selectedCost?.itemName || "",
+                  unitCost: selectedCost?.rate ?? assembly.unitCost,
                 };
               }
 
@@ -636,7 +815,7 @@ function AssemblyLibraryPage({
                     ? getUnitLabel(value, assembly.unit)
                     : assembly.unit,
                 [key]:
-                  key === "sortOrder" || key === "laborHoursPerUnit"
+                  key === "sortOrder" || key === "laborHoursPerUnit" || key === "unitCost"
                     ? Number(value)
                     : value,
               };
@@ -646,7 +825,8 @@ function AssemblyLibraryPage({
     );
   };
 
-  const labourCosts = sortedCosts.filter((cost) => isHourUnit(units, cost.unitId, cost.unit));
+  const shouldShowLaborHoursField =
+    form.workType === "Install" || form.workType === "Labour";
   const filteredAssemblies = (() => {
     const normalizedSearchTerm = searchTerm.trim().toLowerCase();
 
@@ -795,228 +975,33 @@ function AssemblyLibraryPage({
       description="Store assembly library rows. Multiple rows can share the same assembly name so one assembly can expand into multiple estimate items."
     >
       <div className="assembly-library-layout">
-        <form className="assembly-library-form" onSubmit={addAssemblyRow}>
-          <div className="assembly-library-form-grid">
-            <FormField label="Assembly name">
-              <input
-                value={form.assemblyName}
-                onChange={(event) => updateField("assemblyName", event.target.value)}
-                placeholder="Bathroom Floor Tile"
-              />
-            </FormField>
-
-            <FormField label="Stage">
-              <select
-                value={form.stageId}
-                onChange={(event) => updateField("stageId", event.target.value)}
-              >
-                {activeStages.map((stage) => (
-                  <option key={stage.id} value={stage.id}>
-                    {stage.name}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-
-            <FormField label="Applies to room type">
-              <select
-                value={form.appliesToRoomTypeId}
-                onChange={(event) => updateField("appliesToRoomTypeId", event.target.value)}
-              >
-                {activeRoomTypes.map((roomType) => (
-                  <option key={roomType.id} value={roomType.id}>
-                    {roomType.name}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-
-            <FormField label="Item name">
-              <select
-                value={form.costItemId}
-                onChange={(event) => updateCostItemField(event.target.value)}
-              >
-                <option value="">Select cost item</option>
-                {sortedCosts.map((cost) => (
-                  <option key={cost.id} value={cost.id}>
-                    {getDisplayName(cost)}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-
-            <FormField label="Work type">
-              <select
-                value={form.workType}
-                onChange={(event) => updateField("workType", event.target.value)}
-              >
-                <option value="">Unassigned</option>
-                {workTypeOptions.map((workType) => (
-                  <option key={workType} value={workType}>
-                    {workType}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-
-            <FormField label="Item family">
-              <select
-                value={form.itemFamily}
-                onChange={(event) => updateField("itemFamily", event.target.value)}
-              >
-                <option value="">Unassigned</option>
-                {activeItemFamilies.map((itemFamily) => (
-                  <option key={itemFamily.id} value={itemFamily.name}>
-                    {itemFamily.name}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-
-            <FormField label="Specification">
-              <input
-                value={form.specification}
-                onChange={(event) => updateField("specification", event.target.value)}
-                placeholder="90x45"
-              />
-            </FormField>
-
-            <FormField label="Grade / quality">
-              <input
-                value={form.gradeOrQuality}
-                onChange={(event) => updateField("gradeOrQuality", event.target.value)}
-                placeholder="MGP10 LOSP"
-              />
-            </FormField>
-
-            <FormField label="Brand">
-              <input
-                value={form.brand}
-                onChange={(event) => updateField("brand", event.target.value)}
-                placeholder="Caroma"
-              />
-            </FormField>
-
-            <FormField label="Finish / variant">
-              <input
-                value={form.finishOrVariant}
-                onChange={(event) => updateField("finishOrVariant", event.target.value)}
-                placeholder="Matt Black"
-              />
-            </FormField>
-
-            <FormField label="Trade">
-              <select
-                value={form.tradeId}
-                onChange={(event) => updateField("tradeId", event.target.value)}
-              >
-                {activeTrades.map((trade) => (
-                  <option key={trade.id} value={trade.id}>
-                    {trade.name}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-
-            <FormField label="Cost code">
-              <select
-                value={form.costCodeId}
-                onChange={(event) => updateField("costCodeId", event.target.value)}
-              >
-                {activeCostCodes.map((costCode) => (
-                  <option key={costCode.id} value={costCode.id}>
-                    {costCode.name}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-
-            <FormField label="Element">
-              <select
-                value={form.elementId}
-                onChange={(event) => updateField("elementId", event.target.value)}
-              >
-                {activeElements.map((element) => (
-                  <option key={element.id} value={element.id}>
-                    {element.name}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-
-            <FormField label="Unit">
-              <select
-                value={form.unitId}
-                onChange={(event) => updateField("unitId", event.target.value)}
-              >
-                {activeUnits.map((unit) => (
-                  <option key={unit.id} value={unit.id}>
-                    {unit.abbreviation}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-
-            <FormField label="Qty rule">
-              <select
-                value={form.qtyRule}
-                onChange={(event) => updateField("qtyRule", event.target.value)}
-              >
-                {qtyRules.map((qtyRule) => (
-                  <option key={qtyRule} value={qtyRule}>
-                    {qtyRule}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-
-            <FormField label="Labour hrs / unit">
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.laborHoursPerUnit}
-                onChange={(event) => updateField("laborHoursPerUnit", event.target.value)}
-              />
-            </FormField>
-
-            <FormField label="Labour cost item">
-              <select
-                value={form.laborCostItemId}
-                onChange={(event) => updateLaborCostItemField(event.target.value)}
-              >
-                <option value="">None</option>
-                {labourCosts.map((cost) => (
-                  <option key={cost.id} value={cost.id}>
-                    {getDisplayName(cost)}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-
-            <FormField label="Assembly category">
-              <input
-                value={form.assemblyCategory}
-                onChange={(event) => updateField("assemblyCategory", event.target.value)}
-              />
-            </FormField>
-
-            <FormField label="Sort order">
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={form.sortOrder}
-                onChange={(event) => updateField("sortOrder", event.target.value)}
-              />
-            </FormField>
-          </div>
-          <div className="action-row assembly-library-form-actions">
-            <button type="submit" className="primary-button">
-              Add assembly row
-            </button>
-          </div>
-        </form>
+        <div className="action-row assembly-library-page-toolbar">
+          <button
+            type="button"
+            className="primary-button assembly-library-toolbar-button"
+            onClick={openCreateGroupDrawer}
+          >
+            Add Assembly
+          </button>
+          <button
+            type="button"
+            className="estimate-builder-icon-button secondary-button assembly-library-toolbar-button"
+            onClick={() => importFileInputRef.current?.click()}
+            aria-label="Import CSV"
+            title="Import CSV"
+          >
+            <span aria-hidden="true">↑</span>
+          </button>
+          <button
+            type="button"
+            className="estimate-builder-icon-button secondary-button assembly-library-toolbar-button"
+            onClick={exportAssembliesAsCsv}
+            aria-label="Export CSV"
+            title="Export CSV"
+          >
+            <span aria-hidden="true">↓</span>
+          </button>
+        </div>
 
         <div className="assembly-library-table-panel">
           <div className="form-grid assembly-library-filters">
@@ -1027,9 +1012,9 @@ function AssemblyLibraryPage({
               >
                 <option value="">All stages</option>
                 {activeStages.map((stage) => (
-                  <option key={stage.id} value={stage.id}>
-                    {stage.name}
-                  </option>
+                <option key={stage.id} value={stage.id}>
+                  {stage.name}
+                </option>
                 ))}
               </select>
             </FormField>
@@ -1088,17 +1073,12 @@ function AssemblyLibraryPage({
           <div className="action-row assembly-library-toolbar-actions">
             <button
               type="button"
-              className="secondary-button"
-              onClick={exportAssembliesAsCsv}
+              className="estimate-builder-icon-button secondary-button"
+              onClick={() => setShowExpandedColumns((current) => !current)}
+              aria-label={showExpandedColumns ? "Show Less" : "Show More"}
+              title={showExpandedColumns ? "Show Less" : "Show More"}
             >
-              Export CSV
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => importFileInputRef.current?.click()}
-            >
-              Import CSV
+              <span aria-hidden="true">{showExpandedColumns ? "▴" : "▾"}</span>
             </button>
             {groupedAssemblies.length ? (
               <>
@@ -1109,7 +1089,7 @@ function AssemblyLibraryPage({
                 title="Expand All"
                 onClick={() => setAllAssemblyGroupsCollapsed(false)}
               >
-                <span aria-hidden="true">+</span>
+                <span aria-hidden="true">⌄</span>
               </button>
               <button
                 type="button"
@@ -1118,7 +1098,7 @@ function AssemblyLibraryPage({
                 title="Collapse All"
                 onClick={() => setAllAssemblyGroupsCollapsed(true)}
               >
-                <span aria-hidden="true">-</span>
+                <span aria-hidden="true">⌃</span>
               </button>
               </>
             ) : null}
@@ -1143,60 +1123,121 @@ function AssemblyLibraryPage({
             <div className="assembly-groups">
               {groupedAssemblies.map((assemblyGroup) => {
                 const isExpanded = !isAssemblyGroupCollapsed(assemblyGroup.id);
+                const visibleRows = assemblyGroup.rows.filter((row) => !row.isAssemblyGroupSeed);
                 return (
                 <div
                   key={assemblyGroup.id}
                   className={`assembly-group-card ${isExpanded ? "assembly-group-card-expanded" : ""}`}
                 >
                   <div className="assembly-group-header">
-                    <button
-                      type="button"
-                      className="estimate-group-toggle"
-                      onClick={() => toggleAssemblyGroup(assemblyGroup.id)}
-                    >
-                      <span>{isAssemblyGroupCollapsed(assemblyGroup.id) ? "+" : "-"}</span>
-                      <span>{assemblyGroup.assemblyName}</span>
-                    </button>
+                    <div className="assembly-group-title-row">
+                      <button
+                        type="button"
+                        className="estimate-group-toggle"
+                        onClick={() => toggleAssemblyGroup(assemblyGroup.id)}
+                      >
+                        <span>{isAssemblyGroupCollapsed(assemblyGroup.id) ? "+" : "-"}</span>
+                        <span>{assemblyGroup.assemblyName}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="cost-library-row-action assembly-group-rename"
+                        aria-label="Rename Assembly"
+                        title="Rename Assembly"
+                        onClick={() => openRenameGroupModal(assemblyGroup)}
+                      >
+                        {"✎"}
+                      </button>
+                    </div>
                     <div className="assembly-group-meta">
                       <span>{assemblyGroup.roomType}</span>
                       <span>
-                        {assemblyGroup.rows.length} item
-                        {assemblyGroup.rows.length === 1 ? "" : "s"}
+                        {visibleRows.length} item
+                        {visibleRows.length === 1 ? "" : "s"}
                       </span>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => addItemToAssembly(assemblyGroup)}
-                      >
-                        Add Item
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => togglePreviewPanel(assemblyGroup.id)}
-                      >
-                        {previewAssemblyGroupId === assemblyGroup.id ? "Close Preview" : "Preview / Test"}
-                      </button>
+                      <div className="assembly-group-actions">
+                        <button
+                          type="button"
+                          className="estimate-builder-icon-button secondary-button"
+                          aria-label="Add Item"
+                          title="Add Item"
+                          onClick={() => addItemToAssembly(assemblyGroup)}
+                        >
+                          <span aria-hidden="true">+</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`estimate-builder-icon-button secondary-button${
+                            previewAssemblyGroupId === assemblyGroup.id
+                              ? " estimate-builder-icon-button-active"
+                              : ""
+                          }`}
+                          aria-label="Preview / Test"
+                          title="Preview / Test"
+                          onClick={() => togglePreviewPanel(assemblyGroup.id)}
+                        >
+                          <span aria-hidden="true">👁</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="cost-library-row-action is-delete assembly-library-group-delete"
+                          aria-label="Delete Assembly"
+                          title="Delete Assembly"
+                          onClick={() => deleteAssemblyGroup(assemblyGroup.id)}
+                        >
+                          {"×"}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
                   {isExpanded ? (
                     <div className="assembly-group-body">
-                    <DataTable
-                      columns={[
+                    {(() => {
+                      const baseColumns = [
+                        {
+                          key: "coreItem",
+                          header: "Core Item",
+                          className: "assembly-col-core assembly-col-primary",
+                          render: (row) =>
+                            getCoreItemName(getCostItem(row.costItemId, row.itemName) || row),
+                        },
                         {
                           key: "itemName",
                           header: sortableHeader("Item Name", "itemName"),
-                          className: "assembly-col-item assembly-col-primary assembly-group-end-identity",
+                          className:
+                            "assembly-col-item assembly-col-primary assembly-group-end-identity",
                           render: (row) => (
                             <select
                               value={row.costItemId || getCostItem("", row.itemName)?.id || ""}
-                              onChange={(event) => updateAssembly(row.id, "costItemId", event.target.value)}
+                              onChange={(event) =>
+                                updateAssembly(row.id, "costItemId", event.target.value)
+                              }
                             >
                               <option value="">Select cost item</option>
                               {sortedCosts.map((cost) => (
                                 <option key={cost.id} value={cost.id}>
                                   {getDisplayName(cost)}
+                                </option>
+                              ))}
+                            </select>
+                          ),
+                        },
+                        {
+                          key: "workType",
+                          header: "Work Type",
+                          className: "assembly-col-work-type assembly-col-primary",
+                          render: (row) => (
+                            <select
+                              value={row.workType || ""}
+                              onChange={(event) =>
+                                updateAssembly(row.id, "workType", event.target.value)
+                              }
+                            >
+                              <option value="">Unassigned</option>
+                              {workTypeOptions.map((workType) => (
+                                <option key={workType} value={workType}>
+                                  {workType}
                                 </option>
                               ))}
                             </select>
@@ -1245,11 +1286,14 @@ function AssemblyLibraryPage({
                         {
                           key: "costCodeId",
                           header: sortableHeader("Cost Code", "costCode"),
-                          className: "assembly-col-cost-code assembly-col-primary assembly-group-end-classification",
+                          className:
+                            "assembly-col-cost-code assembly-col-primary assembly-group-end-classification",
                           render: (row) => (
                             <select
                               value={row.costCodeId || ""}
-                              onChange={(event) => updateAssembly(row.id, "costCodeId", event.target.value)}
+                              onChange={(event) =>
+                                updateAssembly(row.id, "costCodeId", event.target.value)
+                              }
                             >
                               <option value="">Unassigned</option>
                               {activeCostCodes.map((costCode) => (
@@ -1280,7 +1324,7 @@ function AssemblyLibraryPage({
                         {
                           key: "unitId",
                           header: "Unit",
-                          className: "assembly-col-unit assembly-col-secondary assembly-group-end-values",
+                          className: "assembly-col-unit assembly-col-secondary",
                           render: (row) => (
                             <select
                               value={row.unitId || ""}
@@ -1294,6 +1338,42 @@ function AssemblyLibraryPage({
                               ))}
                             </select>
                           ),
+                        },
+                        {
+                          key: "rate",
+                          header: "Rate",
+                          className: "assembly-col-rate assembly-col-secondary assembly-group-end-values",
+                          render: (row) => (
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={String(row.unitCost ?? getAssemblyRate(row))}
+                              onChange={(event) => updateAssembly(row.id, "unitCost", event.target.value)}
+                            />
+                          ),
+                        },
+                      ];
+
+                      const expandedColumns = [
+                        {
+                          key: "laborHoursPerUnit",
+                          header: "Labour Hrs/Unit",
+                          className: "assembly-col-labour-hours assembly-col-secondary",
+                          render: (row) =>
+                            isLaborRelatedWorkType(row.workType) ? (
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={String(row.laborHoursPerUnit ?? "")}
+                                onChange={(event) =>
+                                  updateAssembly(row.id, "laborHoursPerUnit", event.target.value)
+                                }
+                              />
+                            ) : (
+                              <span className="assembly-library-static-muted">—</span>
+                            ),
                         },
                         {
                           key: "appliesToRoomTypeId",
@@ -1315,41 +1395,56 @@ function AssemblyLibraryPage({
                           ),
                         },
                         {
-                          key: "laborCostItemName",
-                          header: "Labour Cost Item",
-                          className: "assembly-col-labour-item assembly-col-secondary",
+                          key: "sortOrder",
+                          header: "Sort",
+                          className: "assembly-col-sort assembly-col-secondary",
                           render: (row) => (
-                            <select
-                              value={row.laborCostItemId || getCostItem("", row.laborCostItemName)?.id || ""}
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={String(row.sortOrder ?? "")}
                               onChange={(event) =>
-                                updateAssembly(row.id, "laborCostItemId", event.target.value)
+                                updateAssembly(row.id, "sortOrder", event.target.value)
                               }
-                            >
-                              <option value="">None</option>
-                              {labourCosts.map((cost) => (
-                                <option key={cost.id} value={cost.id}>
-                                  {getDisplayName(cost)}
-                                </option>
-                              ))}
-                            </select>
+                            />
                           ),
                         },
-                      ]}
-                      rows={assemblyGroup.rows}
+                      ];
+
+                      return (
+                    <DataTable
+                      columns={showExpandedColumns ? [...baseColumns, ...expandedColumns] : baseColumns}
+                      rows={visibleRows}
                       emptyMessage="No assembly items."
                       wrapClassName="assembly-library-table-wrap"
                       tableClassName="assembly-library-table"
                       actionsColumnClassName="table-col-actions"
                       renderActions={(row) => (
-                        <button
-                          type="button"
-                          className="danger-button"
-                          onClick={() => removeAssembly(row.id)}
-                        >
-                          Remove
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            className="cost-library-row-action"
+                            aria-label={`Edit ${row.itemName || "assembly row"}`}
+                            title="Edit row"
+                            onClick={() => openEditDrawer(row)}
+                          >
+                            {"✎"}
+                          </button>
+                          <button
+                            type="button"
+                            className="cost-library-row-action is-delete"
+                            aria-label={`Delete ${row.itemName || "assembly row"}`}
+                            title="Delete row"
+                            onClick={() => deleteAssemblyRow(row.id)}
+                          >
+                            {"×"}
+                          </button>
+                        </>
                       )}
                     />
+                      );
+                    })()}
                     </div>
                   ) : null}
 
@@ -1359,7 +1454,7 @@ function AssemblyLibraryPage({
                         <div className="assembly-preview-section">
                           <h4>Test Inputs</h4>
                           <div className="form-grid assembly-preview-inputs">
-                            {getPreviewInputKeys(assemblyGroup.rows).map((inputKey) => (
+                            {getPreviewInputKeys(visibleRows).map((inputKey) => (
                               <FormField
                                 key={inputKey}
                                 label={`${previewInputLabels[inputKey]}${
@@ -1389,7 +1484,7 @@ function AssemblyLibraryPage({
                         <div className="assembly-preview-section">
                           <h4>Derived Values</h4>
                           <div className="assembly-preview-metrics">
-                            {getPreviewDerivedKeys(assemblyGroup.rows).map((metricKey) => (
+                            {getPreviewDerivedKeys(visibleRows).map((metricKey) => (
                               <div key={metricKey} className="assembly-preview-metric">
                                 <strong>{derivedMetricLabels[metricKey]}</strong>
                                 <span>
@@ -1406,6 +1501,12 @@ function AssemblyLibraryPage({
 
                       <DataTable
                         columns={[
+                          {
+                            key: "coreItem",
+                            header: "Core Item",
+                            render: (row) =>
+                              getCoreItemName(getCostItem(row.costItemId, row.itemName) || row),
+                          },
                           { key: "itemName", header: "Item" },
                           { key: "qtyRule", header: "Qty Rule" },
                           {
@@ -1421,8 +1522,17 @@ function AssemblyLibraryPage({
                             header: "Unit",
                             render: (row) => getUnitAbbreviation(units, row.unitId, row.unit),
                           },
+                          {
+                            key: "cost",
+                            header: "Cost",
+                            render: (row) =>
+                              formatPreviewValue(
+                                getQtyRuleQuantity(row.qtyRule, getPreviewMetrics(assemblyGroup.id)) *
+                                  getAssemblyRate(row)
+                              ),
+                          },
                         ]}
-                        rows={assemblyGroup.rows}
+                        rows={visibleRows}
                         emptyMessage="No assembly items."
                       />
                     </div>
@@ -1439,6 +1549,274 @@ function AssemblyLibraryPage({
           )}
         </div>
       </div>
+      {drawerState.isOpen ? (
+        <div
+          className={`assembly-library-drawer-backdrop${
+            drawerState.mode === "create-group" ||
+            drawerState.mode === "rename-group" ||
+            drawerState.mode === "create-item" ||
+            drawerState.mode === "edit-item"
+              ? " assembly-library-modal-backdrop"
+              : ""
+          }`}
+          onClick={closeDrawer}
+        >
+          <aside
+            className={`assembly-library-drawer${
+              drawerState.mode === "create-group" || drawerState.mode === "rename-group"
+                ? " assembly-library-modal"
+                : drawerState.mode === "create-item" || drawerState.mode === "edit-item"
+                  ? " assembly-library-modal assembly-library-item-modal"
+                : ""
+            }`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="assembly-library-drawer-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="assembly-library-drawer-header">
+              <div>
+                <p className="assembly-library-drawer-kicker">Assembly Library</p>
+                <h3 id="assembly-library-drawer-title">
+                  {drawerState.mode === "create-group"
+                    ? "Add Assembly"
+                    : drawerState.mode === "rename-group"
+                      ? "Rename Assembly"
+                    : drawerState.mode === "create-item"
+                      ? "Add Item"
+                      : "Edit Item"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={closeDrawer}
+              >
+                Close
+              </button>
+            </div>
+            <form className="assembly-library-drawer-form" onSubmit={saveAssembly}>
+              {drawerState.mode === "create-group" || drawerState.mode === "rename-group" ? (
+                <div className="assembly-library-drawer-section">
+                  <div className="assembly-library-drawer-section-label">Identity</div>
+                  <FormField label="Assembly Name">
+                    <input
+                      value={form.assemblyName}
+                      onChange={(event) => updateField("assemblyName", event.target.value)}
+                      placeholder="Bathroom Floor Tile"
+                    />
+                  </FormField>
+                  <FormField label="Applies to Room Type">
+                    <select
+                      value={form.appliesToRoomTypeId}
+                      onChange={(event) => updateField("appliesToRoomTypeId", event.target.value)}
+                    >
+                      {activeRoomTypes.map((roomType) => (
+                        <option key={roomType.id} value={roomType.id}>
+                          {roomType.name}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+                  <FormField label="Assembly Category">
+                    <input
+                      value={form.assemblyCategory}
+                      onChange={(event) => updateField("assemblyCategory", event.target.value)}
+                    />
+                  </FormField>
+                </div>
+              ) : null}
+              {drawerState.mode === "create-item" || drawerState.mode === "edit-item" ? (
+                <div className="assembly-library-item-modal-grid">
+                  <div className="assembly-library-drawer-section assembly-library-item-group assembly-library-item-group-primary">
+                    <div className="assembly-library-drawer-section-label">Item / Classification</div>
+                    <FormField label="Item name">
+                      <select
+                        value={form.costItemId}
+                        onChange={(event) => updateCostItemField(event.target.value)}
+                      >
+                        <option value="">Select cost item</option>
+                        {sortedCosts.map((cost) => (
+                          <option key={cost.id} value={cost.id}>
+                            {getDisplayName(cost)}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <FormField label="Work type">
+                      <select
+                        value={form.workType}
+                        onChange={(event) => updateField("workType", event.target.value)}
+                      >
+                        <option value="">Unassigned</option>
+                        {workTypeOptions.map((workType) => (
+                          <option key={workType} value={workType}>
+                            {workType}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <FormField label="Stage">
+                      <select
+                        value={form.stageId}
+                        onChange={(event) => updateField("stageId", event.target.value)}
+                      >
+                        {activeStages.map((stage) => (
+                          <option key={stage.id} value={stage.id}>
+                            {stage.name}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <FormField label="Trade">
+                      <select
+                        value={form.tradeId}
+                        onChange={(event) => updateField("tradeId", event.target.value)}
+                      >
+                        {activeTrades.map((trade) => (
+                          <option key={trade.id} value={trade.id}>
+                            {trade.name}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <FormField label="Cost code">
+                      <select
+                        value={form.costCodeId}
+                        onChange={(event) => updateField("costCodeId", event.target.value)}
+                      >
+                        {activeCostCodes.map((costCode) => (
+                          <option key={costCode.id} value={costCode.id}>
+                            {costCode.name}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <FormField label="Item family">
+                      <select
+                        value={form.itemFamily}
+                        onChange={(event) => updateField("itemFamily", event.target.value)}
+                      >
+                        <option value="">Unassigned</option>
+                        {activeItemFamilies.map((itemFamily) => (
+                          <option key={itemFamily.id} value={itemFamily.name}>
+                            {itemFamily.name}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <FormField label="Specification">
+                      <input
+                        value={form.specification}
+                        onChange={(event) => updateField("specification", event.target.value)}
+                        placeholder="90x45"
+                      />
+                    </FormField>
+                    <FormField label="Grade / quality">
+                      <input
+                        value={form.gradeOrQuality}
+                        onChange={(event) => updateField("gradeOrQuality", event.target.value)}
+                        placeholder="MGP10 LOSP"
+                      />
+                    </FormField>
+                    <FormField label="Brand">
+                      <input
+                        value={form.brand}
+                        onChange={(event) => updateField("brand", event.target.value)}
+                        placeholder="Caroma"
+                      />
+                    </FormField>
+                    <FormField label="Finish / variant">
+                      <input
+                        value={form.finishOrVariant}
+                        onChange={(event) => updateField("finishOrVariant", event.target.value)}
+                        placeholder="Matt Black"
+                      />
+                    </FormField>
+                    <FormField label="Element">
+                      <select
+                        value={form.elementId}
+                        onChange={(event) => updateField("elementId", event.target.value)}
+                      >
+                        {activeElements.map((element) => (
+                          <option key={element.id} value={element.id}>
+                            {element.name}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                  </div>
+
+                  <div className="assembly-library-drawer-section assembly-library-item-group assembly-library-item-group-secondary">
+                    <div className="assembly-library-drawer-section-label">Quantity / Logic</div>
+                    <FormField label="Unit">
+                      <select
+                        value={form.unitId}
+                        onChange={(event) => updateField("unitId", event.target.value)}
+                      >
+                        {activeUnits.map((unit) => (
+                          <option key={unit.id} value={unit.id}>
+                            {unit.abbreviation}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <FormField label="Qty rule">
+                      <select
+                        value={form.qtyRule}
+                        onChange={(event) => updateField("qtyRule", event.target.value)}
+                      >
+                        {qtyRules.map((qtyRule) => (
+                          <option key={qtyRule} value={qtyRule}>
+                            {qtyRule}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    {shouldShowLaborHoursField ? (
+                      <FormField label="Labour Hrs/Unit">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={form.laborHoursPerUnit}
+                          onChange={(event) => updateField("laborHoursPerUnit", event.target.value)}
+                          placeholder="e.g. 0.25, 0.50, 1.20"
+                        />
+                      </FormField>
+                    ) : null}
+                    <FormField label="Sort order">
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={form.sortOrder}
+                        onChange={(event) => updateField("sortOrder", event.target.value)}
+                      />
+                    </FormField>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="assembly-library-drawer-actions">
+                <div />
+                <div className="assembly-library-drawer-actions-right">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={closeDrawer}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="primary-button">
+                    {drawerState.mode === "edit-item" ? "Save Changes" : "Save"}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </aside>
+        </div>
+      ) : null}
     </SectionCard>
   );
 }

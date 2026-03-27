@@ -1084,37 +1084,37 @@ function EstimateBuilderPage({
     <div className="estimate-builder-section-actions" aria-label={`Section actions for ${section.name}`}>
       {renderIconActionButton({
         label: "Add Room",
-        icon: "+R",
+        icon: "Room",
         className: "estimate-builder-section-action estimate-builder-section-action-room",
         onClick: () => openSectionAction(section, "room"),
       })}
       {renderIconActionButton({
         label: "Add Assembly",
-        icon: "+A",
+        icon: "Asm",
         className: "estimate-builder-section-action estimate-builder-section-action-assembly",
         onClick: () => openSectionAction(section, "assembly"),
       })}
       {renderIconActionButton({
         label: "Add Cost Item",
-        icon: "+$",
+        icon: "Cost",
         className: "estimate-builder-section-action estimate-builder-section-action-cost",
         onClick: () => openSectionAction(section, "cost-item"),
       })}
       {renderIconActionButton({
         label: "Add Manual Item",
-        icon: "+I",
+        icon: "Item",
         className: "estimate-builder-section-action estimate-builder-section-action-manual",
         onClick: () => openSectionAction(section, "manual-item"),
       })}
       {renderIconActionButton({
         label: "Add Manual Labour",
-        icon: "+L",
+        icon: "Lab",
         className: "estimate-builder-section-action estimate-builder-section-action-labour",
         onClick: () => openSectionAction(section, "manual-labour"),
       })}
       {renderIconActionButton({
         label: "Add Child Section",
-        icon: "+S",
+        icon: "Sub",
         className: "estimate-builder-section-action estimate-builder-section-action-child",
         onClick: () => openSectionAction(section, "child-section"),
       })}
@@ -1853,25 +1853,26 @@ function EstimateBuilderPage({
                   </span>
                   <button
                     type="button"
-                    className="secondary-button"
+                    className="secondary-button estimate-builder-toolbar-compact-button"
                     onClick={() => setSectionRoomsCollapsed(section.id, false)}
+                    title="Expand Rooms"
                   >
-                    Expand Rooms
+                    Expand
                   </button>
                   <button
                     type="button"
-                    className="secondary-button"
+                    className="secondary-button estimate-builder-toolbar-compact-button"
                     onClick={() => setSectionRoomsCollapsed(section.id, true)}
+                    title="Collapse Rooms"
                   >
-                    Collapse Rooms
+                    Collapse
                   </button>
-                  <button
-                    type="button"
-                    className="danger-button"
-                    onClick={() => removeSection(section.id)}
-                  >
-                    Remove
-                  </button>
+                  {renderIconActionButton({
+                    label: "Remove",
+                    icon: "×",
+                    className: "danger-button estimate-builder-toolbar-remove-button",
+                    onClick: () => removeSection(section.id),
+                  })}
                 </div>
               </div>
 
@@ -2814,7 +2815,13 @@ function EstimateBuilderPage({
           </FormField>
 
           <details className="estimate-builder-toolbar-menu">
-            <summary>Filter{activeBuilderFilterCount ? ` (${activeBuilderFilterCount})` : ""}</summary>
+            <summary
+              className="toolbar-icon-button"
+              aria-label={`Filter estimate items${activeBuilderFilterCount ? ` (${activeBuilderFilterCount} active)` : ""}`}
+              title={`Filter estimate items${activeBuilderFilterCount ? ` (${activeBuilderFilterCount} active)` : ""}`}
+            >
+              <span aria-hidden="true">⛃</span>
+            </summary>
             <div className="estimate-builder-toolbar-menu-panel">
               <FormField label="Work type">
                 <select
@@ -2872,8 +2879,14 @@ function EstimateBuilderPage({
                 </select>
               </FormField>
 
-              <button type="button" className="secondary-button" onClick={clearBuilderFilters}>
-                Clear filters
+              <button
+                type="button"
+                className="estimate-builder-icon-button secondary-button"
+                onClick={clearBuilderFilters}
+                aria-label="Clear filters"
+                title="Clear filters"
+              >
+                <span aria-hidden="true">×</span>
               </button>
             </div>
           </details>

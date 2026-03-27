@@ -20,6 +20,7 @@ const defaultForm = {
   finishOrVariant: "",
   unitId: "unit-sqm",
   rate: "",
+  notes: "",
   sourceLink: "",
 };
 
@@ -66,9 +67,25 @@ const defaultColumnOrder = [
   "rate",
 ];
 
+const essentialColumnKeys = [
+  "itemName",
+  "displayName",
+  "workType",
+  "itemFamily",
+  "tradeId",
+  "rate",
+];
+
+function createPanelForm(overrides = {}) {
+  return {
+    ...defaultForm,
+    ...overrides,
+  };
+}
+
 const defaultColumnWidths = {
-  displayName: 240,
-  itemName: 240,
+  displayName: 300,
+  itemName: 190,
   itemFamily: 132,
   workType: 110,
   tradeId: 132,
@@ -79,7 +96,7 @@ const defaultColumnWidths = {
   finishOrVariant: 110,
   unitId: 74,
   rate: 88,
-  actions: 44,
+  actions: 96,
 };
 
 function cleanText(value) {
@@ -168,7 +185,9 @@ function CostLibraryPage({
   const [columnOrder, setColumnOrder] = useState(storedColumnPreferences.order);
   const [columnWidths, setColumnWidths] = useState(storedColumnPreferences.widths);
   const [draggedColumnKey, setDraggedColumnKey] = useState("");
-  const [activeLinkEditorId, setActiveLinkEditorId] = useState("");
+  const [showExpandedColumns, setShowExpandedColumns] = useState(false);
+  const [activeRowEditor, setActiveRowEditor] = useState({ rowId: "", panel: "" });
+  const [panelState, setPanelState] = useState({ open: false, mode: "new", costId: "" });
 
   const activeUnits = useMemo(
     () =>
@@ -378,7 +397,38 @@ function CostLibraryPage({
     setForm((current) => ({ ...current, [key]: value }));
   };
 
-  const addCost = (event) => {
+  const openNewPanel = () => {
+    setForm(createPanelForm());
+    setPanelState({ open: true, mode: "new", costId: "" });
+  };
+
+  const openEditPanel = (cost) => {
+    setForm(
+      createPanelForm({
+        itemName: cleanText(cost.itemName),
+        workType: cleanText(cost.workType) || "Supply",
+        itemFamily: cleanText(cost.itemFamily),
+        tradeId: getTradeSelectValue(cost.tradeId, cost.trade),
+        costCodeId: getCostCodeSelectValue(cost.costCodeId, cost.costCode),
+        specification: cleanText(cost.specification),
+        gradeOrQuality: cleanText(cost.gradeOrQuality),
+        brand: cleanText(cost.brand),
+        finishOrVariant: cleanText(cost.finishOrVariant),
+        unitId: getUnitSelectValue(cost.unitId, cost.unit) || defaultForm.unitId,
+        rate: String(cost.rate ?? ""),
+        notes: cleanText(cost.notes),
+        sourceLink: cleanText(cost.sourceLink),
+      })
+    );
+    setPanelState({ open: true, mode: "edit", costId: cost.id });
+  };
+
+  const closePanel = () => {
+    setPanelState({ open: false, mode: "new", costId: "" });
+    setForm(createPanelForm());
+  };
+
+  const savePanelCost = (event) => {
     event.preventDefault();
 
     if (!cleanText(form.itemName) || form.rate === "") {
@@ -387,39 +437,52 @@ function CostLibraryPage({
 
     ensureItemFamiliesExist([form.itemFamily]);
 
-    onCostsChange([
-      ...costs,
-      {
-        id: `cost-${Date.now()}`,
-        itemName: cleanText(form.itemName),
-        workType: form.workType,
-        itemFamily: cleanText(form.itemFamily),
-        tradeId: form.tradeId,
-        trade: form.tradeId ? getTradeName(form.tradeId, "") : "",
-        costCodeId: form.costCodeId,
-        costCode: form.costCodeId ? getCostCodeName(form.costCodeId, "") : "",
-        specification: cleanText(form.specification),
-        gradeOrQuality: cleanText(form.gradeOrQuality),
-        brand: cleanText(form.brand),
-        finishOrVariant: cleanText(form.finishOrVariant),
-        displayName: getStructuredItemPresentation(form).displayName,
-        unitId: form.unitId,
-        unit: getUnitLabel(form.unitId),
-        rate: Number(form.rate),
-        sourceLink: cleanText(form.sourceLink),
-      },
-    ]);
+    const nextCost = {
+      itemName: cleanText(form.itemName),
+      workType: form.workType,
+      itemFamily: cleanText(form.itemFamily),
+      tradeId: isLegacyValue(form.tradeId) ? "" : form.tradeId,
+      trade: isLegacyValue(form.tradeId) ? cleanText(form.trade) : form.tradeId ? getTradeName(form.tradeId, "") : "",
+      costCodeId: isLegacyValue(form.costCodeId) ? "" : form.costCodeId,
+      costCode: isLegacyValue(form.costCodeId)
+        ? cleanText(form.costCode)
+        : form.costCodeId
+          ? getCostCodeName(form.costCodeId, "")
+          : "",
+      specification: cleanText(form.specification),
+      gradeOrQuality: cleanText(form.gradeOrQuality),
+      brand: cleanText(form.brand),
+      finishOrVariant: cleanText(form.finishOrVariant),
+      displayName: getStructuredItemPresentation(form).displayName,
+      unitId: isLegacyValue(form.unitId) ? "" : form.unitId,
+      unit: isLegacyValue(form.unitId) ? cleanText(form.unit) : getUnitLabel(form.unitId),
+      rate: Number(form.rate),
+      notes: cleanText(form.notes),
+      sourceLink: cleanText(form.sourceLink),
+    };
 
-    setForm((current) => ({
-      ...current,
-      itemName: "",
-      specification: "",
-      gradeOrQuality: "",
-      brand: "",
-      finishOrVariant: "",
-      rate: "",
-      sourceLink: "",
-    }));
+    if (panelState.mode === "edit" && panelState.costId) {
+      onCostsChange(
+        costs.map((cost) =>
+          cost.id === panelState.costId
+            ? {
+                ...cost,
+                ...nextCost,
+              }
+            : cost
+        )
+      );
+    } else {
+      onCostsChange([
+        ...costs,
+        {
+          id: `cost-${Date.now()}`,
+          ...nextCost,
+        },
+      ]);
+    }
+
+    closePanel();
   };
 
   const removeCost = (costId) => {
@@ -498,19 +561,6 @@ function CostLibraryPage({
     };
   };
 
-  const moveColumnByOffset = (columnKey, offset) => {
-    setColumnOrder((current) => {
-      const currentIndex = current.indexOf(columnKey);
-      const nextIndex = currentIndex + offset;
-
-      if (currentIndex < 0 || nextIndex < 0 || nextIndex >= current.length) {
-        return current;
-      }
-
-      return moveItem(current, currentIndex, nextIndex);
-    });
-  };
-
   const moveColumnToTarget = (fromKey, toKey) => {
     if (!fromKey || !toKey || fromKey === toKey) {
       return;
@@ -526,11 +576,6 @@ function CostLibraryPage({
 
       return moveItem(current, fromIndex, toIndex);
     });
-  };
-
-  const resetColumns = () => {
-    setColumnOrder(defaultColumnOrder);
-    setColumnWidths(defaultColumnWidths);
   };
 
   const updateFilter = (key, value) => {
@@ -973,7 +1018,8 @@ function CostLibraryPage({
       },
   };
 
-  const visibleColumns = columnOrder.map((columnKey) => allColumns[columnKey]).filter(Boolean);
+  const visibleColumnKeys = showExpandedColumns ? columnOrder : essentialColumnKeys;
+  const visibleColumns = visibleColumnKeys.map((columnKey) => allColumns[columnKey]).filter(Boolean);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
   const renderSortHeader = (column) => (
@@ -1047,6 +1093,15 @@ function CostLibraryPage({
                   <div className="cost-library-row-actions">
                     <button
                       type="button"
+                      className="cost-library-row-action"
+                      aria-label={`Edit ${getCostDisplayName(row)}`}
+                      title="Edit item"
+                      onClick={() => openEditPanel(row)}
+                    >
+                      {"\u270E"}
+                    </button>
+                    <button
+                      type="button"
                       className={`cost-library-row-action ${
                         cleanText(row.sourceLink) ? "is-active" : ""
                       }`}
@@ -1057,22 +1112,47 @@ function CostLibraryPage({
                       }
                       title={cleanText(row.sourceLink) ? "Edit source link" : "Add source link"}
                       onClick={() =>
-                        setActiveLinkEditorId((current) => (current === row.id ? "" : row.id))
+                        setActiveRowEditor((current) =>
+                          current.rowId === row.id && current.panel === "link"
+                            ? { rowId: "", panel: "" }
+                            : { rowId: row.id, panel: "link" }
+                        )
                       }
                     >
-                      L
+                      {"\uD83D\uDD17"}
                     </button>
                     <button
                       type="button"
-                      className="cost-library-row-action"
+                      className={`cost-library-row-action ${
+                        cleanText(row.notes) ? "is-active" : ""
+                      }`}
+                      aria-label={
+                        cleanText(row.notes)
+                          ? `Edit note for ${getCostDisplayName(row)}`
+                          : `Add note for ${getCostDisplayName(row)}`
+                      }
+                      title={cleanText(row.notes) ? "Edit note" : "Add note"}
+                      onClick={() =>
+                        setActiveRowEditor((current) =>
+                          current.rowId === row.id && current.panel === "note"
+                            ? { rowId: "", panel: "" }
+                            : { rowId: row.id, panel: "note" }
+                        )
+                      }
+                    >
+                      {"\uD83D\uDCDD"}
+                    </button>
+                    <button
+                      type="button"
+                      className="cost-library-row-action is-delete"
                       aria-label={`Remove ${getCostDisplayName(row)}`}
                       title="Remove item"
                       onClick={() => removeCost(row.id)}
                     >
-                      x
+                      {"\u00D7"}
                     </button>
                   </div>
-                  {activeLinkEditorId === row.id ? (
+                  {activeRowEditor.rowId === row.id && activeRowEditor.panel === "link" ? (
                     <div className="cost-library-link-popover">
                       <span className="cost-library-link-popover-label">Source Link</span>
                       <input
@@ -1106,7 +1186,36 @@ function CostLibraryPage({
                         <button
                           type="button"
                           className="secondary-button"
-                          onClick={() => setActiveLinkEditorId("")}
+                          onClick={() => setActiveRowEditor({ rowId: "", panel: "" })}
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  {activeRowEditor.rowId === row.id && activeRowEditor.panel === "note" ? (
+                    <div className="cost-library-link-popover">
+                      <span className="cost-library-link-popover-label">Note</span>
+                      <textarea
+                        value={row.notes || ""}
+                        onChange={(event) => updateCost(row.id, "notes", event.target.value)}
+                        placeholder="Item note"
+                        aria-label={`Note for ${getCostDisplayName(row)}`}
+                        className="cost-library-note-textarea"
+                        rows={3}
+                      />
+                      <div className="cost-library-link-popover-actions">
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => updateCost(row.id, "notes", "")}
+                        >
+                          Clear
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => setActiveRowEditor({ rowId: "", panel: "" })}
                         >
                           Close
                         </button>
@@ -1129,150 +1238,6 @@ function CostLibraryPage({
     >
       <div className="cost-library-page">
         <div className="cost-library-topbar">
-          <form className="cost-library-form" onSubmit={addCost}>
-            <div className="cost-library-form-grid cost-library-form-grid-primary">
-              <FormField label="Core item name">
-                <input
-                  value={form.itemName}
-                  onChange={(event) => updateField("itemName", event.target.value)}
-                  placeholder="Wall Frame Stud"
-                />
-              </FormField>
-
-              <FormField label="Item family">
-                <select
-                  value={form.itemFamily}
-                  onChange={(event) => updateField("itemFamily", event.target.value)}
-                >
-                  <option value="">Unassigned</option>
-                  {activeItemFamilies.map((itemFamily) => (
-                    <option key={itemFamily.id} value={itemFamily.name}>
-                      {itemFamily.name}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-
-              <FormField label="Work type">
-                <select
-                  value={form.workType}
-                  onChange={(event) => updateField("workType", event.target.value)}
-                >
-                  <option value="">Unassigned</option>
-                  {workTypeOptions.map((workType) => (
-                    <option key={workType} value={workType}>
-                      {workType}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-
-              <FormField label="Trade">
-                <select
-                  value={form.tradeId}
-                  onChange={(event) => updateField("tradeId", event.target.value)}
-                >
-                  <option value="">Unassigned</option>
-                  {activeTrades.map((trade) => (
-                    <option key={trade.id} value={trade.id}>
-                      {trade.name}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-
-              <FormField label="Cost code">
-                <select
-                  value={form.costCodeId}
-                  onChange={(event) => updateField("costCodeId", event.target.value)}
-                >
-                  <option value="">Unassigned</option>
-                  {activeCostCodes.map((costCode) => (
-                    <option key={costCode.id} value={costCode.id}>
-                      {costCode.name}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-
-              <FormField label="Unit">
-                <select
-                  value={form.unitId}
-                  onChange={(event) => updateField("unitId", event.target.value)}
-                >
-                  {activeUnits.map((unit) => (
-                    <option key={unit.id} value={unit.id}>
-                      {unit.abbreviation}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-
-              <FormField label="Rate">
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.rate}
-                  onChange={(event) => updateField("rate", event.target.value)}
-                  placeholder="350"
-                />
-              </FormField>
-            </div>
-            <div className="cost-library-form-grid cost-library-form-grid-secondary">
-              <FormField label="Specification">
-                <input
-                  value={form.specification}
-                  onChange={(event) => updateField("specification", event.target.value)}
-                  placeholder="90x45"
-                />
-              </FormField>
-
-              <FormField label="Grade / quality">
-                <input
-                  value={form.gradeOrQuality}
-                  onChange={(event) => updateField("gradeOrQuality", event.target.value)}
-                  placeholder="MGP10 LOSP"
-                />
-              </FormField>
-
-              <FormField label="Brand">
-                <input
-                  value={form.brand}
-                  onChange={(event) => updateField("brand", event.target.value)}
-                  placeholder="Caroma"
-                />
-              </FormField>
-
-              <FormField label="Finish / variant">
-                <input
-                  value={form.finishOrVariant}
-                  onChange={(event) => updateField("finishOrVariant", event.target.value)}
-                  placeholder="Chrome"
-                />
-              </FormField>
-
-              <FormField label="Source link">
-                <input
-                  value={form.sourceLink}
-                  onChange={(event) => updateField("sourceLink", event.target.value)}
-                  placeholder="https://example.com/reference"
-                />
-              </FormField>
-            </div>
-
-            <div className="cost-library-form-footer">
-              <div className="library-compiled-name-preview">
-                <span>Compiled name</span>
-                <strong>{getStructuredItemPresentation(form).displayName || "Item name preview"}</strong>
-              </div>
-
-              <button type="submit" className="primary-button">
-                Add cost item
-              </button>
-            </div>
-          </form>
-
           <div className="cost-library-toolbar">
             <div className="cost-library-toolbar-grid">
               <FormField label="Search">
@@ -1333,7 +1298,13 @@ function CostLibraryPage({
               </FormField>
 
               <details className="cost-library-control-menu">
-                <summary>Filter{activeFilterCount ? ` (${activeFilterCount})` : ""}</summary>
+                <summary
+                  className="toolbar-icon-button"
+                  aria-label={`Filter items${activeFilterCount ? ` (${activeFilterCount} active)` : ""}`}
+                  title={`Filter items${activeFilterCount ? ` (${activeFilterCount} active)` : ""}`}
+                >
+                  <span aria-hidden="true">⛃</span>
+                </summary>
                 <div className="cost-library-control-menu-panel">
                   <FormField label="Item family">
                     <select
@@ -1405,83 +1376,54 @@ function CostLibraryPage({
                     </select>
                   </FormField>
 
-                  <button type="button" className="secondary-button" onClick={clearFilters}>
-                    Clear filters
+                  <button
+                    type="button"
+                    className="estimate-builder-icon-button secondary-button"
+                    onClick={clearFilters}
+                    aria-label="Clear filters"
+                    title="Clear filters"
+                  >
+                    <span aria-hidden="true">×</span>
                   </button>
                 </div>
               </details>
 
-              <details className="cost-library-control-menu">
-                <summary>Columns</summary>
-                <div className="cost-library-control-menu-panel cost-library-columns-panel">
-                  {columnOrder.map((columnKey, index) => {
-                    const column = allColumns[columnKey];
+              <button
+                type="button"
+                className="estimate-builder-icon-button secondary-button"
+                onClick={() => setShowExpandedColumns((current) => !current)}
+                aria-label={showExpandedColumns ? "Show Less" : "Show More"}
+                title={showExpandedColumns ? "Show Less" : "Show More"}
+              >
+                <span aria-hidden="true">{showExpandedColumns ? "▴" : "▾"}</span>
+              </button>
 
-                    if (!column) {
-                      return null;
-                    }
+              <button type="button" className="primary-button" onClick={openNewPanel}>
+                Add Cost Item
+              </button>
 
-                    return (
-                      <div key={columnKey} className="cost-library-column-row">
-                        <span>{column.label}</span>
-                        <input
-                          type="range"
-                          min="64"
-                          max="480"
-                          step="2"
-                          value={columnWidths[columnKey] || defaultColumnWidths[columnKey]}
-                          onChange={(event) =>
-                            setColumnWidths((current) => ({
-                              ...current,
-                              [columnKey]: Number(event.target.value),
-                            }))
-                          }
-                          aria-label={`${column.label} width`}
-                        />
-                        <div className="cost-library-column-row-actions">
-                          <button
-                            type="button"
-                            className="cost-library-row-action"
-                            disabled={index === 0}
-                            aria-label={`Move ${column.label} left`}
-                            onClick={() => moveColumnByOffset(columnKey, -1)}
-                          >
-                            {"<"}
-                          </button>
-                          <button
-                            type="button"
-                            className="cost-library-row-action"
-                            disabled={index === columnOrder.length - 1}
-                            aria-label={`Move ${column.label} right`}
-                            onClick={() => moveColumnByOffset(columnKey, 1)}
-                          >
-                            {">"}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  <button type="button" className="secondary-button" onClick={resetColumns}>
-                    Reset layout
-                  </button>
-                </div>
-              </details>
-
-              <button type="button" className="secondary-button" onClick={exportCostsAsCsv}>
-                Export CSV
+              <button
+                type="button"
+                className="estimate-builder-icon-button secondary-button"
+                onClick={exportCostsAsCsv}
+                aria-label="Export CSV"
+                title="Export CSV"
+              >
+                <span aria-hidden="true">↓</span>
               </button>
               <button
                 type="button"
-                className="secondary-button"
+                className="estimate-builder-icon-button secondary-button"
                 onClick={() => importFileInputRef.current?.click()}
+                aria-label="Import CSV"
+                title="Import CSV"
               >
-                Import CSV
+                <span aria-hidden="true">↑</span>
               </button>
             </div>
 
             <p className="sidebar-meta">
-              Trade and Cost Code are linked to their libraries. Filter and Columns keep the top bar compact while letting you narrow the grid and tune widths.
+              Trade and Cost Code are linked to their libraries. Show More reveals the secondary spec columns when you need the full item detail.
             </p>
           </div>
         </div>
@@ -1530,6 +1472,213 @@ function CostLibraryPage({
             <p className="empty-state">No grouped cost items found.</p>
           )}
         </div>
+
+        {panelState.open ? (
+          <div className="cost-library-drawer-backdrop" onClick={closePanel}>
+            <aside
+              className="cost-library-drawer"
+              onClick={(event) => event.stopPropagation()}
+              aria-label={panelState.mode === "edit" ? "Edit cost item" : "Add cost item"}
+            >
+              <div className="cost-library-drawer-header">
+                <div>
+                  <p className="cost-library-drawer-kicker">
+                    {panelState.mode === "edit" ? "Edit Cost Item" : "Add Cost Item"}
+                  </p>
+                  <h3>{getStructuredItemPresentation(form).displayName || "Cost item details"}</h3>
+                </div>
+                <button type="button" className="secondary-button" onClick={closePanel}>
+                  Close
+                </button>
+              </div>
+
+              <form className="cost-library-drawer-form" onSubmit={savePanelCost}>
+                <div className="cost-library-drawer-section">
+                  <span className="cost-library-drawer-section-label">Identity</span>
+                  <FormField label="Core Name">
+                    <input
+                      value={form.itemName}
+                      onChange={(event) => updateField("itemName", event.target.value)}
+                      placeholder="e.g. Floor Tile, Wall Frame, Vanity"
+                    />
+                  </FormField>
+                  <FormField label="Item Name">
+                    <input
+                      value={getStructuredItemPresentation(form).displayName || ""}
+                      readOnly
+                      placeholder="e.g. Tile / Ceramic / 600x600 / Premium / Matte"
+                    />
+                  </FormField>
+                </div>
+
+                <div className="cost-library-drawer-section">
+                  <span className="cost-library-drawer-section-label">Classification</span>
+                  <div className="cost-library-drawer-field">
+                    <FormField label="Work Type">
+                      <select value={form.workType} onChange={(event) => updateField("workType", event.target.value)}>
+                        <option value="">Unassigned</option>
+                        {workTypeOptions.map((workType) => (
+                          <option key={workType} value={workType}>
+                            {workType}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <span className="cost-library-field-hint">
+                      Select work type, e.g. Supply, Install, Supply &amp; Install
+                    </span>
+                  </div>
+                  <div className="cost-library-drawer-field">
+                    <FormField label="Family">
+                      <select value={form.itemFamily} onChange={(event) => updateField("itemFamily", event.target.value)}>
+                        <option value="">Unassigned</option>
+                        {activeItemFamilies.map((itemFamily) => (
+                          <option key={itemFamily.id} value={itemFamily.name}>
+                            {itemFamily.name}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <span className="cost-library-field-hint">
+                      e.g. Tile, Timber, Joinery, Electrical
+                    </span>
+                  </div>
+                  <div className="cost-library-drawer-field">
+                    <FormField label="Trade">
+                      <select value={form.tradeId} onChange={(event) => updateField("tradeId", event.target.value)}>
+                        <option value="">Unassigned</option>
+                        {activeTrades.map((trade) => (
+                          <option key={trade.id} value={trade.id}>
+                            {trade.name}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <span className="cost-library-field-hint">
+                      e.g. Tiling, Carpentry, Electrical
+                    </span>
+                  </div>
+                  <div className="cost-library-drawer-field">
+                    <FormField label="Cost Code">
+                      <select value={form.costCodeId} onChange={(event) => updateField("costCodeId", event.target.value)}>
+                        <option value="">Unassigned</option>
+                        {activeCostCodes.map((costCode) => (
+                          <option key={costCode.id} value={costCode.id}>
+                            {costCode.name}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <span className="cost-library-field-hint">
+                      Auto from trade or override, e.g. 18 / Finishes
+                    </span>
+                  </div>
+                </div>
+
+                <div className="cost-library-drawer-section">
+                  <span className="cost-library-drawer-section-label">Details</span>
+                  <FormField label="Specification">
+                    <input
+                      value={form.specification}
+                      onChange={(event) => updateField("specification", event.target.value)}
+                      placeholder="e.g. 600x600, 90x45, 20mm stone"
+                    />
+                  </FormField>
+                  <FormField label="Grade / Quality">
+                    <input
+                      value={form.gradeOrQuality}
+                      onChange={(event) => updateField("gradeOrQuality", event.target.value)}
+                      placeholder="e.g. Standard, Premium"
+                    />
+                  </FormField>
+                  <FormField label="Brand">
+                    <input
+                      value={form.brand}
+                      onChange={(event) => updateField("brand", event.target.value)}
+                      placeholder="e.g. Apex, ABI, Bowens, PY Timber"
+                    />
+                  </FormField>
+                  <FormField label="Finish / Variant">
+                    <input
+                      value={form.finishOrVariant}
+                      onChange={(event) => updateField("finishOrVariant", event.target.value)}
+                      placeholder="e.g. Matte, Brushed Nickel, Oak"
+                    />
+                  </FormField>
+                </div>
+
+                <div className="cost-library-drawer-section">
+                  <span className="cost-library-drawer-section-label">Pricing</span>
+                  <div className="cost-library-drawer-field">
+                    <FormField label="Unit">
+                      <select value={form.unitId} onChange={(event) => updateField("unitId", event.target.value)}>
+                        {activeUnits.map((unit) => (
+                          <option key={unit.id} value={unit.id}>
+                            {unit.abbreviation}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <span className="cost-library-field-hint">e.g. SQM, LM, EA, HR</span>
+                  </div>
+                  <FormField label="Rate">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={form.rate}
+                      onChange={(event) => updateField("rate", event.target.value)}
+                      placeholder="e.g. 90.00"
+                    />
+                  </FormField>
+                </div>
+
+                <div className="cost-library-drawer-section">
+                  <span className="cost-library-drawer-section-label">References</span>
+                  <FormField label="Source Link">
+                    <input
+                      value={form.sourceLink}
+                      onChange={(event) => updateField("sourceLink", event.target.value)}
+                      placeholder="Paste supplier or reference link"
+                    />
+                  </FormField>
+                  <FormField label="Notes">
+                    <textarea
+                      className="cost-library-note-textarea"
+                      value={form.notes}
+                      onChange={(event) => updateField("notes", event.target.value)}
+                      rows={4}
+                      placeholder="Optional notes or installation details"
+                    />
+                  </FormField>
+                </div>
+
+                <div className="cost-library-drawer-actions">
+                  {panelState.mode === "edit" && panelState.costId ? (
+                    <button
+                      type="button"
+                      className="danger-button"
+                      onClick={() => {
+                        removeCost(panelState.costId);
+                        closePanel();
+                      }}
+                    >
+                      Delete
+                    </button>
+                  ) : <span />}
+                  <div className="cost-library-drawer-actions-right">
+                    <button type="button" className="secondary-button" onClick={closePanel}>
+                      Cancel
+                    </button>
+                    <button type="submit" className="primary-button">
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </aside>
+          </div>
+        ) : null}
       </div>
     </SectionCard>
   );

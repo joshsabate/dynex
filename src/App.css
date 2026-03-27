@@ -42,14 +42,52 @@ textarea {
   font: inherit;
 }
 
+.home-background {
+  min-height: 100vh;
+  position: relative;
+  background-image: url("/images/home-bg.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.home-background::before {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  content: "";
+}
+
 .app-shell {
   height: 100vh;
+  min-height: 100vh;
   display: grid;
   grid-template-columns: 280px 1fr;
+  position: relative;
+  z-index: 1;
   background: #f3f0ea;
   color: #1f2520;
   overflow: hidden;
   font-family: "Roboto", "Inter", system-ui, -apple-system, sans-serif;
+}
+
+.home-background .app-shell {
+  background: transparent !important;
+}
+
+.home-background .main-content,
+.home-background .page-content,
+.home-background .page-shell {
+  background: transparent !important;
+}
+
+.home-background .content {
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.18), rgba(15, 23, 42, 0.18)),
+    url("https://images.unsplash.com/photo-1507089947368-19c1da9775ae") !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
 }
 
 .sidebar {
@@ -325,6 +363,21 @@ textarea {
   gap: 8px;
 }
 
+.assembly-library-page-toolbar {
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 2px;
+}
+
+.assembly-library-toolbar-button {
+  min-height: 30px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.15;
+}
+
 .assembly-library-form {
   display: grid;
   gap: 8px;
@@ -395,6 +448,7 @@ textarea {
 
 .assembly-library-toolbar-actions {
   justify-content: flex-end;
+  gap: 6px;
 }
 
 .assembly-library-filters {
@@ -420,9 +474,16 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 9px 12px;
+  padding: 6px 10px;
   border-bottom: 1px solid #ece5dc;
   background: #fbf8f3;
+}
+
+.assembly-group-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 
 .assembly-group-card-expanded {
@@ -439,10 +500,29 @@ textarea {
 .assembly-group-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
+  flex-wrap: nowrap;
   color: #657066;
   font-size: 13px;
+}
+
+.assembly-group-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+
+.assembly-group-actions .estimate-builder-icon-button,
+.assembly-group-actions .cost-library-row-action {
+  min-height: 26px;
+  min-width: 26px;
+  width: 26px;
+  padding: 0;
+}
+
+.assembly-group-rename {
+  flex: 0 0 auto;
 }
 
 .assembly-group-card .assembly-library-table-wrap {
@@ -609,7 +689,9 @@ textarea {
   background: transparent;
   box-shadow: none;
   color: inherit;
-  line-height: 1.2;
+  font-size: 13px;
+  line-height: 1.18;
+  font-family: inherit;
   transition: border-color 0.16s ease, background-color 0.16s ease;
 }
 
@@ -653,12 +735,13 @@ textarea {
 .assembly-col-room-type,
 .assembly-col-stage,
 .assembly-col-element,
-.assembly-col-trade {
+.assembly-col-trade,
+.assembly-col-work-type {
   min-width: 96px;
 }
 
-.assembly-col-labour-item {
-  min-width: 150px;
+.assembly-col-core {
+  min-width: 140px;
 }
 
 .assembly-col-labour-hours {
@@ -667,6 +750,10 @@ textarea {
 
 .assembly-col-unit {
   min-width: 64px;
+}
+
+.assembly-col-rate {
+  min-width: 84px;
 }
 
 .assembly-col-qty-rule {
@@ -686,10 +773,12 @@ textarea {
 
 .assembly-library-table th {
   font-size: 11px;
+  line-height: 1.18;
 }
 
 .assembly-library-table td {
   font-size: 13px;
+  line-height: 1.18;
   vertical-align: middle;
   background: rgba(255, 255, 255, 0.92);
 }
@@ -722,28 +811,25 @@ textarea {
   text-align: center;
 }
 
-.assembly-library-table .danger-button,
-.assembly-library-table .secondary-button,
-.assembly-library-table .primary-button {
-  padding: 4px 8px;
-  min-height: 26px;
-  border-radius: 6px;
-  font-size: 12px;
-}
-
 .assembly-group-card .table-col-actions .action-row,
 .assembly-library-table .table-col-actions {
   white-space: nowrap;
 }
 
+.assembly-library-table .table-col-actions .action-row {
+  justify-content: flex-end;
+}
+
 .assembly-library-table .assembly-col-item,
+.assembly-library-table .assembly-col-work-type,
 .assembly-library-table .assembly-col-stage,
 .assembly-library-table .assembly-col-trade,
 .assembly-library-table .assembly-col-cost-code,
 .assembly-library-table .assembly-col-qty-rule,
 .assembly-library-table .assembly-col-unit,
 .assembly-library-table .assembly-col-room-type,
-.assembly-library-table .assembly-col-labour-item,
+.assembly-library-table .assembly-col-labour-hours,
+.assembly-library-table .assembly-col-rate,
 .assembly-library-table .table-col-actions {
   position: relative;
 }
@@ -764,6 +850,10 @@ textarea {
   bottom: 7px;
   width: 1px;
   background: rgba(148, 163, 184, 0.18);
+}
+
+.assembly-library-static-muted {
+  color: var(--color-text-muted);
 }
 
 .assembly-library-table .assembly-group-end-identity,
@@ -2022,7 +2112,29 @@ textarea {
 }
 
 .estimate-builder-section-action {
+  width: auto;
+  min-width: 0;
+  padding: 0 7px;
+  border-radius: 7px;
   border-color: transparent;
+}
+
+.estimate-builder-toolbar-compact-button {
+  min-height: 26px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.1;
+}
+
+.estimate-builder-toolbar-remove-button {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 14px;
+  line-height: 1;
 }
 
 .estimate-builder-section-action-room {
@@ -2180,7 +2292,7 @@ textarea {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  overflow: hidden;
+  overflow: visible;
   width: 176px;
   min-width: 176px;
   padding: 5px 4px 5px 6px;
@@ -2192,7 +2304,7 @@ textarea {
   margin: 0;
   min-width: 0;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: flex-start;
   box-sizing: border-box;
   font-size: 13px;
@@ -2276,6 +2388,8 @@ textarea {
   padding-left: 0;
   padding-right: 0;
   flex-wrap: nowrap;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .estimate-builder-icon-button {
@@ -2288,6 +2402,27 @@ textarea {
   justify-content: center;
   font-size: 12px;
   line-height: 1;
+}
+
+.toolbar-icon-button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--color-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.toolbar-icon-button:hover,
+.toolbar-icon-button:focus {
+  border-color: var(--color-border-strong);
+  background: #eef2f7;
 }
 
 .estimate-builder-grid-cell:last-child {
@@ -2327,7 +2462,7 @@ textarea {
 .estimate-builder-grid-row .estimate-builder-col-rate,
 .estimate-builder-grid-row .estimate-builder-col-total,
 .estimate-builder-grid-row .estimate-builder-col-actions {
-  align-items: flex-start;
+  align-items: center;
 }
 
 .estimate-builder-core-input {
@@ -2358,6 +2493,7 @@ textarea {
   line-height: 1.18;
   resize: none;
   overflow: auto;
+  align-self: center;
 }
 
 .estimate-builder-col-qty .estimate-builder-inline-control,
@@ -2681,7 +2817,12 @@ textarea {
 }
 
 /* Dynex theme overrides */
-body,
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+
 .app-shell {
   background: var(--color-bg);
   color: var(--color-text);
@@ -3368,6 +3509,7 @@ h6,
   white-space: nowrap;
   vertical-align: middle;
   position: relative;
+  line-height: 1.18;
 }
 
 .cost-library-header-cell {
@@ -3420,7 +3562,8 @@ h6,
 }
 
 .cost-library-table input,
-.cost-library-table select {
+.cost-library-table select,
+.cost-library-note-textarea {
   width: 100%;
   min-width: 0;
   min-height: 28px;
@@ -3430,6 +3573,9 @@ h6,
   background: transparent;
   box-shadow: none;
   color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.18;
+  font-family: inherit;
 }
 
 .cost-library-table tbody tr td {
@@ -3447,7 +3593,8 @@ h6,
 }
 
 .cost-library-table input:focus,
-.cost-library-table select:focus {
+.cost-library-table select:focus,
+.cost-library-note-textarea:focus {
   border-color: #cbd5e1;
   background: #ffffff;
   color: var(--color-text);
@@ -3455,7 +3602,7 @@ h6,
 
 .cost-library-item-cell {
   display: grid;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -3471,10 +3618,14 @@ h6,
 .cost-library-item-cell span,
 .cost-library-item-cell small {
   overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   color: var(--color-text-secondary);
-  font-size: 11px;
+  font-size: 13px;
+  line-height: 1.18;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .cost-library-col-item-name,
@@ -3484,7 +3635,8 @@ h6,
 
 .cost-library-col-item-name input {
   color: var(--color-text);
-  font-weight: 600;
+  font-weight: 400;
+  font-size: 13px;
 }
 
 .cost-library-col-secondary input,
@@ -3524,9 +3676,21 @@ h6,
 }
 
 .cost-library-table .table-col-actions {
-  width: 1%;
+  width: 124px;
+  min-width: 124px;
   white-space: nowrap;
-  padding-right: 8px;
+  padding-right: 6px;
+}
+
+.cost-library-table th,
+.cost-library-header-cell,
+.cost-library-table .table-sort-button {
+  font-size: 11px;
+  line-height: 1.18;
+}
+
+.cost-library-table td {
+  font-size: 13px;
 }
 
 .estimate-output-table th,
@@ -3599,7 +3763,9 @@ h6,
   justify-content: flex-end;
   align-items: center;
   gap: 4px;
-  width: 100%;
+  width: auto;
+  max-width: 100%;
+  margin-left: auto;
   position: relative;
 }
 
@@ -3616,10 +3782,18 @@ h6,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
   opacity: 0.42;
   transition: opacity 0.16s ease, border-color 0.16s ease, color 0.16s ease, background-color 0.16s ease;
+}
+
+.cost-library-row-action.is-delete,
+.cost-library-table tbody tr:hover .cost-library-row-action.is-delete {
+  color: var(--color-error);
+  border-color: rgba(220, 38, 38, 0.22);
+  background: rgba(220, 38, 38, 0.06);
+  opacity: 1;
 }
 
 .cost-library-row-action:hover:not(:disabled),
@@ -3669,6 +3843,196 @@ h6,
   display: flex;
   justify-content: flex-end;
   gap: 6px;
+}
+
+.cost-library-note-textarea {
+  min-height: 74px;
+  resize: vertical;
+}
+
+.cost-library-drawer-backdrop,
+.assembly-library-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.22);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 40;
+}
+
+.cost-library-drawer,
+.assembly-library-drawer {
+  width: min(460px, 100vw);
+  height: 100%;
+  background: #ffffff;
+  border-left: 1px solid #d7dee7;
+  box-shadow: -16px 0 32px rgba(15, 23, 42, 0.14);
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.assembly-library-modal-backdrop {
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+
+.assembly-library-modal {
+  width: min(420px, calc(100vw - 32px));
+  height: auto;
+  max-height: min(560px, calc(100vh - 32px));
+  border: 1px solid #d7dee7;
+  border-radius: 14px;
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
+}
+
+.assembly-library-item-modal {
+  width: min(860px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 32px));
+}
+
+.cost-library-drawer-header,
+.assembly-library-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.cost-library-drawer-header h3,
+.assembly-library-drawer-header h3 {
+  margin: 4px 0 0;
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.cost-library-drawer-kicker,
+.assembly-library-drawer-kicker {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.18;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.cost-library-drawer-form,
+.assembly-library-drawer-form {
+  overflow-y: auto;
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.cost-library-drawer-section,
+.assembly-library-drawer-section {
+  display: grid;
+  gap: 8px;
+}
+
+.cost-library-drawer-field,
+.assembly-library-drawer-field {
+  display: grid;
+  gap: 4px;
+}
+
+.cost-library-drawer-section-label,
+.assembly-library-drawer-section-label {
+  font-size: 11px;
+  line-height: 1.18;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.cost-library-drawer-section .field,
+.assembly-library-drawer-section .field {
+  gap: 3px;
+}
+
+.cost-library-field-hint {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.18;
+}
+
+.cost-library-drawer-section .field label,
+.assembly-library-drawer-section .field label {
+  font-size: 11px;
+  line-height: 1.18;
+}
+
+.cost-library-drawer-section input,
+.cost-library-drawer-section select,
+.cost-library-drawer-section textarea,
+.assembly-library-drawer-section input,
+.assembly-library-drawer-section select,
+.assembly-library-drawer-section textarea {
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid #d7dee7;
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 13px;
+  line-height: 1.18;
+}
+
+.cost-library-drawer-actions,
+.assembly-library-drawer-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-top: 6px;
+}
+
+.cost-library-drawer-actions-right,
+.assembly-library-drawer-actions-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.assembly-library-drawer-delete {
+  min-height: 32px;
+  min-width: auto;
+  padding: 0 12px;
+  border-radius: 8px;
+}
+
+.assembly-library-group-delete {
+  border-radius: 8px;
+}
+
+.assembly-library-item-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.assembly-library-item-group {
+  padding: 10px;
+  border: 1px solid #dbe4ee;
+  border-radius: 12px;
+}
+
+.assembly-library-item-group-primary {
+  background: #f8fbfe;
+}
+
+.assembly-library-item-group-secondary {
+  background: #fbfaf7;
+  border-color: #e7ddd0;
+}
+
+@media (max-width: 780px) {
+  .assembly-library-item-modal-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .cost-library-control-menu {
