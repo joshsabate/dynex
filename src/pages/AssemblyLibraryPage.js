@@ -1187,7 +1187,7 @@ function AssemblyLibraryPage({
                         {
                           key: "itemName",
                           header: sortableHeader("Item Name", "itemName"),
-                          className: "assembly-col-item assembly-col-primary",
+                          className: "assembly-col-item assembly-col-primary assembly-group-end-identity",
                           render: (row) => (
                             <select
                               value={row.costItemId || getCostItem("", row.itemName)?.id || ""}
@@ -1245,7 +1245,7 @@ function AssemblyLibraryPage({
                         {
                           key: "costCodeId",
                           header: sortableHeader("Cost Code", "costCode"),
-                          className: "assembly-col-cost-code assembly-col-primary",
+                          className: "assembly-col-cost-code assembly-col-primary assembly-group-end-classification",
                           render: (row) => (
                             <select
                               value={row.costCodeId || ""}
@@ -1280,7 +1280,7 @@ function AssemblyLibraryPage({
                         {
                           key: "unitId",
                           header: "Unit",
-                          className: "assembly-col-unit assembly-col-secondary",
+                          className: "assembly-col-unit assembly-col-secondary assembly-group-end-values",
                           render: (row) => (
                             <select
                               value={row.unitId || ""}
@@ -1290,42 +1290,6 @@ function AssemblyLibraryPage({
                               {activeUnits.map((unit) => (
                                 <option key={unit.id} value={unit.id}>
                                   {unit.abbreviation}
-                                </option>
-                              ))}
-                            </select>
-                          ),
-                        },
-                        {
-                          key: "laborHoursPerUnit",
-                          header: "Labour Hrs / Unit",
-                          className: "assembly-col-labour-hours assembly-col-secondary",
-                          render: (row) => (
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={row.laborHoursPerUnit ?? 0}
-                              onChange={(event) =>
-                                updateAssembly(row.id, "laborHoursPerUnit", event.target.value)
-                              }
-                            />
-                          ),
-                        },
-                        {
-                          key: "laborCostItemName",
-                          header: "Labour Cost Item",
-                          className: "assembly-col-labour-item assembly-col-secondary",
-                          render: (row) => (
-                            <select
-                              value={row.laborCostItemId || getCostItem("", row.laborCostItemName)?.id || ""}
-                              onChange={(event) =>
-                                updateAssembly(row.id, "laborCostItemId", event.target.value)
-                              }
-                            >
-                              <option value="">None</option>
-                              {labourCosts.map((cost) => (
-                                <option key={cost.id} value={cost.id}>
-                                  {getDisplayName(cost)}
                                 </option>
                               ))}
                             </select>
@@ -1351,48 +1315,23 @@ function AssemblyLibraryPage({
                           ),
                         },
                         {
-                          key: "elementId",
-                          header: "Element",
-                          className: "assembly-col-element assembly-col-secondary",
+                          key: "laborCostItemName",
+                          header: "Labour Cost Item",
+                          className: "assembly-col-labour-item assembly-col-secondary",
                           render: (row) => (
                             <select
-                              value={row.elementId || ""}
-                              onChange={(event) => updateAssembly(row.id, "elementId", event.target.value)}
+                              value={row.laborCostItemId || getCostItem("", row.laborCostItemName)?.id || ""}
+                              onChange={(event) =>
+                                updateAssembly(row.id, "laborCostItemId", event.target.value)
+                              }
                             >
-                              <option value="">Unassigned</option>
-                              {activeElements.map((element) => (
-                                <option key={element.id} value={element.id}>
-                                  {element.name}
+                              <option value="">None</option>
+                              {labourCosts.map((cost) => (
+                                <option key={cost.id} value={cost.id}>
+                                  {getDisplayName(cost)}
                                 </option>
                               ))}
                             </select>
-                          ),
-                        },
-                        {
-                          key: "assemblyCategory",
-                          header: "Category",
-                          className: "assembly-col-category assembly-col-secondary",
-                          render: (row) => (
-                            <input
-                              value={row.assemblyCategory}
-                              onChange={(event) =>
-                                updateAssembly(row.id, "assemblyCategory", event.target.value)
-                              }
-                            />
-                          ),
-                        },
-                        {
-                          key: "sortOrder",
-                          header: "Sort",
-                          className: "assembly-col-sort assembly-col-secondary",
-                          render: (row) => (
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={row.sortOrder}
-                              onChange={(event) => updateAssembly(row.id, "sortOrder", event.target.value)}
-                            />
                           ),
                         },
                       ]}

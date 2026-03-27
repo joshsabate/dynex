@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import FormField from "../components/FormField";
 import SectionCard from "../components/SectionCard";
 import { getStagePresentation } from "../utils/stages";
@@ -16,6 +16,7 @@ const defaultSectionForm = {
 
 const defaultManualLineForm = {
   itemName: "",
+  displayNameOverride: "",
   workType: "Supply",
   itemFamily: "",
   specification: "",
@@ -32,6 +33,7 @@ const defaultManualLineForm = {
   tradeId: "",
   elementId: "",
   notes: "",
+  sourceLink: "",
 };
 
 const defaultProjectRoomForm = {
@@ -44,11 +46,77 @@ const defaultManualLabourForm = {
   costId: "",
   quantity: "1",
   notes: "",
+  sourceLink: "",
   stageId: "",
   costCodeId: "",
   tradeId: "",
   elementId: "",
 };
+
+const defaultToolbarFilters = {
+  workType: "",
+  tradeId: "",
+  itemFamily: "",
+  stageId: "",
+};
+
+const builderGroupOptions = [
+  { value: "none", label: "None" },
+  { value: "itemFamily", label: "Family" },
+  { value: "stage", label: "Stage" },
+  { value: "trade", label: "Trade" },
+  { value: "workType", label: "Work Type" },
+];
+
+const estimateSortOptions = [
+  { value: "sortOrder", label: "Sort Order" },
+  { value: "item", label: "Item Name" },
+  { value: "workType", label: "Work Type" },
+  { value: "stage", label: "Stage" },
+  { value: "trade", label: "Trade" },
+  { value: "room", label: "Room" },
+  { value: "assembly", label: "Assembly" },
+];
+
+const estimateBuilderColumnStorageKey = "estimate-builder-column-widths-v3";
+const defaultEstimateColumnWidths = {
+  coreName: 110,
+  detailedName: 620,
+  workType: 96,
+  stage: 92,
+  trade: 98,
+  costCode: 122,
+  quantity: 56,
+  unit: 64,
+  rate: 74,
+  total: 108,
+  actions: 176,
+};
+const minimumEstimateColumnWidths = {
+  coreName: 110,
+  detailedName: 360,
+  workType: 96,
+  stage: 92,
+  trade: 98,
+  costCode: 122,
+  quantity: 56,
+  unit: 64,
+  rate: 74,
+  total: 108,
+  actions: 176,
+};
+
+const internalLabourTradeMatchers = ["carpentry", "supervision", "trade support"];
+const tradeCostCodeAliasRules = [
+  {
+    tradeMatchers: ["electrical"],
+    costCodeMatchers: ["electrical", "15"],
+  },
+  {
+    tradeMatchers: ["joinery", "stone", "cabinet", "cabinetry"],
+    costCodeMatchers: ["joinery", "cabinet", "stone", "20"],
+  },
+];
 
 function createDefaultSectionCostItemForm(sectionStageId = "") {
   return {
@@ -56,6 +124,7 @@ function createDefaultSectionCostItemForm(sectionStageId = "") {
     costId: "",
     quantity: "1",
     notes: "",
+    sourceLink: "",
     stageId: sectionStageId,
     costCodeId: "",
     tradeId: "",
@@ -75,12 +144,30 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(parsedValue) ? parsedValue : fallback;
 }
 
+function cleanText(value) {
+  return String(value || "").trim();
+}
+
 function getDefaultWorkTypeFromCost(cost, units) {
   if (!cost) {
     return "";
   }
 
-  return isHourUnit(units, cost.unitId, cost.unit) ? "Labour" : "Supply";
+  return cleanText(cost.workType) || (isHourUnit(units, cost.unitId, cost.unit) ? "Labour" : "");
+}
+
+function getOpenableUrl(value) {
+  const trimmedValue = cleanText(value);
+
+  if (!trimmedValue) {
+    return "";
+  }
+
+  if (/^[a-z]+:\/\//i.test(trimmedValue)) {
+    return trimmedValue;
+  }
+
+  return `https://${trimmedValue}`;
 }
 
 function renderIconActionButton({
@@ -102,18 +189,45 @@ function renderIconActionButton({
   );
 }
 
+function normalizeMatchText(value) {
+  return cleanText(value).toLowerCase();
+}
+
 const estimateColumns = [
-  { key: "itemName", label: "Item", className: "estimate-builder-col-item" },
+  { key: "coreName", label: "Core Item", className: "estimate-builder-col-core" },
+  { key: "detailedName", label: "Detailed Item", className: "estimate-builder-col-detail" },
+  { key: "workType", label: "Work Type", className: "estimate-builder-col-worktype" },
   { key: "stage", label: "Stage", className: "estimate-builder-col-stage" },
   { key: "trade", label: "Trade", className: "estimate-builder-col-trade" },
   { key: "costCode", label: "Cost Code", className: "estimate-builder-col-cost-code" },
-  { key: "sortOrder", label: "Sort", className: "estimate-builder-col-sort" },
   { key: "quantity", label: "Qty", className: "estimate-builder-col-qty" },
   { key: "unit", label: "Unit", className: "estimate-builder-col-unit" },
   { key: "rate", label: "Rate", className: "estimate-builder-col-rate" },
-  { key: "notes", label: "Notes", className: "estimate-builder-col-notes" },
+  { key: "total", label: "Line Total", className: "estimate-builder-col-total" },
   { key: "actions", label: "Actions", className: "estimate-builder-col-actions" },
 ];
+
+const ESTIMATE_BUILDER_GRID_TEMPLATE =
+  "110px minmax(620px, 1fr) 96px 92px 98px 122px 56px 64px 74px 108px 176px";
+
+function getStoredEstimateColumnWidths() {
+  if (typeof window === "undefined") {
+    return defaultEstimateColumnWidths;
+  }
+
+  try {
+    const parsedValue = JSON.parse(window.localStorage.getItem(estimateBuilderColumnStorageKey) || "{}");
+
+    return Object.fromEntries(
+      Object.entries(defaultEstimateColumnWidths).map(([key, value]) => [
+        key,
+        Math.max(minimumEstimateColumnWidths[key], Number(parsedValue[key]) || value),
+      ])
+    );
+  } catch (error) {
+    return defaultEstimateColumnWidths;
+  }
+}
 
 function EstimateBuilderPage({
   estimateName = "",
@@ -154,6 +268,50 @@ function EstimateBuilderPage({
     sectionId: "",
     action: "",
   });
+  const [builderSearchTerm, setBuilderSearchTerm] = useState("");
+  const [builderFilters, setBuilderFilters] = useState(defaultToolbarFilters);
+  const [builderSort, setBuilderSort] = useState({ key: "sortOrder", direction: "asc" });
+  const [builderGroupBy, setBuilderGroupBy] = useState("none");
+  const [activeRowPanel, setActiveRowPanel] = useState({ rowId: "", panel: "" });
+  const [estimateColumnWidths, setEstimateColumnWidths] = useState(getStoredEstimateColumnWidths);
+  const [activeColumnResize, setActiveColumnResize] = useState(null);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      estimateBuilderColumnStorageKey,
+      JSON.stringify(estimateColumnWidths)
+    );
+  }, [estimateColumnWidths]);
+
+  useEffect(() => {
+    if (!activeColumnResize) {
+      return undefined;
+    }
+
+    const handlePointerMove = (event) => {
+      const nextWidth = Math.max(
+        minimumEstimateColumnWidths[activeColumnResize.key],
+        activeColumnResize.startWidth + (event.clientX - activeColumnResize.startX)
+      );
+
+      setEstimateColumnWidths((current) => ({
+        ...current,
+        [activeColumnResize.key]: nextWidth,
+      }));
+    };
+
+    const handlePointerUp = () => {
+      setActiveColumnResize(null);
+    };
+
+    window.addEventListener("mousemove", handlePointerMove);
+    window.addEventListener("mouseup", handlePointerUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handlePointerMove);
+      window.removeEventListener("mouseup", handlePointerUp);
+    };
+  }, [activeColumnResize]);
 
   const sortedSections = useMemo(
     () =>
@@ -236,15 +394,212 @@ function EstimateBuilderPage({
     trades.find((trade) => trade.id === tradeId)?.name || fallback || "Unassigned";
   const getCostCodeName = (costCodeId, fallback = "") =>
     costCodes.find((costCode) => costCode.id === costCodeId)?.name || fallback || "Unassigned";
+  const getTradeRecord = (tradeId) => trades.find((trade) => trade.id === tradeId) || null;
+  const isInternalLabourTrade = (tradeId, fallbackTrade = "") => {
+    const tradeName = normalizeMatchText(getTradeRecord(tradeId)?.name || fallbackTrade);
+    return internalLabourTradeMatchers.some((matcher) => tradeName.includes(matcher));
+  };
+  const getAutoAssignedCostCodeId = (tradeId, fallbackTrade = "", currentCostCodeId = "") => {
+    const tradeName = normalizeMatchText(getTradeRecord(tradeId)?.name || fallbackTrade);
+
+    if (!tradeName) {
+      return currentCostCodeId || "";
+    }
+
+    const directMatch = activeCostCodes.find((costCode) =>
+      normalizeMatchText(costCode.name).includes(tradeName)
+    );
+
+    if (directMatch) {
+      return directMatch.id;
+    }
+
+    const aliasMatch = tradeCostCodeAliasRules.find((rule) =>
+      rule.tradeMatchers.some((matcher) => tradeName.includes(matcher))
+    );
+
+    if (aliasMatch) {
+      const matchedCostCode = activeCostCodes.find((costCode) => {
+        const costCodeName = normalizeMatchText(costCode.name);
+        const costCodeCode = normalizeMatchText(costCode.code || "");
+
+        return aliasMatch.costCodeMatchers.some(
+          (matcher) => costCodeName.includes(matcher) || costCodeCode.includes(matcher)
+        );
+      });
+
+      if (matchedCostCode) {
+        return matchedCostCode.id;
+      }
+    }
+
+    return currentCostCodeId || "";
+  };
+  const resolveTradeDrivenCostCodeId = (tradeId, fallbackTrade = "", currentCostCodeId = "") =>
+    isInternalLabourTrade(tradeId, fallbackTrade)
+      ? currentCostCodeId || getAutoAssignedCostCodeId(tradeId, fallbackTrade, currentCostCodeId)
+      : getAutoAssignedCostCodeId(tradeId, fallbackTrade, currentCostCodeId);
   const getUnitName = (unitId, fallback = "") =>
     getUnitAbbreviation(units, unitId, fallback, fallback) || "Unassigned";
   const getCostDisplayName = (cost) => getStructuredItemPresentation(cost).displayName;
   const getRowRate = (row) => row.unitRate ?? row.rate ?? "";
-  const sortEstimateRows = (left, right) =>
-    Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0) ||
-    getStructuredItemPresentation(left).displayName.localeCompare(
-      getStructuredItemPresentation(right).displayName
+  const getDisplayedRowTotal = (row) => {
+    const quantity = Number(row.quantity ?? 0);
+    const rate = Number(getRowRate(row));
+
+    if (row.include === false) {
+      return 0;
+    }
+
+    if (!Number.isFinite(quantity) || !Number.isFinite(rate)) {
+      return 0;
+    }
+
+    return quantity * rate;
+  };
+  const getRowSortValue = (row, key) => {
+    switch (key) {
+      case "item":
+        return (row.itemSortKey || getStructuredItemPresentation(row).sortKey || "").toLowerCase();
+      case "workType":
+        return cleanText(row.workType).toLowerCase();
+      case "stage":
+        return cleanText(row.stage || getStageName(row.stageId, "")).toLowerCase();
+      case "trade":
+        return cleanText(row.trade || getTradeName(row.tradeId, "")).toLowerCase();
+      case "room":
+        return cleanText(row.roomName).toLowerCase();
+      case "assembly":
+        return cleanText(row.assemblyName || row.sourceAssemblyName).toLowerCase();
+      default:
+        return Number(row.sortOrder ?? 0);
+    }
+  };
+  const compareEstimateRows = (left, right) => {
+    if (builderSort.key === "sortOrder") {
+      const direction = builderSort.direction === "asc" ? 1 : -1;
+      return (
+        (Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0)) * direction ||
+        getStructuredItemPresentation(left).displayName.localeCompare(
+          getStructuredItemPresentation(right).displayName
+        )
+      );
+    }
+
+    const leftValue = getRowSortValue(left, builderSort.key);
+    const rightValue = getRowSortValue(right, builderSort.key);
+    const direction = builderSort.direction === "asc" ? 1 : -1;
+    return (
+      String(leftValue).localeCompare(String(rightValue), undefined, { sensitivity: "base" }) * direction ||
+      Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0)
     );
+  };
+  const matchesBuilderRow = (row) => {
+    if (builderFilters.workType && cleanText(row.workType) !== cleanText(builderFilters.workType)) {
+      return false;
+    }
+
+    if (builderFilters.tradeId && cleanText(row.tradeId) !== cleanText(builderFilters.tradeId)) {
+      return false;
+    }
+
+    if (
+      builderFilters.itemFamily &&
+      cleanText(row.itemFamily) !== cleanText(builderFilters.itemFamily)
+    ) {
+      return false;
+    }
+
+    if (builderFilters.stageId && cleanText(row.stageId) !== cleanText(builderFilters.stageId)) {
+      return false;
+    }
+
+    const normalizedSearch = cleanText(builderSearchTerm).toLowerCase();
+
+    if (!normalizedSearch) {
+      return true;
+    }
+
+    return [
+      row.displayName,
+      row.displayPrimary,
+      row.displayMeta,
+      row.itemName,
+      row.itemFamily,
+      row.trade,
+      row.notes,
+      row.roomName,
+      row.assemblyName,
+      row.sourceAssemblyName,
+      row.workType,
+    ].some((value) => cleanText(value).toLowerCase().includes(normalizedSearch));
+  };
+  const estimateGridTemplate = [
+    `${estimateColumnWidths.coreName}px`,
+    `minmax(${estimateColumnWidths.detailedName}px, 1fr)`,
+    `${estimateColumnWidths.workType}px`,
+    `${estimateColumnWidths.stage}px`,
+    `${estimateColumnWidths.trade}px`,
+    `${estimateColumnWidths.costCode}px`,
+    `${estimateColumnWidths.quantity}px`,
+    `${estimateColumnWidths.unit}px`,
+    `${estimateColumnWidths.rate}px`,
+    `${estimateColumnWidths.total}px`,
+    `${estimateColumnWidths.actions}px`,
+  ].join(" ");
+  const estimateGridMinWidth = Object.values(estimateColumnWidths).reduce(
+    (total, value) => total + value,
+    0
+  );
+  const estimateGridStyle = {
+    "--estimate-grid-template": estimateGridTemplate || ESTIMATE_BUILDER_GRID_TEMPLATE,
+    "--estimate-grid-min-width": `${estimateGridMinWidth}px`,
+  };
+  const activeBuilderFilterCount = Object.values(builderFilters).filter(Boolean).length;
+
+  const getBuilderGroupLabel = (row) => {
+    switch (builderGroupBy) {
+      case "itemFamily":
+        return cleanText(row.itemFamily) || "Unassigned";
+      case "stage":
+        return cleanText(row.stage) || getStageName(row.stageId) || "Unassigned";
+      case "trade":
+        return cleanText(row.trade) || getTradeName(row.tradeId) || "Unassigned";
+      case "workType":
+        return cleanText(row.workType) || "Unassigned";
+      default:
+        return "";
+    }
+  };
+
+  const groupEstimateRows = (rows) => {
+    if (builderGroupBy === "none") {
+      return [{ key: "all", label: "", rows }];
+    }
+
+    const groupedRows = rows.reduce((groups, row) => {
+      const label = getBuilderGroupLabel(row);
+
+      if (!groups[label]) {
+        groups[label] = [];
+      }
+
+      groups[label].push(row);
+      return groups;
+    }, {});
+
+    return Object.entries(groupedRows).map(([label, grouped]) => ({
+      key: label,
+      label,
+      rows: grouped,
+    }));
+  };
+
+  const toggleRowPanel = (rowId, panel) => {
+    setActiveRowPanel((current) =>
+      current.rowId === rowId && current.panel === panel ? { rowId: "", panel: "" } : { rowId, panel }
+    );
+  };
 
   const updateManualLine = (lineId, key, value) => {
     onManualLinesChange(
@@ -260,11 +615,29 @@ function EstimateBuilderPage({
           };
         }
 
-        if (key === "unitId") {
+    if (key === "unitId") {
+      return {
+        ...line,
+        unitId: value,
+        unit: getUnitAbbreviation(units, value, line.unit, line.unit),
+      };
+    }
+
+        if (key === "tradeId") {
+          const nextCostCodeId = resolveTradeDrivenCostCodeId(value, "", line.costCodeId);
           return {
             ...line,
-            unitId: value,
-            unit: getUnitAbbreviation(units, value, line.unit, line.unit),
+            tradeId: value,
+            costCodeId: nextCostCodeId,
+            costCode: getCostCodeName(nextCostCodeId, line.costCode),
+          };
+        }
+
+        if (key === "costCodeId") {
+          return {
+            ...line,
+            costCodeId: value,
+            costCode: getCostCodeName(value, line.costCode),
           };
         }
 
@@ -318,9 +691,12 @@ function EstimateBuilderPage({
     }
 
     if (key === "tradeId") {
+      const nextCostCodeId = resolveTradeDrivenCostCodeId(value, "", row.costCodeId);
       onGeneratedRowOverrideChange(row.id, {
         tradeId: value,
         trade: getTradeName(value, ""),
+        costCodeId: nextCostCodeId,
+        costCode: getCostCodeName(nextCostCodeId, row.costCode),
       });
       return;
     }
@@ -328,7 +704,7 @@ function EstimateBuilderPage({
     if (key === "costCodeId") {
       onGeneratedRowOverrideChange(row.id, {
         costCodeId: value,
-        costCode: getCostCodeName(value, ""),
+        costCode: getCostCodeName(value, row.costCode),
       });
       return;
     }
@@ -345,14 +721,35 @@ function EstimateBuilderPage({
   };
 
   const renderEstimateGridHeader = () => (
-    <div className="estimate-builder-grid estimate-builder-grid-header" role="row">
+    <div
+      className="estimate-builder-grid estimate-builder-grid-header"
+      role="row"
+      style={estimateGridStyle}
+    >
       {estimateColumns.map((column) => (
         <div
           key={column.key}
           className={`estimate-builder-grid-cell ${column.className}`}
           role="columnheader"
         >
-          {column.label}
+          <div className="cost-library-header-cell estimate-builder-header-cell">
+            <span className="estimate-builder-header-label">{column.label}</span>
+          </div>
+          {column.key !== "actions" ? (
+            <button
+              type="button"
+              className="cost-library-resize-handle estimate-builder-column-resize-handle"
+              aria-label={`Resize ${column.label} column`}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                setActiveColumnResize({
+                  key: column.key,
+                  startX: event.clientX,
+                  startWidth: estimateColumnWidths[column.key],
+                });
+              }}
+            />
+          ) : null}
         </div>
       ))}
     </div>
@@ -365,6 +762,163 @@ function EstimateBuilderPage({
         : (key, value) => updateGeneratedRow(row, key, value);
     const itemPresentation = getStructuredItemPresentation(row);
     const workTypeTone = getWorkTypeTone(row.workType);
+    const openableSourceLink = getOpenableUrl(row.sourceLink);
+    const hasNotes = cleanText(row.notes);
+    const hasSourceLink = cleanText(row.sourceLink);
+    const isNotesPanelOpen = activeRowPanel.rowId === row.id && activeRowPanel.panel === "notes";
+    const isSourcePanelOpen = activeRowPanel.rowId === row.id && activeRowPanel.panel === "source";
+    const renderEstimateDataCell = (columnKey, key) => {
+      switch (columnKey) {
+        case "coreName":
+          return (
+            <div key={key} className="estimate-builder-grid-cell estimate-builder-col-core">
+              <input
+                className="estimate-builder-inline-control estimate-builder-core-input"
+                aria-label={`Core item name for ${row.itemName}`}
+                value={row.itemName || ""}
+                onChange={(event) => onRowFieldChange("itemName", event.target.value)}
+                placeholder="Core item"
+              />
+            </div>
+          );
+        case "detailedName":
+          return (
+            <div key={key} className="estimate-builder-grid-cell estimate-builder-col-detail">
+              <textarea
+                className="estimate-builder-inline-control estimate-builder-detail-input"
+                aria-label={`Detailed item name for ${row.itemName}`}
+                value={
+                  row.displayNameOverride ||
+                  itemPresentation.structuredDisplayName ||
+                  row.displayName ||
+                  ""
+                }
+                onChange={(event) => onRowFieldChange("displayNameOverride", event.target.value)}
+                placeholder="Detailed item name"
+                rows={1}
+              />
+            </div>
+          );
+        case "workType":
+          return (
+            <div key={key} className="estimate-builder-grid-cell estimate-builder-col-worktype">
+              {row.workType ? (
+                <span className={`estimate-builder-worktype-badge is-${workTypeTone || "default"}`}>
+                  {row.workType}
+                </span>
+              ) : null}
+            </div>
+          );
+        case "stage":
+          return (
+            <div key={key} className="estimate-builder-grid-cell estimate-builder-col-stage">
+              <select
+                className="estimate-builder-inline-control"
+                aria-label={`Stage for ${row.itemName}`}
+                value={row.stageId || ""}
+                onChange={(event) => onRowFieldChange("stageId", event.target.value)}
+              >
+                <option value="">Unassigned</option>
+                {activeStages.map((stage) => (
+                  <option key={stage.id} value={stage.id}>
+                    {stage.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        case "trade":
+          return (
+            <div key={key} className="estimate-builder-grid-cell estimate-builder-col-trade">
+              <select
+                className="estimate-builder-inline-control"
+                aria-label={`Trade for ${row.itemName}`}
+                value={row.tradeId || ""}
+                onChange={(event) => onRowFieldChange("tradeId", event.target.value)}
+              >
+                <option value="">Unassigned</option>
+                {activeTrades.map((trade) => (
+                  <option key={trade.id} value={trade.id}>
+                    {trade.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        case "costCode":
+          return (
+            <div key={key} className="estimate-builder-grid-cell estimate-builder-col-cost-code">
+              <select
+                className="estimate-builder-inline-control estimate-builder-inline-subtle"
+                aria-label={`Cost code for ${row.itemName}`}
+                value={row.costCodeId || ""}
+                onChange={(event) => onRowFieldChange("costCodeId", event.target.value)}
+              >
+                <option value="">Auto</option>
+                {activeCostCodes.map((costCode) => (
+                  <option key={costCode.id} value={costCode.id}>
+                    {costCode.code ? `${costCode.code}  ${costCode.name}` : costCode.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        case "quantity":
+          return (
+            <div key={key} className="estimate-builder-grid-cell estimate-builder-col-qty">
+              <input
+                className="estimate-builder-inline-control"
+                aria-label={`Quantity for ${row.itemName}`}
+                type="number"
+                min="0"
+                step="0.01"
+                value={row.quantity}
+                onChange={(event) => onRowFieldChange("quantity", event.target.value)}
+              />
+            </div>
+          );
+        case "unit":
+          return (
+            <div key={key} className="estimate-builder-grid-cell estimate-builder-col-unit">
+              <select
+                className="estimate-builder-inline-control"
+                aria-label={`Unit for ${row.itemName}`}
+                value={row.unitId || ""}
+                onChange={(event) => onRowFieldChange("unitId", event.target.value)}
+              >
+                <option value="">Unassigned</option>
+                {activeUnits.map((unit) => (
+                  <option key={unit.id} value={unit.id}>
+                    {unit.abbreviation || unit.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        case "rate":
+          return (
+            <div key={key} className="estimate-builder-grid-cell estimate-builder-col-rate">
+              <input
+                className="estimate-builder-inline-control"
+                aria-label={`Rate for ${row.itemName}`}
+                type="number"
+                min="0"
+                step="0.01"
+                value={getRowRate(row)}
+                onChange={(event) => onRowFieldChange("rate", event.target.value)}
+              />
+            </div>
+          );
+        case "total":
+          return (
+            <div key={key} className="estimate-builder-grid-cell estimate-builder-col-total">
+              {getDisplayedRowTotal(row).toFixed(2)}
+            </div>
+          );
+        default:
+          return null;
+      }
+    };
 
     return (
     <div
@@ -375,120 +929,97 @@ function EstimateBuilderPage({
         options.className || ""
       }`.trim()}
       role="row"
+      style={estimateGridStyle}
     >
-      <div className="estimate-builder-grid-cell estimate-builder-col-item">
-        {row.workType ? (
-          <span className={`estimate-builder-worktype-badge is-${workTypeTone || "default"}`}>
-            {row.workType}
-          </span>
-        ) : null}
-        <span className="estimate-builder-item-label">{itemPresentation.displayName}</span>
-      </div>
-      <div className="estimate-builder-grid-cell estimate-builder-col-stage">
-        <select
-          className="estimate-builder-inline-control"
-          aria-label={`Stage for ${row.itemName}`}
-          value={row.stageId || ""}
-          onChange={(event) => onRowFieldChange("stageId", event.target.value)}
-        >
-          <option value="">Unassigned</option>
-          {activeStages.map((stage) => (
-            <option key={stage.id} value={stage.id}>
-              {stage.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="estimate-builder-grid-cell estimate-builder-col-trade">
-        <select
-          className="estimate-builder-inline-control"
-          aria-label={`Trade for ${row.itemName}`}
-          value={row.tradeId || ""}
-          onChange={(event) => onRowFieldChange("tradeId", event.target.value)}
-        >
-          <option value="">Unassigned</option>
-          {activeTrades.map((trade) => (
-            <option key={trade.id} value={trade.id}>
-              {trade.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="estimate-builder-grid-cell estimate-builder-col-cost-code">
-        <select
-          className="estimate-builder-inline-control"
-          aria-label={`Cost code for ${row.itemName}`}
-          value={row.costCodeId || ""}
-          onChange={(event) => onRowFieldChange("costCodeId", event.target.value)}
-        >
-          <option value="">Unassigned</option>
-          {activeCostCodes.map((costCode) => (
-            <option key={costCode.id} value={costCode.id}>
-              {costCode.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="estimate-builder-grid-cell estimate-builder-col-sort">
-        <input
-          className="estimate-builder-inline-control"
-          aria-label={`Sort order for ${row.itemName}`}
-          type="number"
-          min="0"
-          step="0.1"
-          value={row.sortOrder ?? 0}
-          onChange={(event) => onRowFieldChange("sortOrder", event.target.value)}
-        />
-      </div>
-      <div className="estimate-builder-grid-cell estimate-builder-col-qty">
-        <input
-          className="estimate-builder-inline-control"
-          aria-label={`Quantity for ${row.itemName}`}
-          type="number"
-          min="0"
-          step="0.01"
-          value={row.quantity}
-          onChange={(event) => onRowFieldChange("quantity", event.target.value)}
-        />
-      </div>
-      <div className="estimate-builder-grid-cell estimate-builder-col-unit">
-        <select
-          className="estimate-builder-inline-control"
-          aria-label={`Unit for ${row.itemName}`}
-          value={row.unitId || ""}
-          onChange={(event) => onRowFieldChange("unitId", event.target.value)}
-        >
-          <option value="">Unassigned</option>
-          {activeUnits.map((unit) => (
-            <option key={unit.id} value={unit.id}>
-              {unit.abbreviation || unit.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="estimate-builder-grid-cell estimate-builder-col-rate">
-        <input
-          className="estimate-builder-inline-control"
-          aria-label={`Rate for ${row.itemName}`}
-          type="number"
-          min="0"
-          step="0.01"
-          value={getRowRate(row)}
-          onChange={(event) => onRowFieldChange("rate", event.target.value)}
-        />
-      </div>
-      <div className="estimate-builder-grid-cell estimate-builder-col-notes">
-        <input
-          className="estimate-builder-inline-control"
-          aria-label={`Notes for ${row.itemName}`}
-          type="text"
-          value={row.notes || ""}
-          onChange={(event) => onRowFieldChange("notes", event.target.value)}
-          placeholder="Notes"
-        />
-      </div>
+      {estimateColumns
+        .filter((column) => column.key !== "actions")
+        .map((column) => renderEstimateDataCell(column.key, column.key))}
       <div className="estimate-builder-grid-cell estimate-builder-col-actions">
-        <div className="estimate-builder-row-actions">{actionButton}</div>
+        <div className="estimate-builder-row-actions">
+          {renderIconActionButton({
+            label: hasSourceLink ? "Edit source link" : "Add source link",
+            icon: "\uD83D\uDD17",
+            className: hasSourceLink
+              ? "secondary-button estimate-builder-icon-button-active estimate-builder-icon-button-has-data"
+              : "secondary-button",
+            onClick: () => toggleRowPanel(row.id, "source"),
+          })}
+          {renderIconActionButton({
+            label: hasNotes ? "Edit notes" : "Add notes",
+            icon: "\uD83D\uDCDD",
+            className: hasNotes
+              ? "secondary-button estimate-builder-icon-button-active estimate-builder-icon-button-has-data"
+              : "secondary-button",
+            onClick: () => toggleRowPanel(row.id, "notes"),
+          })}
+          {actionButton}
+        </div>
+        {isSourcePanelOpen ? (
+          <div className="estimate-builder-row-popover">
+            <span className="estimate-builder-row-popover-label">Source Link</span>
+            <input
+              className="estimate-builder-inline-control"
+              aria-label={`Source link for ${row.itemName}`}
+              type="url"
+              value={row.sourceLink || ""}
+              onChange={(event) => onRowFieldChange("sourceLink", event.target.value)}
+              placeholder="https://example.com/reference"
+            />
+            <div className="estimate-builder-row-popover-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={!openableSourceLink}
+                onClick={() => window.open(openableSourceLink, "_blank", "noopener,noreferrer")}
+              >
+                Open
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => onRowFieldChange("sourceLink", "")}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setActiveRowPanel({ rowId: "", panel: "" })}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {isNotesPanelOpen ? (
+          <div className="estimate-builder-row-popover">
+            <span className="estimate-builder-row-popover-label">Notes</span>
+            <textarea
+              className="estimate-builder-inline-control estimate-builder-row-textarea"
+              aria-label={`Notes for ${row.itemName}`}
+              value={row.notes || ""}
+              onChange={(event) => onRowFieldChange("notes", event.target.value)}
+              placeholder="Line notes"
+              rows={3}
+            />
+            <div className="estimate-builder-row-popover-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => onRowFieldChange("notes", "")}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setActiveRowPanel({ rowId: "", panel: "" })}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
     );
@@ -526,6 +1057,27 @@ function EstimateBuilderPage({
         })}
       </>
     );
+  };
+
+  const renderGroupedEstimateRows = (rows, renderRow, emptyMessage) => {
+    if (!rows.length) {
+      return <p className="empty-state estimate-builder-inline-empty">{emptyMessage}</p>;
+    }
+
+    return groupEstimateRows(rows).map((group) => (
+      <div
+        key={`${builderGroupBy}-${group.key || "all"}`}
+        className={builderGroupBy === "none" ? "" : "estimate-builder-row-group"}
+      >
+        {builderGroupBy !== "none" ? (
+          <div className="estimate-builder-row-group-header">
+            <span>{group.label}</span>
+            <span>{group.rows.length}</span>
+          </div>
+        ) : null}
+        <div className="estimate-builder-row-group-body">{group.rows.map(renderRow)}</div>
+      </div>
+    ));
   };
 
   const renderSectionActionButtons = (section) => (
@@ -580,6 +1132,10 @@ function EstimateBuilderPage({
         key === "unitId"
           ? getUnitAbbreviation(units, value, current.unit, current.unit)
           : current.unit,
+      costCodeId:
+        key === "tradeId"
+          ? resolveTradeDrivenCostCodeId(value, "", current.costCodeId)
+          : current.costCodeId,
       [key]: value,
     }));
   };
@@ -628,14 +1184,53 @@ function EstimateBuilderPage({
   };
 
   const updateManualLabourForm = (key, value) => {
-    setManualLabourForm((current) => ({ ...current, [key]: value }));
+    setManualLabourForm((current) => ({
+      ...current,
+      costCodeId:
+        key === "tradeId"
+          ? resolveTradeDrivenCostCodeId(value, "", current.costCodeId)
+          : current.costCodeId,
+      [key]: value,
+    }));
+  };
+
+  const updateBuilderFilter = (key, value) => {
+    setBuilderFilters((current) => ({ ...current, [key]: value }));
+  };
+
+  const clearBuilderFilters = () => {
+    setBuilderFilters(defaultToolbarFilters);
   };
 
   const updateSectionCostItemForm = (sectionId, key, value) => {
+    const selectedCost = key === "costId" ? sortedCosts.find((cost) => cost.id === value) : null;
+    const currentForm = costItemFormBySection[sectionId] || createDefaultSectionCostItemForm();
+    const nextTradeId = key === "tradeId" ? value : currentForm.tradeId;
+
     setCostItemFormBySection((current) => ({
       ...current,
       [sectionId]: {
-        ...(current[sectionId] || createDefaultSectionCostItemForm()),
+        ...currentForm,
+        costCodeId:
+          key === "costId"
+            ? resolveTradeDrivenCostCodeId(
+                selectedCost?.tradeId || current[sectionId]?.tradeId || "",
+                selectedCost?.trade || "",
+                selectedCost?.costCodeId || current[sectionId]?.costCodeId || ""
+              )
+            : key === "tradeId"
+              ? resolveTradeDrivenCostCodeId(value, "", currentForm.costCodeId)
+            : current[sectionId]?.costCodeId,
+        tradeId:
+          key === "costId"
+            ? selectedCost?.tradeId || current[sectionId]?.tradeId || ""
+            : key === "tradeId"
+              ? nextTradeId
+              : current[sectionId]?.tradeId,
+        sourceLink:
+          key === "costId"
+            ? selectedCost?.sourceLink || current[sectionId]?.sourceLink || ""
+            : current[sectionId]?.sourceLink,
         [key]: value,
       },
     }));
@@ -878,6 +1473,7 @@ function EstimateBuilderPage({
 
     appendManualLine({
       itemName: selectedCost.itemName,
+      displayNameOverride: "",
       workType: getDefaultWorkTypeFromCost(selectedCost, units),
       itemFamily: selectedCost.itemFamily || "",
       specification: selectedCost.specification || "",
@@ -890,10 +1486,16 @@ function EstimateBuilderPage({
       rate: Number(selectedCost.rate || 0),
       stageId: sectionCostForm.stageId || section.stageId || "",
       sectionId: section.id,
-      costCodeId: sectionCostForm.costCodeId,
-      tradeId: sectionCostForm.tradeId,
+      costCodeId: resolveTradeDrivenCostCodeId(
+        sectionCostForm.tradeId || selectedCost.tradeId || "",
+        selectedCost.trade || "",
+        sectionCostForm.costCodeId || selectedCost.costCodeId || ""
+      ),
+      tradeId: sectionCostForm.tradeId || selectedCost.tradeId || "",
       elementId: sectionCostForm.elementId,
       notes: sectionCostForm.notes,
+      sourceLink: sectionCostForm.sourceLink || selectedCost.sourceLink || "",
+      sourceCostItemId: selectedCost.id,
     });
 
     setCostItemFormBySection((current) => {
@@ -911,6 +1513,7 @@ function EstimateBuilderPage({
 
     appendManualLine({
       itemName: manualLineForm.itemName,
+      displayNameOverride: manualLineForm.displayNameOverride,
       workType: manualLineForm.workType,
       itemFamily: manualLineForm.itemFamily,
       specification: manualLineForm.specification,
@@ -923,10 +1526,15 @@ function EstimateBuilderPage({
       rate: Number(manualLineForm.rate),
       stageId: manualLineForm.stageId || section.stageId || "",
       sectionId: section.id,
-      costCodeId: manualLineForm.costCodeId,
+      costCodeId: resolveTradeDrivenCostCodeId(
+        manualLineForm.tradeId,
+        "",
+        manualLineForm.costCodeId
+      ),
       tradeId: manualLineForm.tradeId,
       elementId: manualLineForm.elementId,
       notes: manualLineForm.notes,
+      sourceLink: manualLineForm.sourceLink,
     });
 
     setManualLineForm({
@@ -946,7 +1554,8 @@ function EstimateBuilderPage({
 
     appendManualLine({
       itemName: selectedCost.itemName,
-      workType: "Labour",
+      displayNameOverride: "",
+      workType: cleanText(selectedCost.workType) || "Labour",
       itemFamily: selectedCost.itemFamily || "",
       specification: selectedCost.specification || "",
       gradeOrQuality: selectedCost.gradeOrQuality || "",
@@ -958,10 +1567,16 @@ function EstimateBuilderPage({
       rate: Number(selectedCost.rate || 0),
       stageId: manualLabourForm.stageId || section.stageId || "",
       sectionId: section.id,
-      costCodeId: manualLabourForm.costCodeId,
-      tradeId: manualLabourForm.tradeId,
+      costCodeId: resolveTradeDrivenCostCodeId(
+        manualLabourForm.tradeId || selectedCost.tradeId || "",
+        selectedCost.trade || "",
+        manualLabourForm.costCodeId || selectedCost.costCodeId || ""
+      ),
+      tradeId: manualLabourForm.tradeId || selectedCost.tradeId || "",
       elementId: manualLabourForm.elementId,
       notes: manualLabourForm.notes,
+      sourceLink: manualLabourForm.sourceLink || selectedCost.sourceLink || "",
+      sourceCostItemId: selectedCost.id,
     });
 
     setManualLabourForm({
@@ -981,7 +1596,7 @@ function EstimateBuilderPage({
 
     const selectedAssemblyRows = assemblies
       .filter((assemblyRow) => getAssemblyGroupId(assemblyRow) === selectedAssemblyId)
-      .sort(sortEstimateRows);
+      .sort((left, right) => Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0));
 
     if (!selectedAssemblyRows.length) {
       return;
@@ -1001,7 +1616,8 @@ function EstimateBuilderPage({
       const line = {
         id: `manual-estimate-line-${Date.now()}-${assemblyRow.id}-${nextSortOrder}`,
         itemName: assemblyRow.itemName,
-        workType: assemblyRow.workType || "",
+        displayNameOverride: assemblyRow.displayNameOverride || "",
+        workType: assemblyRow.workType || linkedCost?.workType || "",
         itemFamily: assemblyRow.itemFamily || "",
         specification: assemblyRow.specification || "",
         gradeOrQuality: assemblyRow.gradeOrQuality || "",
@@ -1018,10 +1634,15 @@ function EstimateBuilderPage({
         rate: Number(linkedCost?.rate || 0),
         stageId: assemblyRow.stageId || section.stageId || "",
         sectionId: section.id,
-        costCodeId: assemblyRow.costCodeId || "",
-        tradeId: assemblyRow.tradeId || "",
+        costCodeId: resolveTradeDrivenCostCodeId(
+          assemblyRow.tradeId || linkedCost?.tradeId || "",
+          assemblyRow.trade || linkedCost?.trade || "",
+          assemblyRow.costCodeId || linkedCost?.costCodeId || ""
+        ),
+        tradeId: assemblyRow.tradeId || linkedCost?.tradeId || "",
         elementId: assemblyRow.elementId || "",
         notes: "",
+        sourceLink: linkedCost?.sourceLink || "",
         sortOrder: nextSortOrder,
         sourceAssemblyId: selectedAssemblyId,
         sourceAssemblyName: assemblyRow.assemblyName,
@@ -1081,7 +1702,7 @@ function EstimateBuilderPage({
 
     const siblingLines = manualLines
       .filter((line) => line.sectionId === targetLine.sectionId)
-      .sort(sortEstimateRows);
+      .sort((left, right) => Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0));
     const currentIndex = siblingLines.findIndex((line) => line.id === lineId);
     const nextIndex = currentIndex + direction;
 
@@ -1163,7 +1784,8 @@ function EstimateBuilderPage({
         {childSections.map((section) => {
           const sectionLines = manualLines
             .filter((line) => line.sectionId === section.id)
-            .sort(sortEstimateRows);
+            .filter(matchesBuilderRow)
+            .sort(compareEstimateRows);
           const sectionAssemblyGroups = Object.values(
             sectionLines.reduce((groups, line) => {
               if (!line.sourceAssemblyId) {
@@ -1184,11 +1806,14 @@ function EstimateBuilderPage({
           )
             .map((group) => ({
               ...group,
-              rows: group.rows.sort(sortEstimateRows),
+              rows: group.rows.sort(compareEstimateRows),
             }))
             .sort((left, right) => left.name.localeCompare(right.name));
           const standaloneSectionLines = sectionLines.filter((line) => !line.sourceAssemblyId);
-          const sectionRooms = projectRooms.filter((room) => room.sectionId === section.id);
+          const sectionRooms = projectRooms.filter((room) =>
+            room.sectionId === section.id &&
+            generatedRows.some((row) => row.roomId === room.id && matchesBuilderRow(row))
+          );
           const sectionCostForm = costItemFormBySection[section.id];
           const sectionAssemblyForm = assemblyFormBySection[section.id];
           const selectedCost = sortedCosts.find((cost) => cost.id === sectionCostForm?.costId);
@@ -1397,22 +2022,6 @@ function EstimateBuilderPage({
                           </select>
                         </FormField>
 
-                        <FormField label="Cost code">
-                          <select
-                            value={sectionCostForm.costCodeId}
-                            onChange={(event) =>
-                              updateSectionCostItemForm(section.id, "costCodeId", event.target.value)
-                            }
-                          >
-                            <option value="">Unassigned</option>
-                            {activeCostCodes.map((costCode) => (
-                              <option key={costCode.id} value={costCode.id}>
-                                {costCode.name}
-                              </option>
-                            ))}
-                          </select>
-                        </FormField>
-
                         <FormField label="Trade">
                           <select
                             value={sectionCostForm.tradeId}
@@ -1428,6 +2037,24 @@ function EstimateBuilderPage({
                             ))}
                           </select>
                         </FormField>
+
+                        {isInternalLabourTrade(sectionCostForm.tradeId) ? (
+                          <FormField label="Cost code override">
+                            <select
+                              value={sectionCostForm.costCodeId}
+                              onChange={(event) =>
+                                updateSectionCostItemForm(section.id, "costCodeId", event.target.value)
+                              }
+                            >
+                              <option value="">Auto</option>
+                              {activeCostCodes.map((costCode) => (
+                                <option key={costCode.id} value={costCode.id}>
+                                  {costCode.name}
+                                </option>
+                              ))}
+                            </select>
+                          </FormField>
+                        ) : null}
 
                         <FormField label="Element">
                           <select
@@ -1452,6 +2079,16 @@ function EstimateBuilderPage({
                               updateSectionCostItemForm(section.id, "notes", event.target.value)
                             }
                             placeholder="Optional notes"
+                          />
+                        </FormField>
+
+                        <FormField label="Source link">
+                          <input
+                            value={sectionCostForm.sourceLink}
+                            onChange={(event) =>
+                              updateSectionCostItemForm(section.id, "sourceLink", event.target.value)
+                            }
+                            placeholder="Optional reference URL"
                           />
                         </FormField>
                       </div>
@@ -1479,6 +2116,16 @@ function EstimateBuilderPage({
                             value={manualLineForm.itemName}
                             onChange={(event) => updateManualLineForm("itemName", event.target.value)}
                             placeholder="Custom estimate item"
+                          />
+                        </FormField>
+
+                        <FormField label="Display item name">
+                          <input
+                            value={manualLineForm.displayNameOverride}
+                            onChange={(event) =>
+                              updateManualLineForm("displayNameOverride", event.target.value)
+                            }
+                            placeholder="Optional detailed display name"
                           />
                         </FormField>
 
@@ -1594,20 +2241,6 @@ function EstimateBuilderPage({
                           </select>
                         </FormField>
 
-                        <FormField label="Cost code">
-                          <select
-                            value={manualLineForm.costCodeId}
-                            onChange={(event) => updateManualLineForm("costCodeId", event.target.value)}
-                          >
-                            <option value="">Unassigned</option>
-                            {activeCostCodes.map((costCode) => (
-                              <option key={costCode.id} value={costCode.id}>
-                                {costCode.name}
-                              </option>
-                            ))}
-                          </select>
-                        </FormField>
-
                         <FormField label="Trade">
                           <select
                             value={manualLineForm.tradeId}
@@ -1621,6 +2254,22 @@ function EstimateBuilderPage({
                             ))}
                           </select>
                         </FormField>
+
+                        {isInternalLabourTrade(manualLineForm.tradeId) ? (
+                          <FormField label="Cost code override">
+                            <select
+                              value={manualLineForm.costCodeId}
+                              onChange={(event) => updateManualLineForm("costCodeId", event.target.value)}
+                            >
+                              <option value="">Auto</option>
+                              {activeCostCodes.map((costCode) => (
+                                <option key={costCode.id} value={costCode.id}>
+                                  {costCode.name}
+                                </option>
+                              ))}
+                            </select>
+                          </FormField>
+                        ) : null}
 
                         <FormField label="Element">
                           <select
@@ -1641,6 +2290,14 @@ function EstimateBuilderPage({
                             value={manualLineForm.notes}
                             onChange={(event) => updateManualLineForm("notes", event.target.value)}
                             placeholder="Optional notes"
+                          />
+                        </FormField>
+
+                        <FormField label="Source link">
+                          <input
+                            value={manualLineForm.sourceLink}
+                            onChange={(event) => updateManualLineForm("sourceLink", event.target.value)}
+                            placeholder="Optional reference URL"
                           />
                         </FormField>
                       </div>
@@ -1701,20 +2358,6 @@ function EstimateBuilderPage({
                           </select>
                         </FormField>
 
-                        <FormField label="Cost code">
-                          <select
-                            value={manualLabourForm.costCodeId}
-                            onChange={(event) => updateManualLabourForm("costCodeId", event.target.value)}
-                          >
-                            <option value="">Unassigned</option>
-                            {activeCostCodes.map((costCode) => (
-                              <option key={costCode.id} value={costCode.id}>
-                                {costCode.name}
-                              </option>
-                            ))}
-                          </select>
-                        </FormField>
-
                         <FormField label="Trade">
                           <select
                             value={manualLabourForm.tradeId}
@@ -1728,6 +2371,22 @@ function EstimateBuilderPage({
                             ))}
                           </select>
                         </FormField>
+
+                        {isInternalLabourTrade(manualLabourForm.tradeId) ? (
+                          <FormField label="Cost code override">
+                            <select
+                              value={manualLabourForm.costCodeId}
+                              onChange={(event) => updateManualLabourForm("costCodeId", event.target.value)}
+                            >
+                              <option value="">Auto</option>
+                              {activeCostCodes.map((costCode) => (
+                                <option key={costCode.id} value={costCode.id}>
+                                  {costCode.name}
+                                </option>
+                              ))}
+                            </select>
+                          </FormField>
+                        ) : null}
 
                         <FormField label="Element">
                           <select
@@ -1748,6 +2407,16 @@ function EstimateBuilderPage({
                             value={manualLabourForm.notes}
                             onChange={(event) => updateManualLabourForm("notes", event.target.value)}
                             placeholder="Optional notes"
+                          />
+                        </FormField>
+
+                        <FormField label="Source link">
+                          <input
+                            value={manualLabourForm.sourceLink}
+                            onChange={(event) =>
+                              updateManualLabourForm("sourceLink", event.target.value)
+                            }
+                            placeholder="Optional reference URL"
                           />
                         </FormField>
                       </div>
@@ -1828,7 +2497,8 @@ function EstimateBuilderPage({
                           {sectionRooms.map((room) => {
                             const roomRows = generatedRows
                               .filter((row) => row.roomId === room.id)
-                              .sort(sortEstimateRows);
+                              .filter(matchesBuilderRow)
+                              .sort(compareEstimateRows);
                             const isRoomCollapsed = isProjectRoomCollapsed(room.id);
 
                             return (
@@ -1865,8 +2535,9 @@ function EstimateBuilderPage({
 
                                 {!isRoomCollapsed ? (
                                   <div className="estimate-builder-room-rows">
-                                    {roomRows.length ? (
-                                      roomRows.map((row) =>
+                                    {renderGroupedEstimateRows(
+                                      roomRows,
+                                      (row) =>
                                         renderEstimateGridRow(
                                           row,
                                           renderRowActions(
@@ -1880,12 +2551,8 @@ function EstimateBuilderPage({
                                             className: "estimate-builder-generated-row",
                                             sourceType: "generated",
                                           }
-                                        )
-                                      )
-                                    ) : (
-                                      <p className="empty-state estimate-builder-inline-empty">
-                                        No generated room rows in this section.
-                                      </p>
+                                        ),
+                                      "No generated room rows in this section."
                                     )}
                                   </div>
                                 ) : null}
@@ -1940,7 +2607,9 @@ function EstimateBuilderPage({
 
                                 {!isAssemblyCollapsed ? (
                                   <div className="estimate-builder-room-rows">
-                                    {assemblyGroup.rows.map((row) =>
+                                    {renderGroupedEstimateRows(
+                                      assemblyGroup.rows,
+                                      (row) =>
                                       renderEstimateGridRow(
                                         row,
                                         renderRowActions(
@@ -1954,7 +2623,8 @@ function EstimateBuilderPage({
                                           className: "estimate-builder-manual-row",
                                           sourceType: "manual-builder",
                                         }
-                                      )
+                                      ),
+                                      "No assembly rows in this group."
                                     )}
                                   </div>
                                 ) : null}
@@ -1966,7 +2636,9 @@ function EstimateBuilderPage({
 
                       {standaloneSectionLines.length ? (
                         <div className="estimate-builder-manual-lines">
-                          {standaloneSectionLines.map((row) =>
+                          {renderGroupedEstimateRows(
+                            standaloneSectionLines,
+                            (row) =>
                             renderEstimateGridRow(
                               row,
                               renderRowActions(
@@ -1980,7 +2652,8 @@ function EstimateBuilderPage({
                                 className: "estimate-builder-manual-row",
                                 sourceType: "manual-builder",
                               }
-                            )
+                            ),
+                            "No manual lines in this section."
                           )}
                         </div>
                       ) : null}
@@ -2002,7 +2675,7 @@ function EstimateBuilderPage({
   return (
     <SectionCard>
       <div className="estimate-builder-toolbar">
-        <div className="estimate-builder-toolbar-actions">
+        <div className="estimate-builder-toolbar-left">
           {sortedSections.length ? (
             <>
               {renderIconActionButton({
@@ -2092,6 +2765,120 @@ function EstimateBuilderPage({
             </div>
           </div>
         </form>
+
+        <div className="estimate-builder-toolbar-right">
+          <FormField label="Search">
+            <input
+              className="estimate-builder-toolbar-search"
+              value={builderSearchTerm}
+              onChange={(event) => setBuilderSearchTerm(event.target.value)}
+              placeholder="Search item, family, trade, room"
+            />
+          </FormField>
+
+          <FormField label="Sort">
+            <select
+              value={builderSort.key}
+              onChange={(event) =>
+                setBuilderSort((current) => ({ ...current, key: event.target.value }))
+              }
+            >
+              {estimateSortOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FormField>
+
+          <FormField label="Dir">
+            <select
+              value={builderSort.direction}
+              onChange={(event) =>
+                setBuilderSort((current) => ({ ...current, direction: event.target.value }))
+              }
+            >
+              <option value="asc">Asc</option>
+              <option value="desc">Desc</option>
+            </select>
+          </FormField>
+
+          <FormField label="Group">
+            <select value={builderGroupBy} onChange={(event) => setBuilderGroupBy(event.target.value)}>
+              {builderGroupOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FormField>
+
+          <details className="estimate-builder-toolbar-menu">
+            <summary>Filter{activeBuilderFilterCount ? ` (${activeBuilderFilterCount})` : ""}</summary>
+            <div className="estimate-builder-toolbar-menu-panel">
+              <FormField label="Work type">
+                <select
+                  value={builderFilters.workType}
+                  onChange={(event) => updateBuilderFilter("workType", event.target.value)}
+                >
+                  <option value="">All</option>
+                  {workTypeOptions.map((workType) => (
+                    <option key={workType} value={workType}>
+                      {workType}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+
+              <FormField label="Trade">
+                <select
+                  value={builderFilters.tradeId}
+                  onChange={(event) => updateBuilderFilter("tradeId", event.target.value)}
+                >
+                  <option value="">All</option>
+                  {activeTrades.map((trade) => (
+                    <option key={trade.id} value={trade.id}>
+                      {trade.name}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+
+              <FormField label="Item family">
+                <select
+                  value={builderFilters.itemFamily}
+                  onChange={(event) => updateBuilderFilter("itemFamily", event.target.value)}
+                >
+                  <option value="">All</option>
+                  {activeItemFamilies.map((itemFamily) => (
+                    <option key={itemFamily.id} value={itemFamily.name}>
+                      {itemFamily.name}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+
+              <FormField label="Stage">
+                <select
+                  value={builderFilters.stageId}
+                  onChange={(event) => updateBuilderFilter("stageId", event.target.value)}
+                >
+                  <option value="">All</option>
+                  {activeStages.map((stage) => (
+                    <option key={stage.id} value={stage.id}>
+                      {stage.name}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+
+              <button type="button" className="secondary-button" onClick={clearBuilderFilters}>
+                Clear filters
+              </button>
+            </div>
+          </details>
+
+        </div>
       </div>
 
       <div className="estimate-builder-main">

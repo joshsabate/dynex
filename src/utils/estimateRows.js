@@ -92,6 +92,9 @@ function buildEstimateRow(baseRow, rowOverride) {
   const unit = hasOverride(rowOverride, "unit") ? rowOverride.unit : baseRow.unit;
   const itemName = hasOverride(rowOverride, "itemName") ? rowOverride.itemName : baseRow.itemName;
   const workType = hasOverride(rowOverride, "workType") ? rowOverride.workType : baseRow.workType;
+  const displayNameOverride = hasOverride(rowOverride, "displayNameOverride")
+    ? rowOverride.displayNameOverride
+    : baseRow.displayNameOverride;
   const itemFamily = hasOverride(rowOverride, "itemFamily")
     ? rowOverride.itemFamily
     : baseRow.itemFamily;
@@ -115,6 +118,7 @@ function buildEstimateRow(baseRow, rowOverride) {
   const total = include ? roundValue(quantity * unitRate) : 0;
   const itemPresentation = getStructuredItemPresentation({
     itemName,
+    displayNameOverride,
     workType,
     itemFamily,
     specification,
@@ -132,6 +136,7 @@ function buildEstimateRow(baseRow, rowOverride) {
     costCodeId,
     costCode,
     itemName,
+    displayNameOverride,
     workType,
     itemFamily,
     specification,
@@ -146,6 +151,9 @@ function buildEstimateRow(baseRow, rowOverride) {
     removed,
     sortOrder,
     notes: hasOverride(rowOverride, "notes") ? rowOverride.notes : baseRow.notes || "",
+    sourceLink: hasOverride(rowOverride, "sourceLink")
+      ? rowOverride.sourceLink
+      : baseRow.sourceLink || "",
     displayName: itemPresentation.displayName,
     displayPrimary: itemPresentation.primaryLabel,
     displayMeta: itemPresentation.metaLabel,
@@ -191,17 +199,22 @@ function buildTemplateLineRow({
       stage: getStageName(stages, line.stageId, line.stage),
       elementId: line.elementId || "",
       element: getElementName(elements, line.elementId, line.element),
-      tradeId: line.tradeId || "",
-      trade: getTradeName(trades, line.tradeId, line.trade),
-      costCodeId: line.costCodeId || "",
-      costCode: getCostCodeName(costCodes, line.costCodeId, line.costCode),
+      tradeId: line.tradeId || costRow?.tradeId || "",
+      trade: getTradeName(trades, line.tradeId || costRow?.tradeId, line.trade || costRow?.trade),
+      costCodeId: line.costCodeId || costRow?.costCodeId || "",
+      costCode: getCostCodeName(
+        costCodes,
+        line.costCodeId || costRow?.costCodeId,
+        line.costCode || costRow?.costCode
+      ),
       itemName: costRow?.itemName || line.itemName || "Unassigned",
-      workType: line.workType || (source === "manual-room-labour" ? "Labour" : ""),
-      itemFamily: line.itemFamily || "",
-      specification: line.specification || "",
-      gradeOrQuality: line.gradeOrQuality || "",
-      brand: line.brand || "",
-      finishOrVariant: line.finishOrVariant || "",
+      displayNameOverride: line.displayNameOverride || "",
+      workType: line.workType || costRow?.workType || (source === "manual-room-labour" ? "Labour" : ""),
+      itemFamily: line.itemFamily || costRow?.itemFamily || "",
+      specification: line.specification || costRow?.specification || "",
+      gradeOrQuality: line.gradeOrQuality || costRow?.gradeOrQuality || "",
+      brand: line.brand || costRow?.brand || "",
+      finishOrVariant: line.finishOrVariant || costRow?.finishOrVariant || "",
       qtyRule:
         line.quantitySourceType === "fixed"
           ? "Manual"
@@ -215,6 +228,7 @@ function buildTemplateLineRow({
       laborHoursPerUnit: 0,
       sortOrder: line.sortOrder ?? 0,
       source,
+      sourceLink: line.sourceLink || costRow?.sourceLink || "",
     },
     rowOverrides[rowId]
   );
@@ -245,17 +259,18 @@ function buildLaborRow({
       stage: assemblyRow.stage,
       elementId: assemblyRow.elementId || "",
       element: assemblyRow.element,
-      tradeId: assemblyRow.tradeId || "",
-      trade: assemblyRow.trade,
-      costCodeId: assemblyRow.costCodeId || "",
-      costCode: assemblyRow.costCode,
+      tradeId: assemblyRow.tradeId || laborCostRow?.tradeId || "",
+      trade: assemblyRow.trade || laborCostRow?.trade,
+      costCodeId: assemblyRow.costCodeId || laborCostRow?.costCodeId || "",
+      costCode: assemblyRow.costCode || laborCostRow?.costCode,
       itemName: laborCostRow?.itemName || assemblyRow.laborCostItemName,
+      displayNameOverride: assemblyRow.displayNameOverride || "",
       workType: "Labour",
-      itemFamily: assemblyRow.itemFamily || "",
-      specification: assemblyRow.specification || "",
-      gradeOrQuality: assemblyRow.gradeOrQuality || "",
-      brand: assemblyRow.brand || "",
-      finishOrVariant: assemblyRow.finishOrVariant || "",
+      itemFamily: assemblyRow.itemFamily || laborCostRow?.itemFamily || "",
+      specification: assemblyRow.specification || laborCostRow?.specification || "",
+      gradeOrQuality: assemblyRow.gradeOrQuality || laborCostRow?.gradeOrQuality || "",
+      brand: assemblyRow.brand || laborCostRow?.brand || "",
+      finishOrVariant: assemblyRow.finishOrVariant || laborCostRow?.finishOrVariant || "",
       qtyRule: "LaborHours",
       unitId: laborCostRow?.unitId || "unit-hr",
       unit: getUnitAbbreviation(units, laborCostRow?.unitId || "unit-hr", laborCostRow?.unit || "HR"),
@@ -266,6 +281,7 @@ function buildLaborRow({
       laborHoursPerUnit: assemblyRow.laborHoursPerUnit || 0,
       sortOrder: (assemblyRow.sortOrder ?? 0) + 0.1,
       source: "generated",
+      sourceLink: assemblyRow.sourceLink || laborCostRow?.sourceLink || "",
     },
     rowOverrides[rowId]
   );
@@ -329,21 +345,26 @@ export function generateEstimateRows(
                 stage: getStageName(stages, assemblyRow.stageId, assemblyRow.stage),
                 elementId: assemblyRow.elementId || "",
                 element: getElementName(elements, assemblyRow.elementId, assemblyRow.element),
-                tradeId: assemblyRow.tradeId || "",
-                trade: getTradeName(trades, assemblyRow.tradeId, assemblyRow.trade),
-                costCodeId: assemblyRow.costCodeId || "",
+                tradeId: assemblyRow.tradeId || costRow?.tradeId || "",
+                trade: getTradeName(
+                  trades,
+                  assemblyRow.tradeId || costRow?.tradeId,
+                  assemblyRow.trade || costRow?.trade
+                ),
+                costCodeId: assemblyRow.costCodeId || costRow?.costCodeId || "",
                 costCode: getCostCodeName(
                   costCodes,
-                  assemblyRow.costCodeId,
-                  assemblyRow.costCode
+                  assemblyRow.costCodeId || costRow?.costCodeId,
+                  assemblyRow.costCode || costRow?.costCode
                 ),
                 itemName: assemblyRow.itemName,
-                workType: assemblyRow.workType || "",
-                itemFamily: assemblyRow.itemFamily || "",
-                specification: assemblyRow.specification || "",
-                gradeOrQuality: assemblyRow.gradeOrQuality || "",
-                brand: assemblyRow.brand || "",
-                finishOrVariant: assemblyRow.finishOrVariant || "",
+                displayNameOverride: assemblyRow.displayNameOverride || "",
+                workType: assemblyRow.workType || costRow?.workType || "",
+                itemFamily: assemblyRow.itemFamily || costRow?.itemFamily || "",
+                specification: assemblyRow.specification || costRow?.specification || "",
+                gradeOrQuality: assemblyRow.gradeOrQuality || costRow?.gradeOrQuality || "",
+                brand: assemblyRow.brand || costRow?.brand || "",
+                finishOrVariant: assemblyRow.finishOrVariant || costRow?.finishOrVariant || "",
                 qtyRule: assemblyRow.qtyRule,
                 unitId: assemblyRow.unitId || costRow?.unitId || "",
                 unit: getUnitAbbreviation(
@@ -358,6 +379,7 @@ export function generateEstimateRows(
                 laborHoursPerUnit: assemblyRow.laborHoursPerUnit || 0,
                 sortOrder: assemblyRow.sortOrder ?? 0,
                 source: "generated",
+                sourceLink: assemblyRow.sourceLink || costRow?.sourceLink || "",
               },
               rowOverrides[rowId]
             );
@@ -467,6 +489,7 @@ export function generateManualEstimateBuilderRows(
         costCodeId: line.costCodeId || "",
         costCode: getCostCodeName(costCodes, line.costCodeId, ""),
         itemName: line.itemName,
+        displayNameOverride: line.displayNameOverride || "",
         workType: line.workType || "",
         itemFamily: line.itemFamily || "",
         specification: line.specification || "",
@@ -484,6 +507,7 @@ export function generateManualEstimateBuilderRows(
         sortOrder: line.sortOrder ?? 0,
         source: "manual-builder",
         notes: line.notes || "",
+        sourceLink: line.sourceLink || "",
         sourceAssemblyId: line.sourceAssemblyId || "",
         sourceAssemblyRowId: line.sourceAssemblyRowId || "",
         sourceCostItemId: line.sourceCostItemId || "",

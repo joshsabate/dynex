@@ -1258,6 +1258,8 @@ function App() {
           <CostLibraryPage
             costs={costs}
             units={units}
+            trades={trades}
+            costCodes={costCodes}
             itemFamilies={itemFamilies}
             onCostsChange={setCosts}
             onItemFamiliesChange={setItemFamilies}

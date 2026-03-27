@@ -325,70 +325,58 @@ function EstimateOutputPage({
                 <>
                   <DataTable
                     columns={[
-                      { key: "sortOrder", header: "Sort", className: "estimate-output-col-sort" },
                       {
-                        key: "source",
-                        header: "Source",
-                        render: (row) => getSourceLabel(row.source),
+                        key: "roomName",
+                        header: "Room",
+                        className: "estimate-output-col-room",
                       },
-                      { key: "roomName", header: "Room" },
                       {
                         key: "stage",
                         header: "Stage",
+                        className: "estimate-output-col-stage",
                         render: (row) => (
                           <span className="stage-chip" style={getStagePresentation(stages, row.stageId, row.stage)}>
                             {row.stage || "Unassigned"}
                           </span>
                         ),
                       },
-                      { key: "trade", header: "Trade" },
-                      { key: "assemblyName", header: "Assembly" },
-                      { key: "itemName", header: "Item" },
                       {
-                        key: "include",
-                        header: "Include",
-                        render: (row) => (
-                          <input
-                            type="checkbox"
-                            checked={row.include}
-                            onChange={(event) =>
-                              onRowOverrideChange(row.id, {
-                                includeOverride: event.target.checked,
-                              })
-                            }
-                          />
-                        ),
+                        key: "trade",
+                        header: "Trade",
+                        className: "estimate-output-col-trade estimate-output-group-end-context",
+                      },
+                      {
+                        key: "itemName",
+                        header: "Item",
+                        className: "estimate-output-col-item estimate-output-group-end-identity",
+                        render: (row) => row.displayName || row.itemName,
                       },
                       {
                         key: "quantity",
                         header: "Quantity",
                         className: "estimate-output-col-qty",
                         render: (row) => (
-                          <div className="editable-cell">
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={row.quantity}
-                              onChange={(event) =>
-                                onRowOverrideChange(row.id, {
-                                  quantityOverride: event.target.value,
-                                })
-                              }
-                            />
-                            <span>{row.unit}</span>
-                          </div>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={row.quantity}
+                            onChange={(event) =>
+                              onRowOverrideChange(row.id, {
+                                quantityOverride: event.target.value,
+                              })
+                            }
+                          />
                         ),
                       },
                       {
-                        key: "laborHours",
-                        header: "Labour Hrs",
-                        className: "estimate-output-col-labour",
-                        render: (row) => (row.laborHours ? row.laborHours.toFixed(2) : ""),
+                        key: "unit",
+                        header: "Unit",
+                        className: "estimate-output-col-unit",
                       },
                       {
                         key: "unitRate",
-                        header: "Unit Rate",
+                        header: "Rate",
                         className: "estimate-output-col-rate",
                         render: (row) => (
                           <input
@@ -405,8 +393,15 @@ function EstimateOutputPage({
                         ),
                       },
                       {
+                        key: "total",
+                        header: "Line Total",
+                        className: "estimate-output-col-total estimate-output-group-end-values",
+                        render: (row) => formatMoney(row.total),
+                      },
+                      {
                         key: "notes",
                         header: "Notes",
+                        className: "estimate-output-col-notes",
                         render: (row) => (
                           <input
                             type="text"
@@ -420,16 +415,11 @@ function EstimateOutputPage({
                           />
                         ),
                       },
-                      {
-                        key: "total",
-                        header: "Line Total",
-                        className: "estimate-output-col-total",
-                        render: (row) => formatMoney(row.total),
-                      },
                     ]}
                     rows={group.rows}
                     emptyMessage="No estimate rows available for the current view."
                     getRowClassName={(row) => (row.missingRate ? "estimate-row-missing-rate" : "")}
+                    tableClassName="estimate-output-table"
                   />
 
                   <div className="estimate-group-subtotal">

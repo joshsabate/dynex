@@ -24,6 +24,7 @@ export function normalizeStructuredItem(source = {}) {
 
 export function getStructuredItemPresentation(source = {}) {
   const normalized = normalizeStructuredItem(source);
+  const displayNameOverride = cleanText(source.displayNameOverride);
   const primaryParts = [normalized.itemFamily, normalized.itemName].filter(Boolean);
   const metaParts = [
     normalized.specification,
@@ -43,11 +44,16 @@ export function getStructuredItemPresentation(source = {}) {
     normalized.finishOrVariant,
   ].filter(Boolean);
 
+  const structuredDisplayName = displayParts.join(" ").trim() || fallbackName;
+  const effectiveDisplayName = displayNameOverride || structuredDisplayName;
+
   return {
     ...normalized,
-    primaryLabel,
+    primaryLabel: displayNameOverride || primaryLabel,
     metaLabel,
-    displayName: displayParts.join(" ").trim() || fallbackName,
+    displayName: effectiveDisplayName,
+    structuredDisplayName,
+    displayNameOverride,
     hasStructuredNaming: Boolean(normalized.workType || normalized.itemFamily || metaParts.length),
     sortKey: [
       normalized.itemFamily,

@@ -12,6 +12,8 @@ const costCsvHeaders = [
   "Item Family",
   "Core Name",
   "Work Type",
+  "Trade",
+  "Cost Code",
   "Specification",
   "Grade / Quality",
   "Brand",
@@ -19,6 +21,7 @@ const costCsvHeaders = [
   "Unit",
   "Rate",
   "Item Name",
+  "Source Link",
 ];
 
 function escapeCsvValue(value) {
@@ -128,6 +131,8 @@ export function convertCostsToCSV(costs = []) {
         cost.itemFamily,
         cost.itemName,
         cost.workType,
+        cost.trade,
+        cost.costCode,
         cost.specification,
         cost.gradeOrQuality,
         cost.brand,
@@ -135,6 +140,7 @@ export function convertCostsToCSV(costs = []) {
         cost.unit,
         cost.rate,
         cost.displayName,
+        cost.sourceLink,
       ]
         .map(escapeCsvValue)
         .join(",")
