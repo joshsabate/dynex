@@ -1,165 +1,89 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import FormField from "../components/FormField";
 import SectionCard from "../components/SectionCard";
 import { convertCostsToCSV, parseCSV } from "../utils/csvUtils";
-import { getStructuredItemPresentation, workTypeOptions } from "../utils/itemNaming";
-import { getUnitAbbreviation } from "../utils/units";
+import { getStructuredItemPresentation } from "../utils/itemNaming";
+import {
+  costStatusOptions,
+  costTypeOptions,
+  deliveryTypeOptions,
+  normalizeCosts,
+} from "../utils/costs";
 
-const columnPreferencesStorageKey = "estimator-app-cost-library-columns";
-const legacyValuePrefix = "__legacy__";
-
-const defaultForm = {
-  itemName: "",
-  workType: "Supply",
-  itemFamily: "",
-  tradeId: "",
-  costCodeId: "",
-  specification: "",
-  gradeOrQuality: "",
-  brand: "",
-  finishOrVariant: "",
-  unitId: "unit-sqm",
-  rate: "",
-  notes: "",
-  sourceLink: "",
-};
-
-const defaultFilters = {
-  itemFamily: "",
-  workType: "",
-  tradeId: "",
-  costCodeId: "",
-  unitId: "",
-};
-
-const groupByOptions = [
-  { value: "none", label: "None" },
-  { value: "itemFamily", label: "Item Family" },
-  { value: "workType", label: "Work Type" },
-  { value: "tradeId", label: "Trade" },
-  { value: "costCodeId", label: "Cost Code" },
-  { value: "unitId", label: "Unit" },
+const costCsvHeaders = [
+  "Core Name",
+  "Item Name",
+  "Cost Type",
+  "Delivery Type",
+  "Family",
+  "Trade",
+  "Cost Code",
+  "Spec",
+  "Grade",
+  "Finish",
+  "Brand",
+  "Unit",
+  "Rate",
+  "Status",
 ];
 
-const sortOptions = [
-  { value: "displayName", label: "Item Name" },
-  { value: "itemFamily", label: "Item Family" },
-  { value: "workType", label: "Work Type" },
-  { value: "tradeId", label: "Trade" },
-  { value: "costCodeId", label: "Cost Code" },
-  { value: "specification", label: "Specification" },
-  { value: "unitId", label: "Unit" },
-  { value: "rate", label: "Rate" },
-];
-
-const defaultColumnOrder = [
-  "itemName",
-  "displayName",
-  "workType",
-  "itemFamily",
-  "tradeId",
-  "costCodeId",
-  "specification",
-  "gradeOrQuality",
-  "brand",
-  "finishOrVariant",
-  "unitId",
-  "rate",
-];
-
-const essentialColumnKeys = [
-  "itemName",
-  "displayName",
-  "workType",
-  "itemFamily",
-  "tradeId",
-  "rate",
-];
-
-function createPanelForm(overrides = {}) {
-  return {
-    ...defaultForm,
-    ...overrides,
-  };
+function sortActiveItems(items = []) {
+  return [...items]
+    .filter((item) => item.isActive !== false)
+    .sort(
+      (a, b) =>
+        (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name)
+    );
 }
-
-const defaultColumnWidths = {
-  displayName: 300,
-  itemName: 190,
-  itemFamily: 132,
-  workType: 110,
-  tradeId: 132,
-  costCodeId: 144,
-  specification: 110,
-  gradeOrQuality: 118,
-  brand: 104,
-  finishOrVariant: 110,
-  unitId: 74,
-  rate: 88,
-  actions: 96,
-};
 
 function cleanText(value) {
   return String(value || "").trim();
 }
 
-function clampColumnWidth(width) {
-  return Math.max(64, Math.min(480, Math.round(width)));
+function createEmptyCostItem(units = []) {
+  const unit = sortActiveItems(units)[0] || { id: "", abbreviation: "" };
+
+  return {
+    id: "",
+    internalId: "",
+    itemName: "",
+    coreName: "",
+    costType: "",
+    deliveryType: "",
+    itemFamily: "",
+    family: "",
+    tradeId: "",
+    trade: "",
+    costCodeId: "",
+    costCode: "",
+    specification: "",
+    spec: "",
+    gradeOrQuality: "",
+    grade: "",
+    finishOrVariant: "",
+    finish: "",
+    brand: "",
+    unitId: unit.id,
+    unit: unit.abbreviation,
+    rate: "",
+    status: "Active",
+    isActive: true,
+    notes: "",
+    sourceLink: "",
+  };
 }
 
-function getOpenableUrl(value) {
-  const trimmedValue = cleanText(value);
-
-  if (!trimmedValue) {
-    return "";
-  }
-
-  if (/^[a-z]+:\/\//i.test(trimmedValue)) {
-    return trimmedValue;
-  }
-
-  return `https://${trimmedValue}`;
+function cloneCostItem(cost, units = []) {
+  return { ...createEmptyCostItem(units), ...cost };
 }
 
-function createLegacyValue(prefix, value) {
-  return `${legacyValuePrefix}${prefix}:${encodeURIComponent(value)}`;
+function getTradeKey(cost) {
+  return cleanText(cost.tradeId || cost.trade);
 }
 
-function isLegacyValue(value) {
-  return String(value || "").startsWith(legacyValuePrefix);
-}
-
-function moveItem(items, fromIndex, toIndex) {
-  const nextItems = [...items];
-  const [movedItem] = nextItems.splice(fromIndex, 1);
-  nextItems.splice(toIndex, 0, movedItem);
-  return nextItems;
-}
-
-function readColumnPreferences() {
-  if (typeof window === "undefined") {
-    return { order: defaultColumnOrder, widths: defaultColumnWidths };
-  }
-
-  try {
-    const storedValue = JSON.parse(
-      window.localStorage.getItem(columnPreferencesStorageKey) || "{}"
-    );
-
-    return {
-      order:
-        storedValue.order?.filter((columnKey) => defaultColumnOrder.includes(columnKey))?.length ===
-        defaultColumnOrder.length
-          ? storedValue.order
-          : defaultColumnOrder,
-      widths: {
-        ...defaultColumnWidths,
-        ...(storedValue.widths || {}),
-      },
-    };
-  } catch (error) {
-    return { order: defaultColumnOrder, widths: defaultColumnWidths };
-  }
+function createDuplicateName(itemName) {
+  const baseName = cleanText(itemName) || "Cost Item";
+  return baseName.includes("(Copy)") ? baseName : `${baseName} (Copy)`;
 }
 
 function CostLibraryPage({
@@ -172,529 +96,386 @@ function CostLibraryPage({
   onItemFamiliesChange = () => {},
 }) {
   const importFileInputRef = useRef(null);
-  const resizeStateRef = useRef(null);
-  const storedColumnPreferences = useMemo(() => readColumnPreferences(), []);
-  const [form, setForm] = useState(defaultForm);
-  const [sortConfig, setSortConfig] = useState({ key: "displayName", direction: "asc" });
-  const [groupBy, setGroupBy] = useState("none");
-  const [filters, setFilters] = useState(defaultFilters);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [collapsedGroups, setCollapsedGroups] = useState({});
-  const [csvStatus, setCsvStatus] = useState("");
-  const [importMode, setImportMode] = useState("append");
-  const [columnOrder, setColumnOrder] = useState(storedColumnPreferences.order);
-  const [columnWidths, setColumnWidths] = useState(storedColumnPreferences.widths);
-  const [draggedColumnKey, setDraggedColumnKey] = useState("");
-  const [showExpandedColumns, setShowExpandedColumns] = useState(false);
-  const [activeRowEditor, setActiveRowEditor] = useState({ rowId: "", panel: "" });
-  const [panelState, setPanelState] = useState({ open: false, mode: "new", costId: "" });
-
-  const activeUnits = useMemo(
-    () =>
-      [...units]
-        .filter((unit) => unit.isActive)
-        .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name)),
-    [units]
-  );
-  const activeTrades = useMemo(
-    () =>
-      [...trades]
-        .filter((trade) => trade.isActive)
-        .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name)),
-    [trades]
-  );
-  const activeCostCodes = useMemo(
-    () =>
-      [...costCodes]
-        .filter((costCode) => costCode.isActive)
-        .sort(
-          (left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name)
-        ),
-    [costCodes]
-  );
+  const activeUnits = useMemo(() => sortActiveItems(units), [units]);
+  const activeTrades = useMemo(() => sortActiveItems(trades), [trades]);
+  const activeCostCodes = useMemo(() => sortActiveItems(costCodes), [costCodes]);
   const activeItemFamilies = useMemo(
-    () =>
-      [...itemFamilies]
-        .filter((itemFamily) => itemFamily.isActive !== false)
-        .sort(
-          (left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name)
-        ),
+    () => sortActiveItems(itemFamilies),
     [itemFamilies]
   );
+  const normalizedCosts = useMemo(
+    () => normalizeCosts(costs, { units, trades, costCodes, itemFamilies }),
+    [costCodes, costs, itemFamilies, trades, units]
+  );
 
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
+  const [searchTerm, setSearchTerm] = useState("");
+  const [activeTradeId, setActiveTradeId] = useState("all");
+  const [costCodeFilter, setCostCodeFilter] = useState("");
+  const [familyFilter, setFamilyFilter] = useState("");
+  const [costTypeFilter, setCostTypeFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [csvStatus, setCsvStatus] = useState("");
+  const [sortKey, setSortKey] = useState("itemName");
+  const [editorState, setEditorState] = useState({
+    isOpen: false,
+    mode: "create",
+    costId: "",
+  });
+  const [draft, setDraft] = useState(createEmptyCostItem(units));
+  const [validationErrors, setValidationErrors] = useState([]);
+  const [selectedCostIds, setSelectedCostIds] = useState([]);
 
-    window.localStorage.setItem(
-      columnPreferencesStorageKey,
-      JSON.stringify({ order: columnOrder, widths: columnWidths })
-    );
-  }, [columnOrder, columnWidths]);
+  const tradeNavItems = useMemo(() => {
+    const counts = normalizedCosts.reduce((map, cost) => {
+      const key = getTradeKey(cost) || "unassigned";
+      map[key] = (map[key] || 0) + 1;
+      return map;
+    }, {});
 
-  useEffect(() => {
-    const handlePointerMove = (event) => {
-      if (!resizeStateRef.current) {
-        return;
-      }
+    const tradeItems = activeTrades.map((trade) => ({
+      id: trade.id,
+      label: trade.name,
+      count: counts[trade.id] || 0,
+    }));
 
-      const { columnKey, startX, startWidth } = resizeStateRef.current;
-      const nextWidth = clampColumnWidth(startWidth + (event.clientX - startX));
-
-      setColumnWidths((current) => ({ ...current, [columnKey]: nextWidth }));
-    };
-
-    const handlePointerUp = () => {
-      resizeStateRef.current = null;
-    };
-
-    window.addEventListener("mousemove", handlePointerMove);
-    window.addEventListener("mouseup", handlePointerUp);
-
-    return () => {
-      window.removeEventListener("mousemove", handlePointerMove);
-      window.removeEventListener("mouseup", handlePointerUp);
-    };
-  }, []);
-
-  const getUnitLabel = (unitId, fallback = "") =>
-    getUnitAbbreviation(units, unitId, fallback, fallback);
-  const getTradeName = (tradeId, fallback = "") =>
-    trades.find((trade) => trade.id === tradeId)?.name || fallback || "Unassigned";
-  const getCostCodeName = (costCodeId, fallback = "") =>
-    costCodes.find((costCode) => costCode.id === costCodeId)?.name || fallback || "Unassigned";
-  const getResolvedTradeId = (value) => {
-    const normalizedValue = cleanText(value).toLowerCase();
-    return (
-      trades.find(
-        (trade) =>
-          trade.id === value || cleanText(trade.name).toLowerCase() === normalizedValue
-      )?.id || ""
-    );
-  };
-  const getResolvedCostCodeId = (value) => {
-    const normalizedValue = cleanText(value).toLowerCase();
-    return (
-      costCodes.find(
-        (costCode) =>
-          costCode.id === value || cleanText(costCode.name).toLowerCase() === normalizedValue
-      )?.id || ""
-    );
-  };
-  const getUnitIdFromValue = (value) => {
-    const normalizedValue = cleanText(value).toLowerCase();
-    return (
-      units.find(
-        (unit) =>
-          unit.id === value ||
-          cleanText(unit.abbreviation).toLowerCase() === normalizedValue ||
-          cleanText(unit.name).toLowerCase() === normalizedValue
-      )?.id || ""
-    );
-  };
-  const getCostPresentation = (cost) => getStructuredItemPresentation(cost);
-  const getCostDisplayName = (cost) => getCostPresentation(cost).displayName;
-  const getFieldGroupLabel = (cost, key) => {
-    if (key === "tradeId") {
-      return getTradeName(cost.tradeId || getResolvedTradeId(cost.trade), cost.trade);
-    }
-
-    if (key === "costCodeId") {
-      return getCostCodeName(
-        cost.costCodeId || getResolvedCostCodeId(cost.costCode),
-        cost.costCode
-      );
-    }
-
-    if (key === "unitId") {
-      return getUnitLabel(cost.unitId || getUnitIdFromValue(cost.unit), cost.unit);
-    }
-
-    return cleanText(cost[key]) || "Unassigned";
-  };
-
-  const getItemFamilyOptions = (extraValue = "") => {
-    const normalizedExtraValue = cleanText(extraValue);
-
-    if (
-      normalizedExtraValue &&
-      !activeItemFamilies.some((itemFamily) => itemFamily.name === normalizedExtraValue)
-    ) {
-      return [
-        ...activeItemFamilies,
-        { id: `legacy-item-family-${normalizedExtraValue}`, name: normalizedExtraValue, isActive: true },
-      ];
-    }
-
-    return activeItemFamilies;
-  };
-
-  const getSelectOptionsWithLegacy = (options, currentId, fallbackLabel, type) => {
-    const resolvedId =
-      currentId ||
-      (type === "trade"
-        ? getResolvedTradeId(fallbackLabel)
-        : type === "cost-code"
-          ? getResolvedCostCodeId(fallbackLabel)
-          : type === "unit"
-            ? getUnitIdFromValue(fallbackLabel)
-            : "");
-
-    if (!fallbackLabel || resolvedId) {
-      return options;
-    }
-
+    const unassignedCount = counts.unassigned || 0;
     return [
-      ...options,
-      {
-        id: createLegacyValue(type, fallbackLabel),
-        name: fallbackLabel,
-        abbreviation: fallbackLabel,
-        isLegacy: true,
-      },
+      { id: "all", label: "All Items", count: normalizedCosts.length },
+      ...tradeItems,
+      ...(unassignedCount
+        ? [{ id: "unassigned", label: "Unassigned", count: unassignedCount }]
+        : []),
     ];
-  };
+  }, [activeTrades, normalizedCosts]);
 
-  const getTradeSelectValue = (tradeId, trade) =>
-    tradeId || getResolvedTradeId(trade) || (trade ? createLegacyValue("trade", trade) : "");
-  const getCostCodeSelectValue = (costCodeId, costCode) =>
-    costCodeId ||
-    getResolvedCostCodeId(costCode) ||
-    (costCode ? createLegacyValue("cost-code", costCode) : "");
-  const getUnitSelectValue = (unitId, unit) =>
-    unitId || getUnitIdFromValue(unit) || (unit ? createLegacyValue("unit", unit) : "");
+  const filteredCosts = useMemo(() => {
+    const search = searchTerm.trim().toLowerCase();
+    const rows = normalizedCosts.filter((cost) => {
+      const tradeKey = getTradeKey(cost) || "unassigned";
 
-  const ensureItemFamiliesExist = (familyNames) => {
-    const existingNames = new Set(itemFamilies.map((itemFamily) => itemFamily.name));
-    const missingFamilies = familyNames
-      .map((familyName) => cleanText(familyName))
+      return (
+        (activeTradeId === "all" || tradeKey === activeTradeId) &&
+        (!costCodeFilter || cost.costCodeId === costCodeFilter) &&
+        (!familyFilter || cleanText(cost.itemFamily) === familyFilter) &&
+        (!costTypeFilter || cost.costType === costTypeFilter) &&
+        (!statusFilter || cost.status === statusFilter) &&
+        (!search ||
+          [
+            cost.itemName,
+            cost.displayName,
+            cost.itemFamily,
+            cost.trade,
+            cost.costCode,
+          ].some((value) => cleanText(value).toLowerCase().includes(search)))
+      );
+    });
+
+    return [...rows].sort(
+      (a, b) =>
+        cleanText(a[sortKey]).localeCompare(cleanText(b[sortKey])) ||
+        cleanText(a.itemName).localeCompare(cleanText(b.itemName))
+    );
+  }, [
+    activeTradeId,
+    costCodeFilter,
+    costTypeFilter,
+    familyFilter,
+    normalizedCosts,
+    searchTerm,
+    sortKey,
+    statusFilter,
+  ]);
+
+  const selectedFilteredCostIds = filteredCosts
+    .map((cost) => cost.id)
+    .filter((costId) => selectedCostIds.includes(costId));
+  const allFilteredSelected =
+    filteredCosts.length > 0 &&
+    selectedFilteredCostIds.length === filteredCosts.length;
+
+  const readFileAsText = (file) =>
+    typeof file?.text === "function"
+      ? file.text()
+      : new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error("Unable to read file"));
+          reader.readAsText(file);
+        });
+
+  const ensureFamiliesExist = (familyNames) => {
+    const existing = new Set(
+      activeItemFamilies.map((itemFamily) => itemFamily.name)
+    );
+    const missing = familyNames
+      .map((name) => cleanText(name))
       .filter(Boolean)
-      .filter((familyName) => !existingNames.has(familyName));
+      .filter((name) => !existing.has(name));
 
-    if (!missingFamilies.length) {
+    if (!missing.length) {
       return;
     }
 
-    const nextSortOrder =
+    const nextSort =
       itemFamilies.reduce(
-        (highestSortOrder, itemFamily) => Math.max(highestSortOrder, Number(itemFamily.sortOrder || 0)),
+        (max, itemFamily) => Math.max(max, Number(itemFamily.sortOrder || 0)),
         0
       ) + 1;
 
     onItemFamiliesChange([
       ...itemFamilies,
-      ...missingFamilies.map((familyName, index) => ({
+      ...missing.map((name, index) => ({
         id: `item-family-${Date.now()}-${index}`,
-        name: familyName,
-        sortOrder: nextSortOrder + index,
+        name,
+        sortOrder: nextSort + index,
         isActive: true,
       })),
     ]);
   };
 
-  const updateField = (key, value) => {
-    setForm((current) => ({ ...current, [key]: value }));
+  const openCreateEditor = () => {
+    setDraft(createEmptyCostItem(units));
+    setValidationErrors([]);
+    setEditorState({ isOpen: true, mode: "create", costId: "" });
   };
 
-  const openNewPanel = () => {
-    setForm(createPanelForm());
-    setPanelState({ open: true, mode: "new", costId: "" });
+  const openEditEditor = (cost) => {
+    setDraft(cloneCostItem(cost, units));
+    setValidationErrors([]);
+    setEditorState({ isOpen: true, mode: "edit", costId: cost.id });
   };
 
-  const openEditPanel = (cost) => {
-    setForm(
-      createPanelForm({
-        itemName: cleanText(cost.itemName),
-        workType: cleanText(cost.workType) || "Supply",
-        itemFamily: cleanText(cost.itemFamily),
-        tradeId: getTradeSelectValue(cost.tradeId, cost.trade),
-        costCodeId: getCostCodeSelectValue(cost.costCodeId, cost.costCode),
-        specification: cleanText(cost.specification),
-        gradeOrQuality: cleanText(cost.gradeOrQuality),
-        brand: cleanText(cost.brand),
-        finishOrVariant: cleanText(cost.finishOrVariant),
-        unitId: getUnitSelectValue(cost.unitId, cost.unit) || defaultForm.unitId,
-        rate: String(cost.rate ?? ""),
-        notes: cleanText(cost.notes),
-        sourceLink: cleanText(cost.sourceLink),
-      })
-    );
-    setPanelState({ open: true, mode: "edit", costId: cost.id });
+  const closeEditor = () => {
+    setEditorState({ isOpen: false, mode: "create", costId: "" });
+    setDraft(createEmptyCostItem(units));
+    setValidationErrors([]);
   };
 
-  const closePanel = () => {
-    setPanelState({ open: false, mode: "new", costId: "" });
-    setForm(createPanelForm());
+  const updateDraftField = (key, value) =>
+    setDraft((current) => {
+      if (key === "unitId") {
+        const unit = activeUnits.find((row) => row.id === value) || null;
+        return { ...current, unitId: value, unit: unit?.abbreviation || "" };
+      }
+
+      if (key === "tradeId") {
+        const trade = activeTrades.find((row) => row.id === value) || null;
+        return { ...current, tradeId: value, trade: trade?.name || "" };
+      }
+
+      if (key === "costCodeId") {
+        const costCode =
+          activeCostCodes.find((row) => row.id === value) || null;
+        return {
+          ...current,
+          costCodeId: value,
+          costCode: costCode?.name || "",
+        };
+      }
+
+      if (key === "itemFamily") {
+        return { ...current, itemFamily: value, family: value };
+      }
+
+      if (key === "itemName") {
+        return { ...current, itemName: value, coreName: value };
+      }
+
+      if (key === "status") {
+        return { ...current, status: value, isActive: value === "Active" };
+      }
+
+      return { ...current, [key]: value };
+    });
+
+  const validateDraft = () => {
+    const errors = [];
+
+    if (!cleanText(draft.itemName)) {
+      errors.push("Item Name is required.");
+    }
+    if (!cleanText(draft.costType)) {
+      errors.push("Cost Type is required.");
+    }
+    if (!cleanText(draft.deliveryType)) {
+      errors.push("Delivery Type is required.");
+    }
+    if (!cleanText(draft.tradeId)) {
+      errors.push("Trade is required.");
+    }
+    if (!cleanText(draft.costCodeId)) {
+      errors.push("Cost Code is required.");
+    }
+    if (!cleanText(draft.unitId)) {
+      errors.push("Unit is required.");
+    }
+    if (draft.rate === "" || !Number.isFinite(Number(draft.rate))) {
+      errors.push("Rate must be a valid number.");
+    }
+
+    return errors;
   };
 
-  const savePanelCost = (event) => {
+  const saveCost = (event) => {
     event.preventDefault();
 
-    if (!cleanText(form.itemName) || form.rate === "") {
+    const errors = validateDraft();
+    setValidationErrors(errors);
+    if (errors.length) {
       return;
     }
 
-    ensureItemFamiliesExist([form.itemFamily]);
+    ensureFamiliesExist([draft.itemFamily]);
 
-    const nextCost = {
-      itemName: cleanText(form.itemName),
-      workType: form.workType,
-      itemFamily: cleanText(form.itemFamily),
-      tradeId: isLegacyValue(form.tradeId) ? "" : form.tradeId,
-      trade: isLegacyValue(form.tradeId) ? cleanText(form.trade) : form.tradeId ? getTradeName(form.tradeId, "") : "",
-      costCodeId: isLegacyValue(form.costCodeId) ? "" : form.costCodeId,
-      costCode: isLegacyValue(form.costCodeId)
-        ? cleanText(form.costCode)
-        : form.costCodeId
-          ? getCostCodeName(form.costCodeId, "")
-          : "",
-      specification: cleanText(form.specification),
-      gradeOrQuality: cleanText(form.gradeOrQuality),
-      brand: cleanText(form.brand),
-      finishOrVariant: cleanText(form.finishOrVariant),
-      displayName: getStructuredItemPresentation(form).displayName,
-      unitId: isLegacyValue(form.unitId) ? "" : form.unitId,
-      unit: isLegacyValue(form.unitId) ? cleanText(form.unit) : getUnitLabel(form.unitId),
-      rate: Number(form.rate),
-      notes: cleanText(form.notes),
-      sourceLink: cleanText(form.sourceLink),
-    };
-
-    if (panelState.mode === "edit" && panelState.costId) {
-      onCostsChange(
-        costs.map((cost) =>
-          cost.id === panelState.costId
-            ? {
-                ...cost,
-                ...nextCost,
-              }
-            : cost
-        )
-      );
-    } else {
-      onCostsChange([
-        ...costs,
+    const nextId = draft.id || `cost-${Date.now()}`;
+    const nextCost = normalizeCosts(
+      [
         {
-          id: `cost-${Date.now()}`,
-          ...nextCost,
+          ...draft,
+          id: nextId,
+          internalId:
+            cleanText(draft.internalId) || cleanText(draft.id) || nextId,
+          rate: Number(draft.rate),
         },
-      ]);
+      ],
+      { units, trades, costCodes, itemFamilies }
+    )[0];
+
+    onCostsChange(
+      editorState.mode === "edit"
+        ? normalizedCosts.map((cost) =>
+            cost.id === editorState.costId ? nextCost : cost
+          )
+        : [...normalizedCosts, nextCost]
+    );
+
+    closeEditor();
+  };
+
+  const deleteCost = (costId) => {
+    if (typeof window !== "undefined") {
+      const shouldDelete = window.confirm(
+        "Delete this cost item? This action cannot be undone."
+      );
+      if (!shouldDelete) {
+        return;
+      }
     }
 
-    closePanel();
+    onCostsChange(normalizedCosts.filter((cost) => cost.id !== costId));
+    setSelectedCostIds((current) =>
+      current.filter((selectedCostId) => selectedCostId !== costId)
+    );
+    if (editorState.costId === costId) {
+      closeEditor();
+    }
   };
 
-  const removeCost = (costId) => {
-    onCostsChange(costs.filter((cost) => cost.id !== costId));
+  const duplicateCost = (costId) => {
+    const sourceCost = normalizedCosts.find((cost) => cost.id === costId);
+    if (!sourceCost) {
+      return;
+    }
+
+    const nextId = `cost-${Date.now()}`;
+    const duplicatedCost = normalizeCosts(
+      [
+        {
+          ...sourceCost,
+          id: nextId,
+          internalId: nextId,
+          itemName: createDuplicateName(sourceCost.itemName),
+          coreName: createDuplicateName(sourceCost.itemName),
+        },
+      ],
+      { units, trades, costCodes, itemFamilies }
+    )[0];
+
+    const nextCosts = [...normalizedCosts, duplicatedCost];
+    onCostsChange(nextCosts);
+    setSelectedCostIds([]);
+    openEditEditor(duplicatedCost);
   };
 
-  const updateCost = (costId, key, value) => {
-    if (key === "itemFamily") {
-      ensureItemFamiliesExist([value]);
+  const toggleCostSelection = (costId) => {
+    setSelectedCostIds((current) =>
+      current.includes(costId)
+        ? current.filter((selectedCostId) => selectedCostId !== costId)
+        : [...current, costId]
+    );
+  };
+
+  const toggleSelectAllFiltered = () => {
+    if (allFilteredSelected) {
+      setSelectedCostIds((current) =>
+        current.filter((costId) => !selectedFilteredCostIds.includes(costId))
+      );
+      return;
+    }
+
+    setSelectedCostIds((current) => [
+      ...new Set([...current, ...filteredCosts.map((cost) => cost.id)]),
+    ]);
+  };
+
+  const confirmTypedDelete = (message) => {
+    if (typeof window === "undefined") {
+      return true;
+    }
+
+    const confirmation = window.prompt(`${message}\n\nType DELETE to confirm.`);
+    return confirmation === "DELETE";
+  };
+
+  const deleteSelectedCosts = () => {
+    if (!selectedCostIds.length) {
+      return;
+    }
+
+    const confirmed = confirmTypedDelete(
+      `Delete ${selectedCostIds.length} selected cost item${
+        selectedCostIds.length === 1 ? "" : "s"
+      }?`
+    );
+
+    if (!confirmed) {
+      return;
     }
 
     onCostsChange(
-      costs.map((cost) => {
-        if (cost.id !== costId) {
-          return cost;
-        }
-
-        const nextCost = { ...cost };
-
-        if (key === "tradeId") {
-          if (isLegacyValue(value)) {
-            return cost;
-          }
-
-          nextCost.tradeId = value;
-          nextCost.trade = value ? getTradeName(value, cost.trade) : "";
-        } else if (key === "costCodeId") {
-          if (isLegacyValue(value)) {
-            return cost;
-          }
-
-          nextCost.costCodeId = value;
-          nextCost.costCode = value ? getCostCodeName(value, cost.costCode) : "";
-        } else if (key === "unitId") {
-          if (isLegacyValue(value)) {
-            return cost;
-          }
-
-          nextCost.unitId = value;
-          nextCost.unit = value ? getUnitLabel(value, cost.unit) : "";
-        } else if (key === "rate") {
-          nextCost.rate = value === "" ? "" : Number(value);
-        } else {
-          nextCost[key] = value;
-        }
-
-        nextCost.displayName = getStructuredItemPresentation(nextCost).displayName;
-        return nextCost;
-      })
+      normalizedCosts.filter((cost) => !selectedCostIds.includes(cost.id))
     );
-  };
-
-  const toggleSort = (key) => {
-    setSortConfig((current) =>
-      current.key === key
-        ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
-        : { key, direction: "asc" }
-    );
-  };
-
-  const getSortIndicator = (key) => {
-    if (sortConfig.key !== key) {
-      return "";
+    if (selectedCostIds.includes(editorState.costId)) {
+      closeEditor();
     }
-
-    return sortConfig.direction === "asc" ? " ^" : " v";
+    setSelectedCostIds([]);
   };
 
-  const beginColumnResize = (columnKey, event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    resizeStateRef.current = {
-      columnKey,
-      startX: event.clientX,
-      startWidth: columnWidths[columnKey] || defaultColumnWidths[columnKey],
-    };
-  };
-
-  const moveColumnToTarget = (fromKey, toKey) => {
-    if (!fromKey || !toKey || fromKey === toKey) {
+  const deleteAllFilteredCosts = () => {
+    if (!filteredCosts.length) {
       return;
     }
 
-    setColumnOrder((current) => {
-      const fromIndex = current.indexOf(fromKey);
-      const toIndex = current.indexOf(toKey);
+    const confirmed = confirmTypedDelete(
+      `Delete all ${filteredCosts.length} cost item${
+        filteredCosts.length === 1 ? "" : "s"
+      } in the current filtered view?`
+    );
 
-      if (fromIndex === -1 || toIndex === -1) {
-        return current;
-      }
-
-      return moveItem(current, fromIndex, toIndex);
-    });
-  };
-
-  const updateFilter = (key, value) => {
-    setFilters((current) => ({ ...current, [key]: value }));
-  };
-
-  const clearFilters = () => {
-    setFilters(defaultFilters);
-  };
-
-  const sortedFilteredCosts = (() => {
-    const normalizedSearch = cleanText(searchTerm).toLowerCase();
-    const filteredRows = costs.filter((cost) => {
-      if (filters.itemFamily && cleanText(cost.itemFamily) !== cleanText(filters.itemFamily)) {
-        return false;
-      }
-
-      if (filters.workType && cleanText(cost.workType) !== cleanText(filters.workType)) {
-        return false;
-      }
-
-      if (filters.tradeId && (cost.tradeId || getResolvedTradeId(cost.trade)) !== filters.tradeId) {
-        return false;
-      }
-
-      if (
-        filters.costCodeId &&
-        (cost.costCodeId || getResolvedCostCodeId(cost.costCode)) !== filters.costCodeId
-      ) {
-        return false;
-      }
-
-      if (filters.unitId && (cost.unitId || getUnitIdFromValue(cost.unit)) !== filters.unitId) {
-        return false;
-      }
-
-      if (!normalizedSearch) {
-        return true;
-      }
-
-      return [
-        getCostDisplayName(cost),
-        cost.itemName,
-        cost.itemFamily,
-        cost.workType,
-        cost.trade,
-        getTradeName(cost.tradeId || getResolvedTradeId(cost.trade), cost.trade),
-        cost.costCode,
-        getCostCodeName(cost.costCodeId || getResolvedCostCodeId(cost.costCode), cost.costCode),
-        cost.specification,
-        cost.gradeOrQuality,
-        cost.brand,
-        cost.finishOrVariant,
-        cost.unit,
-      ].some((value) => cleanText(value).toLowerCase().includes(normalizedSearch));
-    });
-
-    const direction = sortConfig.direction === "asc" ? 1 : -1;
-
-    return [...filteredRows].sort((left, right) => {
-      const leftPresentation = getCostPresentation(left);
-      const rightPresentation = getCostPresentation(right);
-
-      if (sortConfig.key === "rate") {
-        return ((Number(left.rate) || 0) - (Number(right.rate) || 0)) * direction;
-      }
-
-      const getSortValue = (cost, presentation) => {
-        if (sortConfig.key === "displayName") {
-          return presentation.sortKey || presentation.displayName.toLowerCase();
-        }
-
-        if (sortConfig.key === "tradeId") {
-          return getTradeName(cost.tradeId || getResolvedTradeId(cost.trade), cost.trade).toLowerCase();
-        }
-
-        if (sortConfig.key === "costCodeId") {
-          return getCostCodeName(
-            cost.costCodeId || getResolvedCostCodeId(cost.costCode),
-            cost.costCode
-          ).toLowerCase();
-        }
-
-        if (sortConfig.key === "unitId") {
-          return getUnitLabel(cost.unitId || getUnitIdFromValue(cost.unit), cost.unit).toLowerCase();
-        }
-
-        return cleanText(cost[sortConfig.key]).toLowerCase();
-      };
-
-      return (
-        getSortValue(left, leftPresentation).localeCompare(getSortValue(right, rightPresentation), undefined, {
-          sensitivity: "base",
-        }) * direction
-      );
-    });
-  })();
-
-  const groupedCosts = (() => {
-    if (groupBy === "none") {
-      return [];
+    if (!confirmed) {
+      return;
     }
 
-    return sortedFilteredCosts.reduce((groups, cost) => {
-      const groupLabel = getFieldGroupLabel(cost, groupBy);
-      const existingGroup = groups.find((group) => group.label === groupLabel);
-
-      if (existingGroup) {
-        existingGroup.rows.push(cost);
-        return groups;
-      }
-
-      groups.push({ id: `${groupBy}-${groupLabel}`, label: groupLabel, rows: [cost] });
-      return groups;
-    }, []);
-  })();
-
-  const toggleGroup = (groupId) => {
-    setCollapsedGroups((current) => ({ ...current, [groupId]: !(current[groupId] ?? false) }));
+    const filteredIds = filteredCosts.map((cost) => cost.id);
+    onCostsChange(
+      normalizedCosts.filter((cost) => !filteredIds.includes(cost.id))
+    );
+    if (filteredIds.includes(editorState.costId)) {
+      closeEditor();
+    }
+    setSelectedCostIds((current) =>
+      current.filter((costId) => !filteredIds.includes(costId))
+    );
   };
 
   const exportCostsAsCsv = () => {
@@ -702,27 +483,18 @@ function CostLibraryPage({
       return;
     }
 
-    const csvText = convertCostsToCSV(
-      costs.map((cost) => ({
-        ...cost,
-        trade: getTradeName(cost.tradeId || getResolvedTradeId(cost.trade), cost.trade || ""),
-        costCode: getCostCodeName(
-          cost.costCodeId || getResolvedCostCodeId(cost.costCode),
-          cost.costCode || ""
-        ),
-        unit: getUnitLabel(cost.unitId || getUnitIdFromValue(cost.unit), cost.unit || ""),
-        displayName: cost.displayName || getCostDisplayName(cost),
-      }))
-    );
-    const csvBlob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
-    const downloadUrl = window.URL.createObjectURL(csvBlob);
+    const csvText = convertCostsToCSV(normalizedCosts);
+    const blob = new Blob([csvText], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = window.URL.createObjectURL(blob);
     const link = document.createElement("a");
 
-    link.href = downloadUrl;
+    link.href = url;
     link.download = "cost-library-export.csv";
     link.click();
-    window.URL.revokeObjectURL(downloadUrl);
-    setCsvStatus(`Exported ${costs.length} cost items.`);
+    window.URL.revokeObjectURL(url);
+    setCsvStatus(`Exported ${normalizedCosts.length} cost items.`);
   };
 
   const importCostsFromCsv = async (file) => {
@@ -731,82 +503,71 @@ function CostLibraryPage({
     }
 
     try {
-      const text = await file.text();
-      const rows = parseCSV(text);
-      const validRows = [];
-      const newFamilies = [];
-      let skippedRows = 0;
+      const csvText = await readFileAsText(file);
+      const parsedRows = parseCSV(csvText);
+      const parsedHeaders = Object.keys(parsedRows[0] || {});
+      const missingHeaders = costCsvHeaders.filter(
+        (header) => !parsedHeaders.includes(header)
+      );
 
-      rows.forEach((row) => {
-        const coreName = cleanText(row["Core Name"]);
-        const importedDisplayName = cleanText(row["Item Name"]);
-        const itemName = coreName || importedDisplayName;
-        const unitValue = cleanText(row.Unit);
-        const rateValue = cleanText(row.Rate);
-        const unitId = getUnitIdFromValue(unitValue);
-        const tradeValue = cleanText(row.Trade);
-        const costCodeValue = cleanText(row["Cost Code"]);
-        const sourceLink = cleanText(row["Source Link"]);
-        const tradeId = getResolvedTradeId(tradeValue);
-        const costCodeId = getResolvedCostCodeId(costCodeValue);
+      if (missingHeaders.length && !parsedHeaders.includes("Work Type")) {
+        setCsvStatus(
+          `Unable to import CSV. Missing required columns: ${missingHeaders.join(
+            ", "
+          )}.`
+        );
+        return;
+      }
 
-        if (!itemName || !unitId || rateValue === "" || Number.isNaN(Number(rateValue))) {
-          skippedRows += 1;
-          return;
-        }
-
-        const itemFamily = cleanText(row["Item Family"]);
-
-        if (itemFamily) {
-          newFamilies.push(itemFamily);
-        }
-
-        const nextRow = {
-          id: `cost-import-${Date.now()}-${validRows.length}`,
-          itemFamily,
-          itemName,
+      const importedCosts = normalizeCosts(
+        parsedRows.map((row, index) => ({
+          id: `cost-import-${Date.now()}-${index}`,
+          internalId: cleanText(row["Internal ID"]),
+          itemName: cleanText(row["Core Name"] || row["Item Name"]),
+          costType: cleanText(row["Cost Type"]),
+          deliveryType: cleanText(row["Delivery Type"]),
           workType: cleanText(row["Work Type"]),
-          tradeId,
-          trade: tradeId ? getTradeName(tradeId, tradeValue) : tradeValue,
-          costCodeId,
-          costCode: costCodeId ? getCostCodeName(costCodeId, costCodeValue) : costCodeValue,
-          specification: cleanText(row.Specification),
-          gradeOrQuality: cleanText(row["Grade / Quality"]),
+          itemFamily: cleanText(row.Family || row["Item Family"]),
+          trade: cleanText(row.Trade),
+          costCode: cleanText(row["Cost Code"]),
+          specification: cleanText(row.Spec || row.Specification),
+          gradeOrQuality: cleanText(row.Grade || row["Grade / Quality"]),
+          finishOrVariant: cleanText(row.Finish || row["Finish / Variant"]),
           brand: cleanText(row.Brand),
-          finishOrVariant: cleanText(row["Finish / Variant"]),
-          sourceLink,
-          unitId,
-          unit: getUnitLabel(unitId, unitValue),
-          rate: Number(rateValue),
-        };
+          unit: cleanText(row.Unit),
+          rate: cleanText(row.Rate),
+          status: cleanText(row.Status) || "Active",
+          sourceLink: cleanText(row["Source Link"]),
+          notes: cleanText(row.Notes),
+        })),
+        { units, trades, costCodes, itemFamilies }
+      );
 
-        validRows.push({
-          ...nextRow,
-          displayName: getStructuredItemPresentation(nextRow).displayName || importedDisplayName || itemName,
-        });
-      });
+      const validCosts = importedCosts.filter(
+        (cost) =>
+          cleanText(cost.itemName) &&
+          costTypeOptions.includes(cost.costType) &&
+          deliveryTypeOptions.includes(cost.deliveryType) &&
+          cleanText(cost.tradeId) &&
+          cleanText(cost.costCodeId) &&
+          cleanText(cost.unitId) &&
+          Number.isFinite(Number(cost.rate))
+      );
 
-      if (!validRows.length) {
-        setCsvStatus("Unable to import CSV. No valid cost rows were found.");
+      if (!validCosts.length) {
+        setCsvStatus("Unable to import CSV. No valid cost items were found.");
         return;
       }
 
-      if (
-        importMode === "replace" &&
-        typeof window !== "undefined" &&
-        !window.confirm("Replace all cost library entries with the imported CSV data?")
-      ) {
-        setCsvStatus("CSV import cancelled.");
-        return;
-      }
+      ensureFamiliesExist(validCosts.map((cost) => cost.itemFamily));
+      onCostsChange([...normalizedCosts, ...validCosts]);
 
-      ensureItemFamiliesExist(newFamilies);
-      onCostsChange(importMode === "replace" ? validRows : [...costs, ...validRows]);
+      const skippedCount = importedCosts.length - validCosts.length;
       setCsvStatus(
-        `${validRows.length} cost items imported in ${
-          importMode === "replace" ? "replace-all" : "append"
-        } mode${
-          skippedRows ? `. ${skippedRows} invalid row${skippedRows === 1 ? "" : "s"} skipped.` : "."
+        `${validCosts.length} cost items imported${
+          skippedCount
+            ? `. ${skippedCount} invalid row${skippedCount === 1 ? "" : "s"} skipped.`
+            : "."
         }`
       );
     } catch (error) {
@@ -814,504 +575,415 @@ function CostLibraryPage({
     }
   };
 
-  const allColumns = {
-      displayName: {
-        key: "displayName",
-        label: "Item Name",
-        sortableKey: "displayName",
-        className: "cost-library-col-display-name cost-library-col-secondary cost-library-group-end-identity",
-        render: (row) => {
-          const presentation = getCostPresentation(row);
-
-          return (
-            <div className="cost-library-item-cell">
-              <span>{presentation.displayName}</span>
-            </div>
-          );
-        },
-      },
-      itemName: {
-        key: "itemName",
-        label: "Core Name",
-        sortableKey: "itemName",
-        className: "cost-library-col-item-name",
-        render: (row) => (
-          <input
-            value={row.itemName}
-            onChange={(event) => updateCost(row.id, "itemName", event.target.value)}
-            aria-label="Core item name"
-          />
-        ),
-      },
-      itemFamily: {
-        key: "itemFamily",
-        label: "Family",
-        sortableKey: "itemFamily",
-        className: "cost-library-col-item-family cost-library-col-secondary",
-        render: (row) => (
-          <select
-            value={row.itemFamily || ""}
-            onChange={(event) => updateCost(row.id, "itemFamily", event.target.value)}
-            aria-label="Item family"
-          >
-            <option value="">Unassigned</option>
-            {getItemFamilyOptions(row.itemFamily).map((itemFamily) => (
-              <option key={itemFamily.id} value={itemFamily.name}>
-                {itemFamily.name}
-              </option>
-            ))}
-          </select>
-        ),
-      },
-      workType: {
-        key: "workType",
-        label: "Work Type",
-        sortableKey: "workType",
-        className: "cost-library-col-worktype cost-library-col-secondary",
-        render: (row) => (
-          <select
-            value={row.workType || ""}
-            onChange={(event) => updateCost(row.id, "workType", event.target.value)}
-            aria-label="Work type"
-          >
-            <option value="">Unassigned</option>
-            {workTypeOptions.map((workType) => (
-              <option key={workType} value={workType}>
-                {workType}
-              </option>
-            ))}
-          </select>
-        ),
-      },
-      tradeId: {
-        key: "tradeId",
-        label: "Trade",
-        sortableKey: "tradeId",
-        className: "cost-library-col-trade cost-library-col-secondary",
-        render: (row) => (
-          <select
-            value={getTradeSelectValue(row.tradeId, row.trade)}
-            onChange={(event) => updateCost(row.id, "tradeId", event.target.value)}
-            aria-label="Trade"
-          >
-            <option value="">Unassigned</option>
-            {getSelectOptionsWithLegacy(activeTrades, row.tradeId, row.trade, "trade").map((trade) => (
-              <option key={trade.id} value={trade.id}>
-                {trade.name}
-              </option>
-            ))}
-          </select>
-        ),
-      },
-      costCodeId: {
-        key: "costCodeId",
-        label: "Cost Code",
-        sortableKey: "costCodeId",
-        className: "cost-library-col-cost-code cost-library-col-secondary cost-library-group-end-classification",
-        render: (row) => (
-          <select
-            value={getCostCodeSelectValue(row.costCodeId, row.costCode)}
-            onChange={(event) => updateCost(row.id, "costCodeId", event.target.value)}
-            aria-label="Cost code"
-          >
-            <option value="">Unassigned</option>
-            {getSelectOptionsWithLegacy(
-              activeCostCodes,
-              row.costCodeId,
-              row.costCode,
-              "cost-code"
-            ).map((costCode) => (
-              <option key={costCode.id} value={costCode.id}>
-                {costCode.name}
-              </option>
-            ))}
-          </select>
-        ),
-      },
-      specification: {
-        key: "specification",
-        label: "Spec",
-        sortableKey: "specification",
-        className: "cost-library-col-specification cost-library-col-secondary",
-        render: (row) => (
-          <input
-            value={row.specification || ""}
-            onChange={(event) => updateCost(row.id, "specification", event.target.value)}
-            aria-label="Specification"
-          />
-        ),
-      },
-      gradeOrQuality: {
-        key: "gradeOrQuality",
-        label: "Grade",
-        sortableKey: "gradeOrQuality",
-        className: "cost-library-col-grade cost-library-col-secondary",
-        render: (row) => (
-          <input
-            value={row.gradeOrQuality || ""}
-            onChange={(event) => updateCost(row.id, "gradeOrQuality", event.target.value)}
-            aria-label="Grade or quality"
-          />
-        ),
-      },
-      brand: {
-        key: "brand",
-        label: "Brand",
-        sortableKey: "brand",
-        className: "cost-library-col-brand cost-library-col-secondary",
-        render: (row) => (
-          <input
-            value={row.brand || ""}
-            onChange={(event) => updateCost(row.id, "brand", event.target.value)}
-            aria-label="Brand"
-          />
-        ),
-      },
-      finishOrVariant: {
-        key: "finishOrVariant",
-        label: "Finish",
-        sortableKey: "finishOrVariant",
-        className: "cost-library-col-finish cost-library-col-secondary cost-library-group-end-details",
-        render: (row) => (
-          <input
-            value={row.finishOrVariant || ""}
-            onChange={(event) => updateCost(row.id, "finishOrVariant", event.target.value)}
-            aria-label="Finish or variant"
-          />
-        ),
-      },
-      unitId: {
-        key: "unitId",
-        label: "Unit",
-        sortableKey: "unitId",
-        className: "cost-library-col-unit cost-library-col-utility",
-        render: (row) => (
-          <select
-            value={getUnitSelectValue(row.unitId, row.unit)}
-            onChange={(event) => updateCost(row.id, "unitId", event.target.value)}
-            aria-label="Unit"
-          >
-            <option value="">Unassigned</option>
-            {getSelectOptionsWithLegacy(activeUnits, row.unitId, row.unit, "unit").map((unit) => (
-              <option key={unit.id} value={unit.id}>
-                {unit.abbreviation || unit.name}
-              </option>
-            ))}
-          </select>
-        ),
-      },
-      rate: {
-        key: "rate",
-        label: "Rate",
-        sortableKey: "rate",
-        className: "cost-library-col-rate cost-library-col-utility",
-        render: (row) => (
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={row.rate}
-            onChange={(event) => updateCost(row.id, "rate", event.target.value)}
-            aria-label="Rate"
-          />
-        ),
-      },
-  };
-
-  const visibleColumnKeys = showExpandedColumns ? columnOrder : essentialColumnKeys;
-  const visibleColumns = visibleColumnKeys.map((columnKey) => allColumns[columnKey]).filter(Boolean);
-  const activeFilterCount = Object.values(filters).filter(Boolean).length;
-
-  const renderSortHeader = (column) => (
-    <button
-      type="button"
-      className="table-sort-button"
-      onClick={() => toggleSort(column.sortableKey || column.key)}
-    >
-      {column.label}
-      {getSortIndicator(column.sortableKey || column.key)}
-    </button>
-  );
-
-  const renderTable = (rows) => {
-    if (!rows.length) {
-      return <p className="empty-state">No cost items added yet.</p>;
-    }
-
-    return (
-      <div className="table-wrap cost-library-table-wrap">
-        <table className="data-table cost-library-table">
-          <colgroup>
-            {visibleColumns.map((column) => (
-              <col
-                key={column.key}
-                style={{ width: `${columnWidths[column.key] || defaultColumnWidths[column.key]}px` }}
-              />
-            ))}
-            <col style={{ width: `${defaultColumnWidths.actions}px` }} />
-          </colgroup>
-          <thead>
-            <tr>
-              {visibleColumns.map((column) => (
-                <th
-                  key={column.key}
-                  className={`${column.className || ""} ${
-                    draggedColumnKey === column.key ? "is-dragging" : ""
-                  }`.trim()}
-                  draggable
-                  onDragStart={() => setDraggedColumnKey(column.key)}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={() => {
-                    moveColumnToTarget(draggedColumnKey, column.key);
-                    setDraggedColumnKey("");
-                  }}
-                  onDragEnd={() => setDraggedColumnKey("")}
-                >
-                  <div className="cost-library-header-cell">
-                    {renderSortHeader(column)}
-                    <button
-                      type="button"
-                      className="cost-library-resize-handle"
-                      aria-label={`Resize ${column.label} column`}
-                      onMouseDown={(event) => beginColumnResize(column.key, event)}
-                    />
-                  </div>
-                </th>
-              ))}
-              <th className="table-col-actions">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                {visibleColumns.map((column) => (
-                  <td key={column.key} className={column.className || ""}>
-                    {column.render(row)}
-                  </td>
-                ))}
-                <td className="table-col-actions">
-                  <div className="cost-library-row-actions">
-                    <button
-                      type="button"
-                      className="cost-library-row-action"
-                      aria-label={`Edit ${getCostDisplayName(row)}`}
-                      title="Edit item"
-                      onClick={() => openEditPanel(row)}
-                    >
-                      {"\u270E"}
-                    </button>
-                    <button
-                      type="button"
-                      className={`cost-library-row-action ${
-                        cleanText(row.sourceLink) ? "is-active" : ""
-                      }`}
-                      aria-label={
-                        cleanText(row.sourceLink)
-                          ? `Edit source link for ${getCostDisplayName(row)}`
-                          : `Add source link for ${getCostDisplayName(row)}`
-                      }
-                      title={cleanText(row.sourceLink) ? "Edit source link" : "Add source link"}
-                      onClick={() =>
-                        setActiveRowEditor((current) =>
-                          current.rowId === row.id && current.panel === "link"
-                            ? { rowId: "", panel: "" }
-                            : { rowId: row.id, panel: "link" }
-                        )
-                      }
-                    >
-                      {"\uD83D\uDD17"}
-                    </button>
-                    <button
-                      type="button"
-                      className={`cost-library-row-action ${
-                        cleanText(row.notes) ? "is-active" : ""
-                      }`}
-                      aria-label={
-                        cleanText(row.notes)
-                          ? `Edit note for ${getCostDisplayName(row)}`
-                          : `Add note for ${getCostDisplayName(row)}`
-                      }
-                      title={cleanText(row.notes) ? "Edit note" : "Add note"}
-                      onClick={() =>
-                        setActiveRowEditor((current) =>
-                          current.rowId === row.id && current.panel === "note"
-                            ? { rowId: "", panel: "" }
-                            : { rowId: row.id, panel: "note" }
-                        )
-                      }
-                    >
-                      {"\uD83D\uDCDD"}
-                    </button>
-                    <button
-                      type="button"
-                      className="cost-library-row-action is-delete"
-                      aria-label={`Remove ${getCostDisplayName(row)}`}
-                      title="Remove item"
-                      onClick={() => removeCost(row.id)}
-                    >
-                      {"\u00D7"}
-                    </button>
-                  </div>
-                  {activeRowEditor.rowId === row.id && activeRowEditor.panel === "link" ? (
-                    <div className="cost-library-link-popover">
-                      <span className="cost-library-link-popover-label">Source Link</span>
-                      <input
-                        value={row.sourceLink || ""}
-                        onChange={(event) => updateCost(row.id, "sourceLink", event.target.value)}
-                        placeholder="https://example.com/reference"
-                        aria-label={`Source link for ${getCostDisplayName(row)}`}
-                      />
-                      <div className="cost-library-link-popover-actions">
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          disabled={!getOpenableUrl(row.sourceLink)}
-                          onClick={() =>
-                            window.open(
-                              getOpenableUrl(row.sourceLink),
-                              "_blank",
-                              "noopener,noreferrer"
-                            )
-                          }
-                        >
-                          Open
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => updateCost(row.id, "sourceLink", "")}
-                        >
-                          Clear
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => setActiveRowEditor({ rowId: "", panel: "" })}
-                        >
-                          Close
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-                  {activeRowEditor.rowId === row.id && activeRowEditor.panel === "note" ? (
-                    <div className="cost-library-link-popover">
-                      <span className="cost-library-link-popover-label">Note</span>
-                      <textarea
-                        value={row.notes || ""}
-                        onChange={(event) => updateCost(row.id, "notes", event.target.value)}
-                        placeholder="Item note"
-                        aria-label={`Note for ${getCostDisplayName(row)}`}
-                        className="cost-library-note-textarea"
-                        rows={3}
-                      />
-                      <div className="cost-library-link-popover-actions">
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => updateCost(row.id, "notes", "")}
-                        >
-                          Clear
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => setActiveRowEditor({ rowId: "", panel: "" })}
-                        >
-                          Close
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
+  const draftPresentation = getStructuredItemPresentation(draft);
+  const activeTradeLabel =
+    tradeNavItems.find((item) => item.id === activeTradeId)?.label ||
+    "All Items";
 
   return (
     <SectionCard
       title="Cost Library"
-      description="Store normalized cost items with linked trade, cost code, family, unit, compact filters, and CSV setup support."
+      description="Browse by trade, filter by cost code/family/type/status, scan items in a compact table, and edit the selected item with notes and source links."
     >
-      <div className="cost-library-page">
-        <div className="cost-library-topbar">
-          <div className="cost-library-toolbar">
-            <div className="cost-library-toolbar-grid">
+      <div className="cost-library-layout">
+        <aside className="cost-library-sidebar">
+          <div className="cost-library-sidebar-header">
+            <h3>Trades</h3>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={openCreateEditor}
+            >
+              Add Cost Item
+            </button>
+          </div>
+
+          <div className="cost-library-trade-list">
+            {tradeNavItems.map((trade) => (
+              <button
+                key={trade.id}
+                type="button"
+                className={`cost-library-trade-button${
+                  activeTradeId === trade.id ? " is-active" : ""
+                }`}
+                onClick={() => setActiveTradeId(trade.id)}
+              >
+                <span>{trade.label}</span>
+                <span>{trade.count}</span>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <div className="cost-library-browser">
+          <div className="summary-section cost-library-browser-panel">
+            <div className="cost-library-filter-bar">
               <FormField label="Search">
                 <input
                   value={searchTerm}
                   onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder="Search item, family, trade, spec"
+                  placeholder="Search item, family, trade"
                 />
               </FormField>
 
-              <FormField label="Sort by">
+              <FormField label="Cost Code">
                 <select
-                  value={sortConfig.key}
-                  onChange={(event) =>
-                    setSortConfig((current) => ({
-                      ...current,
-                      key: event.target.value || "displayName",
-                    }))
-                  }
+                  value={costCodeFilter}
+                  onChange={(event) => setCostCodeFilter(event.target.value)}
                 >
-                  {sortOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
+                  <option value="">All</option>
+                  {activeCostCodes.map((costCode) => (
+                    <option key={costCode.id} value={costCode.id}>
+                      {costCode.name}
                     </option>
                   ))}
                 </select>
               </FormField>
 
-              <FormField label="Direction">
+              <FormField label="Family">
                 <select
-                  value={sortConfig.direction}
-                  onChange={(event) =>
-                    setSortConfig((current) => ({ ...current, direction: event.target.value }))
-                  }
+                  value={familyFilter}
+                  onChange={(event) => setFamilyFilter(event.target.value)}
                 >
-                  <option value="asc">Ascending</option>
-                  <option value="desc">Descending</option>
+                  <option value="">All</option>
+                  {activeItemFamilies.map((itemFamily) => (
+                    <option key={itemFamily.id} value={itemFamily.name}>
+                      {itemFamily.name}
+                    </option>
+                  ))}
                 </select>
               </FormField>
 
-              <FormField label="Group by">
-                <select value={groupBy} onChange={(event) => setGroupBy(event.target.value)}>
-                  {groupByOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
+              <FormField label="Cost Type">
+                <select
+                  value={costTypeFilter}
+                  onChange={(event) => setCostTypeFilter(event.target.value)}
+                >
+                  <option value="">All</option>
+                  {costTypeOptions.map((costType) => (
+                    <option key={costType} value={costType}>
+                      {costType}
                     </option>
                   ))}
+                </select>
+              </FormField>
+
+              <FormField label="Status">
+                <select
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                >
+                  <option value="">All</option>
+                  {costStatusOptions.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+
+              <FormField label="Sort">
+                <select
+                  value={sortKey}
+                  onChange={(event) => setSortKey(event.target.value)}
+                >
+                  <option value="itemName">Core Name</option>
+                  <option value="itemFamily">Family</option>
+                  <option value="displayName">Item Name</option>
                 </select>
               </FormField>
             </div>
 
-            <div className="cost-library-control-band">
-              <FormField label="Import mode">
-                <select value={importMode} onChange={(event) => setImportMode(event.target.value)}>
-                  <option value="append">Append</option>
-                  <option value="replace">Replace all</option>
-                </select>
-              </FormField>
+            <div className="cost-library-toolbar-row">
+              <div className="cost-library-toolbar-meta">
+                <strong>{activeTradeLabel}</strong>
+                <span>
+                  {filteredCosts.length} visible item
+                  {filteredCosts.length === 1 ? "" : "s"}
+                </span>
+              </div>
 
-              <details className="cost-library-control-menu">
-                <summary
-                  className="toolbar-icon-button"
-                  aria-label={`Filter items${activeFilterCount ? ` (${activeFilterCount} active)` : ""}`}
-                  title={`Filter items${activeFilterCount ? ` (${activeFilterCount} active)` : ""}`}
+              <div className="action-row">
+                {editorState.costId ? (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => duplicateCost(editorState.costId)}
+                  >
+                    Duplicate Selected
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={deleteAllFilteredCosts}
                 >
-                  <span aria-hidden="true">⛃</span>
-                </summary>
-                <div className="cost-library-control-menu-panel">
-                  <FormField label="Item family">
+                  Delete All (Filtered)
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={exportCostsAsCsv}
+                >
+                  Export CSV
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => importFileInputRef.current?.click()}
+                >
+                  Import CSV
+                </button>
+              </div>
+
+              <input
+                ref={importFileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                aria-label="Import Cost CSV"
+                style={{ display: "none" }}
+                onChange={(event) => {
+                  const [file] = event.target.files || [];
+                  importCostsFromCsv(file);
+                  event.target.value = "";
+                }}
+              />
+            </div>
+
+            {csvStatus ? (
+              <p className="assembly-library-status">{csvStatus}</p>
+            ) : null}
+
+            {selectedCostIds.length ? (
+              <div className="cost-library-bulk-bar">
+                <strong>{selectedCostIds.length} selected</strong>
+                <div className="action-row">
+                  <button
+                    type="button"
+                    className="danger-button"
+                    onClick={deleteSelectedCosts}
+                  >
+                    Delete Selected
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {filteredCosts.length ? (
+              <div className="table-wrap cost-library-table-wrap">
+                <table className="data-table cost-library-table">
+                  <colgroup>
+                    <col className="cost-library-col-select" />
+                    <col className="cost-library-col-core" />
+                    <col className="cost-library-col-item" />
+                    <col className="cost-library-col-type" />
+                    <col className="cost-library-col-unit" />
+                    <col className="cost-library-col-rate" />
+                    <col className="cost-library-col-trade" />
+                    <col className="cost-library-col-actions" />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>
+                        <input
+                          type="checkbox"
+                          checked={allFilteredSelected}
+                          aria-label="Select all visible cost items"
+                          onChange={toggleSelectAllFiltered}
+                        />
+                      </th>
+                      <th>Core Name</th>
+                      <th>Item Name</th>
+                      <th>Cost Type</th>
+                      <th>Unit</th>
+                      <th>Rate</th>
+                      <th>Trade</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredCosts.map((cost) => {
+                      const isActive = editorState.costId === cost.id;
+                      const isSelected = selectedCostIds.includes(cost.id);
+                      const itemPresentation = getStructuredItemPresentation(cost);
+
+                      return (
+                        <tr
+                          key={cost.id}
+                          className={`${isActive ? "cost-library-row-active" : ""}${
+                            isSelected ? " cost-library-row-selected" : ""
+                          }`}
+                          onClick={() => openEditEditor(cost)}
+                        >
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              aria-label={`Select ${cost.itemName}`}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={() => toggleCostSelection(cost.id)}
+                            />
+                          </td>
+                          <td>{cost.itemName}</td>
+                          <td>
+                            <div className="cost-library-name-cell">
+                              <span className="cost-library-name-primary">
+                                {itemPresentation.primaryLabel}
+                              </span>
+                              {itemPresentation.metaLabel ? (
+                                <span
+                                  className="cost-library-name-meta"
+                                  title={itemPresentation.metaLabel}
+                                >
+                                  {itemPresentation.metaLabel}
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td>{cost.costType}</td>
+                          <td>{cost.unit || ""}</td>
+                          <td>{cost.rate}</td>
+                          <td>{cost.trade || "Unassigned"}</td>
+                          <td>
+                            <div className="action-row">
+                              <button
+                                type="button"
+                                className="danger-button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  deleteCost(cost.id);
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="empty-state">
+                No cost items match the current trade and filters.
+              </p>
+            )}
+          </div>
+        </div>
+
+
+        <div className="cost-library-editor">
+          {editorState.isOpen ? (
+            <form className="assembly-editor-panel" onSubmit={saveCost}>
+              <div className="summary-section room-template-editor-header cost-library-editor-header">
+                <div>
+                  <p className="room-template-editor-kicker">
+                    {editorState.mode === "edit" ? "Editing" : "New Cost Item"}
+                  </p>
+                  <h3>
+                    {editorState.mode === "edit"
+                      ? `Editing: ${draftPresentation.primaryLabel || draft.itemName || "Cost Item"}`
+                      : "Create Cost Item"}
+                  </h3>
+                  {draftPresentation.metaLabel ? (
+                    <p className="cost-library-editor-subtitle">
+                      {draftPresentation.metaLabel}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="room-template-editor-header-meta">
+                  <span className="room-template-selected-badge">
+                    {draft.trade || "Unassigned Trade"}
+                  </span>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={closeEditor}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+
+              <div className="summary-section room-template-compact-section cost-library-editor-section cost-library-editor-section-identity">
+                <h3>Identity</h3>
+                <div className="form-grid room-template-fields-grid room-template-fields-grid-compact">
+                  <FormField label="Core Name">
+                    <input
+                      value={draft.itemName}
+                      onChange={(event) =>
+                        updateDraftField("itemName", event.target.value)
+                      }
+                      placeholder="Floor Tile"
+                    />
+                  </FormField>
+
+                  <FormField label="Item Name">
+                    <input value={draftPresentation.displayName || ""} readOnly />
+                  </FormField>
+
+                  <FormField label="Status">
                     <select
-                      value={filters.itemFamily}
-                      onChange={(event) => updateFilter("itemFamily", event.target.value)}
+                      value={draft.status}
+                      onChange={(event) =>
+                        updateDraftField("status", event.target.value)
+                      }
                     >
-                      <option value="">All</option>
+                      {costStatusOptions.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+                </div>
+              </div>
+
+              <div className="summary-section room-template-compact-section cost-library-editor-section cost-library-editor-section-classification">
+                <h3>Classification</h3>
+                <div className="form-grid room-template-fields-grid room-template-fields-grid-compact">
+                  <FormField label="Cost Type">
+                    <select
+                      value={draft.costType}
+                      onChange={(event) =>
+                        updateDraftField("costType", event.target.value)
+                      }
+                    >
+                      <option value="">Select cost type</option>
+                      {costTypeOptions.map((costType) => (
+                        <option key={costType} value={costType}>
+                          {costType}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+
+                  <FormField label="Delivery Type">
+                    <select
+                      value={draft.deliveryType}
+                      onChange={(event) =>
+                        updateDraftField("deliveryType", event.target.value)
+                      }
+                    >
+                      <option value="">Select delivery type</option>
+                      {deliveryTypeOptions.map((deliveryType) => (
+                        <option key={deliveryType} value={deliveryType}>
+                          {deliveryType}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+
+                  <FormField label="Family">
+                    <select
+                      value={draft.itemFamily}
+                      onChange={(event) =>
+                        updateDraftField("itemFamily", event.target.value)
+                      }
+                    >
+                      <option value="">Unassigned</option>
                       {activeItemFamilies.map((itemFamily) => (
                         <option key={itemFamily.id} value={itemFamily.name}>
                           {itemFamily.name}
@@ -1320,26 +992,14 @@ function CostLibraryPage({
                     </select>
                   </FormField>
 
-                  <FormField label="Work type">
-                    <select
-                      value={filters.workType}
-                      onChange={(event) => updateFilter("workType", event.target.value)}
-                    >
-                      <option value="">All</option>
-                      {workTypeOptions.map((workType) => (
-                        <option key={workType} value={workType}>
-                          {workType}
-                        </option>
-                      ))}
-                    </select>
-                  </FormField>
-
                   <FormField label="Trade">
                     <select
-                      value={filters.tradeId}
-                      onChange={(event) => updateFilter("tradeId", event.target.value)}
+                      value={draft.tradeId}
+                      onChange={(event) =>
+                        updateDraftField("tradeId", event.target.value)
+                      }
                     >
-                      <option value="">All</option>
+                      <option value="">Select trade</option>
                       {activeTrades.map((trade) => (
                         <option key={trade.id} value={trade.id}>
                           {trade.name}
@@ -1348,12 +1008,14 @@ function CostLibraryPage({
                     </select>
                   </FormField>
 
-                  <FormField label="Cost code">
+                  <FormField label="Cost Code">
                     <select
-                      value={filters.costCodeId}
-                      onChange={(event) => updateFilter("costCodeId", event.target.value)}
+                      value={draft.costCodeId}
+                      onChange={(event) =>
+                        updateDraftField("costCodeId", event.target.value)
+                      }
                     >
-                      <option value="">All</option>
+                      <option value="">Select cost code</option>
                       {activeCostCodes.map((costCode) => (
                         <option key={costCode.id} value={costCode.id}>
                           {costCode.name}
@@ -1361,13 +1023,86 @@ function CostLibraryPage({
                       ))}
                     </select>
                   </FormField>
+                </div>
+              </div>
 
+              <div className="summary-section room-template-compact-section cost-library-editor-section cost-library-editor-section-details">
+                <h3>Details</h3>
+                <div className="form-grid room-template-fields-grid room-template-fields-grid-compact">
+                  <FormField label="Spec">
+                    <input
+                      value={draft.specification}
+                      onChange={(event) =>
+                        updateDraftField("specification", event.target.value)
+                      }
+                      placeholder="600x600"
+                    />
+                  </FormField>
+
+                  <FormField label="Grade">
+                    <input
+                      value={draft.gradeOrQuality}
+                      onChange={(event) =>
+                        updateDraftField("gradeOrQuality", event.target.value)
+                      }
+                      placeholder="Premium"
+                    />
+                  </FormField>
+
+                  <FormField label="Finish">
+                    <input
+                      value={draft.finishOrVariant}
+                      onChange={(event) =>
+                        updateDraftField("finishOrVariant", event.target.value)
+                      }
+                      placeholder="Matt"
+                    />
+                  </FormField>
+
+                  <FormField label="Brand">
+                    <input
+                      value={draft.brand}
+                      onChange={(event) =>
+                        updateDraftField("brand", event.target.value)
+                      }
+                      placeholder="ABC"
+                    />
+                  </FormField>
+
+                  <FormField label="Source Link">
+                    <input
+                      value={draft.sourceLink}
+                      onChange={(event) =>
+                        updateDraftField("sourceLink", event.target.value)
+                      }
+                      placeholder="https://supplier.example/item"
+                    />
+                  </FormField>
+
+                  <FormField label="Notes">
+                    <textarea
+                      rows={4}
+                      value={draft.notes}
+                      onChange={(event) =>
+                        updateDraftField("notes", event.target.value)
+                      }
+                      placeholder="Optional notes or pricing context"
+                    />
+                  </FormField>
+                </div>
+              </div>
+
+              <div className="summary-section room-template-compact-section cost-library-editor-section cost-library-editor-section-pricing">
+                <h3>Pricing</h3>
+                <div className="form-grid room-template-fields-grid room-template-fields-grid-compact">
                   <FormField label="Unit">
                     <select
-                      value={filters.unitId}
-                      onChange={(event) => updateFilter("unitId", event.target.value)}
+                      value={draft.unitId}
+                      onChange={(event) =>
+                        updateDraftField("unitId", event.target.value)
+                      }
                     >
-                      <option value="">All</option>
+                      <option value="">Select unit</option>
                       {activeUnits.map((unit) => (
                         <option key={unit.id} value={unit.id}>
                           {unit.abbreviation}
@@ -1376,309 +1111,65 @@ function CostLibraryPage({
                     </select>
                   </FormField>
 
-                  <button
-                    type="button"
-                    className="estimate-builder-icon-button secondary-button"
-                    onClick={clearFilters}
-                    aria-label="Clear filters"
-                    title="Clear filters"
-                  >
-                    <span aria-hidden="true">×</span>
-                  </button>
-                </div>
-              </details>
-
-              <button
-                type="button"
-                className="estimate-builder-icon-button secondary-button"
-                onClick={() => setShowExpandedColumns((current) => !current)}
-                aria-label={showExpandedColumns ? "Show Less" : "Show More"}
-                title={showExpandedColumns ? "Show Less" : "Show More"}
-              >
-                <span aria-hidden="true">{showExpandedColumns ? "▴" : "▾"}</span>
-              </button>
-
-              <button type="button" className="primary-button" onClick={openNewPanel}>
-                Add Cost Item
-              </button>
-
-              <button
-                type="button"
-                className="estimate-builder-icon-button secondary-button"
-                onClick={exportCostsAsCsv}
-                aria-label="Export CSV"
-                title="Export CSV"
-              >
-                <span aria-hidden="true">↓</span>
-              </button>
-              <button
-                type="button"
-                className="estimate-builder-icon-button secondary-button"
-                onClick={() => importFileInputRef.current?.click()}
-                aria-label="Import CSV"
-                title="Import CSV"
-              >
-                <span aria-hidden="true">↑</span>
-              </button>
-            </div>
-
-            <p className="sidebar-meta">
-              Trade and Cost Code are linked to their libraries. Show More reveals the secondary spec columns when you need the full item detail.
-            </p>
-          </div>
-        </div>
-
-        <input
-          ref={importFileInputRef}
-          type="file"
-          accept=".csv,text/csv"
-          aria-label="Import Cost CSV"
-          style={{ position: "absolute", left: "-9999px" }}
-          onChange={(event) => {
-            const [file] = Array.from(event.target.files || []);
-            importCostsFromCsv(file || null);
-            event.target.value = "";
-          }}
-        />
-
-        {csvStatus ? <p className="sidebar-status">{csvStatus}</p> : null}
-
-        <div className="cost-library-table-panel">
-          {groupBy === "none" ? (
-            renderTable(sortedFilteredCosts)
-          ) : groupedCosts.length ? (
-            <div className="library-group-list">
-              {groupedCosts.map((group) => {
-                const isCollapsed = collapsedGroups[group.id] ?? false;
-
-                return (
-                  <div key={group.id} className="library-group-card">
-                    <button
-                      type="button"
-                      className="library-group-header"
-                      onClick={() => toggleGroup(group.id)}
-                    >
-                      <span>{isCollapsed ? "+" : "-"}</span>
-                      <span>{group.label}</span>
-                      <span>{group.rows.length}</span>
-                    </button>
-
-                    {!isCollapsed ? renderTable(group.rows) : null}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="empty-state">No grouped cost items found.</p>
-          )}
-        </div>
-
-        {panelState.open ? (
-          <div className="cost-library-drawer-backdrop" onClick={closePanel}>
-            <aside
-              className="cost-library-drawer"
-              onClick={(event) => event.stopPropagation()}
-              aria-label={panelState.mode === "edit" ? "Edit cost item" : "Add cost item"}
-            >
-              <div className="cost-library-drawer-header">
-                <div>
-                  <p className="cost-library-drawer-kicker">
-                    {panelState.mode === "edit" ? "Edit Cost Item" : "Add Cost Item"}
-                  </p>
-                  <h3>{getStructuredItemPresentation(form).displayName || "Cost item details"}</h3>
-                </div>
-                <button type="button" className="secondary-button" onClick={closePanel}>
-                  Close
-                </button>
-              </div>
-
-              <form className="cost-library-drawer-form" onSubmit={savePanelCost}>
-                <div className="cost-library-drawer-section">
-                  <span className="cost-library-drawer-section-label">Identity</span>
-                  <FormField label="Core Name">
-                    <input
-                      value={form.itemName}
-                      onChange={(event) => updateField("itemName", event.target.value)}
-                      placeholder="e.g. Floor Tile, Wall Frame, Vanity"
-                    />
-                  </FormField>
-                  <FormField label="Item Name">
-                    <input
-                      value={getStructuredItemPresentation(form).displayName || ""}
-                      readOnly
-                      placeholder="e.g. Tile / Ceramic / 600x600 / Premium / Matte"
-                    />
-                  </FormField>
-                </div>
-
-                <div className="cost-library-drawer-section">
-                  <span className="cost-library-drawer-section-label">Classification</span>
-                  <div className="cost-library-drawer-field">
-                    <FormField label="Work Type">
-                      <select value={form.workType} onChange={(event) => updateField("workType", event.target.value)}>
-                        <option value="">Unassigned</option>
-                        {workTypeOptions.map((workType) => (
-                          <option key={workType} value={workType}>
-                            {workType}
-                          </option>
-                        ))}
-                      </select>
-                    </FormField>
-                    <span className="cost-library-field-hint">
-                      Select work type, e.g. Supply, Install, Supply &amp; Install
-                    </span>
-                  </div>
-                  <div className="cost-library-drawer-field">
-                    <FormField label="Family">
-                      <select value={form.itemFamily} onChange={(event) => updateField("itemFamily", event.target.value)}>
-                        <option value="">Unassigned</option>
-                        {activeItemFamilies.map((itemFamily) => (
-                          <option key={itemFamily.id} value={itemFamily.name}>
-                            {itemFamily.name}
-                          </option>
-                        ))}
-                      </select>
-                    </FormField>
-                    <span className="cost-library-field-hint">
-                      e.g. Tile, Timber, Joinery, Electrical
-                    </span>
-                  </div>
-                  <div className="cost-library-drawer-field">
-                    <FormField label="Trade">
-                      <select value={form.tradeId} onChange={(event) => updateField("tradeId", event.target.value)}>
-                        <option value="">Unassigned</option>
-                        {activeTrades.map((trade) => (
-                          <option key={trade.id} value={trade.id}>
-                            {trade.name}
-                          </option>
-                        ))}
-                      </select>
-                    </FormField>
-                    <span className="cost-library-field-hint">
-                      e.g. Tiling, Carpentry, Electrical
-                    </span>
-                  </div>
-                  <div className="cost-library-drawer-field">
-                    <FormField label="Cost Code">
-                      <select value={form.costCodeId} onChange={(event) => updateField("costCodeId", event.target.value)}>
-                        <option value="">Unassigned</option>
-                        {activeCostCodes.map((costCode) => (
-                          <option key={costCode.id} value={costCode.id}>
-                            {costCode.name}
-                          </option>
-                        ))}
-                      </select>
-                    </FormField>
-                    <span className="cost-library-field-hint">
-                      Auto from trade or override, e.g. 18 / Finishes
-                    </span>
-                  </div>
-                </div>
-
-                <div className="cost-library-drawer-section">
-                  <span className="cost-library-drawer-section-label">Details</span>
-                  <FormField label="Specification">
-                    <input
-                      value={form.specification}
-                      onChange={(event) => updateField("specification", event.target.value)}
-                      placeholder="e.g. 600x600, 90x45, 20mm stone"
-                    />
-                  </FormField>
-                  <FormField label="Grade / Quality">
-                    <input
-                      value={form.gradeOrQuality}
-                      onChange={(event) => updateField("gradeOrQuality", event.target.value)}
-                      placeholder="e.g. Standard, Premium"
-                    />
-                  </FormField>
-                  <FormField label="Brand">
-                    <input
-                      value={form.brand}
-                      onChange={(event) => updateField("brand", event.target.value)}
-                      placeholder="e.g. Apex, ABI, Bowens, PY Timber"
-                    />
-                  </FormField>
-                  <FormField label="Finish / Variant">
-                    <input
-                      value={form.finishOrVariant}
-                      onChange={(event) => updateField("finishOrVariant", event.target.value)}
-                      placeholder="e.g. Matte, Brushed Nickel, Oak"
-                    />
-                  </FormField>
-                </div>
-
-                <div className="cost-library-drawer-section">
-                  <span className="cost-library-drawer-section-label">Pricing</span>
-                  <div className="cost-library-drawer-field">
-                    <FormField label="Unit">
-                      <select value={form.unitId} onChange={(event) => updateField("unitId", event.target.value)}>
-                        {activeUnits.map((unit) => (
-                          <option key={unit.id} value={unit.id}>
-                            {unit.abbreviation}
-                          </option>
-                        ))}
-                      </select>
-                    </FormField>
-                    <span className="cost-library-field-hint">e.g. SQM, LM, EA, HR</span>
-                  </div>
                   <FormField label="Rate">
                     <input
                       type="number"
-                      min="0"
                       step="0.01"
-                      value={form.rate}
-                      onChange={(event) => updateField("rate", event.target.value)}
-                      placeholder="e.g. 90.00"
+                      value={draft.rate}
+                      onChange={(event) =>
+                        updateDraftField("rate", event.target.value)
+                      }
                     />
                   </FormField>
                 </div>
+              </div>
 
-                <div className="cost-library-drawer-section">
-                  <span className="cost-library-drawer-section-label">References</span>
-                  <FormField label="Source Link">
-                    <input
-                      value={form.sourceLink}
-                      onChange={(event) => updateField("sourceLink", event.target.value)}
-                      placeholder="Paste supplier or reference link"
-                    />
-                  </FormField>
-                  <FormField label="Notes">
-                    <textarea
-                      className="cost-library-note-textarea"
-                      value={form.notes}
-                      onChange={(event) => updateField("notes", event.target.value)}
-                      rows={4}
-                      placeholder="Optional notes or installation details"
-                    />
-                  </FormField>
+              {validationErrors.length ? (
+                <div className="summary-section room-template-compact-section assembly-library-validation">
+                  {validationErrors.map((error) => (
+                    <p key={error}>{error}</p>
+                  ))}
                 </div>
+              ) : null}
 
-                <div className="cost-library-drawer-actions">
-                  {panelState.mode === "edit" && panelState.costId ? (
+              <div className="summary-section room-template-compact-section assembly-editor-actions">
+                <div className="action-row">
+                  {editorState.mode === "edit" ? (
                     <button
                       type="button"
                       className="danger-button"
                       onClick={() => {
-                        removeCost(panelState.costId);
-                        closePanel();
+                        deleteCost(editorState.costId);
+                        closeEditor();
                       }}
                     >
                       Delete
                     </button>
-                  ) : <span />}
-                  <div className="cost-library-drawer-actions-right">
-                    <button type="button" className="secondary-button" onClick={closePanel}>
-                      Cancel
-                    </button>
-                    <button type="submit" className="primary-button">
-                      Save
-                    </button>
-                  </div>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={closeEditor}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="primary-button">
+                    {editorState.mode === "edit"
+                      ? "Save Changes"
+                      : "Save Cost Item"}
+                  </button>
                 </div>
-              </form>
-            </aside>
-          </div>
-        ) : null}
+              </div>
+            </form>
+          ) : (
+            <div className="summary-section">
+              <p className="empty-state">
+                Select a cost item from the table to edit it.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </SectionCard>
   );

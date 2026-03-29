@@ -12,7 +12,7 @@ function cleanText(value) {
 
 export function normalizeStructuredItem(source = {}) {
   return {
-    workType: cleanText(source.workType),
+    workType: cleanText(source.deliveryType || source.workType),
     itemFamily: cleanText(source.itemFamily),
     itemName: cleanText(source.itemName),
     specification: cleanText(source.specification),
@@ -79,9 +79,12 @@ export function getWorkTypeTone(workType) {
     case "supply & install":
       return "supply-install";
     case "labour":
+    case "labour only":
       return "labour";
     case "equipment":
       return "equipment";
+    case "fee / allowance":
+      return "default";
     default:
       return "";
   }

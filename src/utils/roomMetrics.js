@@ -1,3 +1,5 @@
+import { evaluateFormula } from "./quantitySources";
+
 function toNumber(value) {
   const parsedValue = Number(value);
   return Number.isFinite(parsedValue) ? parsedValue : 0;
@@ -88,6 +90,6 @@ export function getQtyRuleQuantity(qtyRule, roomMetrics) {
     case "SplashbackLength":
       return roomMetrics.splashbackLengthTotal;
     default:
-      return 0;
+      return roundMetric(evaluateFormula(qtyRule, roomMetrics, roomMetrics));
   }
 }

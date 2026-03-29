@@ -184,7 +184,7 @@ function evaluateFormulaTokens(tokens, context = {}) {
   return result;
 }
 
-function evaluateFormula(formula, parameters = {}, derivedMetrics = {}) {
+export function evaluateFormula(formula, parameters = {}, derivedMetrics = {}) {
   const expression = String(formula || "").trim();
 
   if (!expression) {

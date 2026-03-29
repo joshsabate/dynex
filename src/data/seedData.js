@@ -1,5 +1,7 @@
 import { buildInitialParameterLibrary } from "../utils/parameters";
 import { buildInitialRoomTypeParameterDefinitions } from "../utils/roomTypeParameters";
+import { normalizeAssemblies } from "../utils/assemblies";
+import { normalizeCosts } from "../utils/costs";
 
 export const roomTypes = [
   "Bedroom",
@@ -1023,7 +1025,7 @@ const seedAssemblyRows = [
   },
 ];
 
-export const initialAssemblies = seedAssemblyRows.map(withManagedUnit);
+export const initialAssemblies = normalizeAssemblies(seedAssemblyRows.map(withManagedUnit), initialUnits);
 
 const seedCostRows = [
   { id: "cost-001", itemName: "Floor Tile Installation", unit: "sq m", rate: 1450 },
@@ -1060,4 +1062,9 @@ const seedCostRows = [
   { id: "cost-027", itemName: "Carpentry Labour", unit: "HR", rate: 78 },
 ];
 
-export const initialCosts = seedCostRows.map(withManagedUnit);
+export const initialCosts = normalizeCosts(seedCostRows.map(withManagedUnit), {
+  units: initialUnits,
+  trades: initialTrades,
+  costCodes: initialCostCodes,
+  itemFamilies: initialItemFamilies,
+});

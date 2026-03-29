@@ -1,9 +1,13 @@
-import { calculateRoomMetrics, getQtyRuleQuantity } from "./roomMetrics";
+import { calculateRoomMetrics } from "./roomMetrics";
 import { getAssemblyGroupId } from "./assemblyGroups";
 import { getStructuredItemPresentation } from "./itemNaming";
 import { resolveQuantitySource } from "./quantitySources";
 import { getTemplateLabourItems, getTemplateManualItems } from "./roomTemplates";
 import { getUnitAbbreviation, unitsMatch } from "./units";
+import {
+  getAssemblyQuantity,
+  normalizeAssemblies,
+} from "./assemblies";
 
 function roundValue(value) {
   return Math.round(value * 100) / 100;
@@ -91,6 +95,10 @@ function buildEstimateRow(baseRow, rowOverride) {
   const unitId = hasOverride(rowOverride, "unitId") ? rowOverride.unitId : baseRow.unitId;
   const unit = hasOverride(rowOverride, "unit") ? rowOverride.unit : baseRow.unit;
   const itemName = hasOverride(rowOverride, "itemName") ? rowOverride.itemName : baseRow.itemName;
+  const costType = hasOverride(rowOverride, "costType") ? rowOverride.costType : baseRow.costType;
+  const deliveryType = hasOverride(rowOverride, "deliveryType")
+    ? rowOverride.deliveryType
+    : baseRow.deliveryType;
   const workType = hasOverride(rowOverride, "workType") ? rowOverride.workType : baseRow.workType;
   const displayNameOverride = hasOverride(rowOverride, "displayNameOverride")
     ? rowOverride.displayNameOverride
@@ -136,6 +144,8 @@ function buildEstimateRow(baseRow, rowOverride) {
     costCodeId,
     costCode,
     itemName,
+    costType,
+    deliveryType,
     displayNameOverride,
     workType,
     itemFamily,
@@ -208,6 +218,8 @@ function buildTemplateLineRow({
         line.costCode || costRow?.costCode
       ),
       itemName: costRow?.itemName || line.itemName || "Unassigned",
+      costType: line.costType || costRow?.costType || "",
+      deliveryType: line.deliveryType || costRow?.deliveryType || line.workType || "",
       displayNameOverride: line.displayNameOverride || "",
       workType: line.workType || costRow?.workType || (source === "manual-room-labour" ? "Labour" : ""),
       itemFamily: line.itemFamily || costRow?.itemFamily || "",
@@ -237,13 +249,14 @@ function buildTemplateLineRow({
 function buildLaborRow({
   room,
   assemblyId,
-  assemblyRow,
+  assembly,
+  item,
   laborCostRow,
   laborHours,
   rowOverrides,
   units,
 }) {
-  const rowId = `${room.id}-${assemblyId}-${assemblyRow.id}-labor`;
+  const rowId = `${room.id}-${assemblyId}-${item.id}-labor`;
 
   return buildEstimateRow(
     {
@@ -253,24 +266,26 @@ function buildLaborRow({
       roomType: room.roomType,
       sectionId: room.sectionId || "",
       assemblyId,
-      assemblyCategory: assemblyRow.assemblyCategory,
-      assemblyName: `${assemblyRow.assemblyName} Labour`,
-      stageId: assemblyRow.stageId || "",
-      stage: assemblyRow.stage,
-      elementId: assemblyRow.elementId || "",
-      element: assemblyRow.element,
-      tradeId: assemblyRow.tradeId || laborCostRow?.tradeId || "",
-      trade: assemblyRow.trade || laborCostRow?.trade,
-      costCodeId: assemblyRow.costCodeId || laborCostRow?.costCodeId || "",
-      costCode: assemblyRow.costCode || laborCostRow?.costCode,
-      itemName: laborCostRow?.itemName || assemblyRow.laborCostItemName,
-      displayNameOverride: assemblyRow.displayNameOverride || "",
+      assemblyCategory: assembly.assemblyGroup,
+      assemblyName: `${assembly.assemblyName} Labour`,
+      stageId: item.stageId || "",
+      stage: item.stage || "",
+      elementId: item.elementId || "",
+      element: item.element || "",
+      tradeId: item.tradeId || laborCostRow?.tradeId || "",
+      trade: item.trade || laborCostRow?.trade,
+      costCodeId: item.costCodeId || laborCostRow?.costCodeId || "",
+      costCode: item.costCode || laborCostRow?.costCode,
+      itemName: laborCostRow?.itemName || item.laborCostItemName,
+      costType: "LBR",
+      deliveryType: "Labour Only",
+      displayNameOverride: item.displayNameOverride || "",
       workType: "Labour",
-      itemFamily: assemblyRow.itemFamily || laborCostRow?.itemFamily || "",
-      specification: assemblyRow.specification || laborCostRow?.specification || "",
-      gradeOrQuality: assemblyRow.gradeOrQuality || laborCostRow?.gradeOrQuality || "",
-      brand: assemblyRow.brand || laborCostRow?.brand || "",
-      finishOrVariant: assemblyRow.finishOrVariant || laborCostRow?.finishOrVariant || "",
+      itemFamily: item.itemFamily || laborCostRow?.itemFamily || "",
+      specification: item.specification || laborCostRow?.specification || "",
+      gradeOrQuality: item.gradeOrQuality || laborCostRow?.gradeOrQuality || "",
+      brand: item.brand || laborCostRow?.brand || "",
+      finishOrVariant: item.finishOrVariant || laborCostRow?.finishOrVariant || "",
       qtyRule: "LaborHours",
       unitId: laborCostRow?.unitId || "unit-hr",
       unit: getUnitAbbreviation(units, laborCostRow?.unitId || "unit-hr", laborCostRow?.unit || "HR"),
@@ -278,10 +293,10 @@ function buildLaborRow({
       generatedQuantity: laborHours,
       generatedRate: laborCostRow?.rate || 0,
       laborHours,
-      laborHoursPerUnit: assemblyRow.laborHoursPerUnit || 0,
-      sortOrder: (assemblyRow.sortOrder ?? 0) + 0.1,
+      laborHoursPerUnit: item.laborHoursPerUnit || 0,
+      sortOrder: (item.sortOrder ?? 0) + 0.1,
       source: "generated",
-      sourceLink: assemblyRow.sourceLink || laborCostRow?.sourceLink || "",
+      sourceLink: item.sourceLink || laborCostRow?.sourceLink || "",
     },
     rowOverrides[rowId]
   );
@@ -298,6 +313,8 @@ export function generateEstimateRows(
   units = [],
   costCodes = []
 ) {
+  const normalizedAssemblies = normalizeAssemblies(assemblyRows, units);
+
   return rooms
     .filter((room) => room.include)
     .flatMap((room) => {
@@ -305,113 +322,120 @@ export function generateEstimateRows(
       const selectedAssemblyIds = room.assemblyIds || [];
 
       const generatedRows = selectedAssemblyIds.flatMap((assemblyId) =>
-        assemblyRows
-          .filter((assemblyRow) => getAssemblyGroupId(assemblyRow) === assemblyId)
-          .sort((left, right) => left.sortOrder - right.sortOrder)
-          .map((assemblyRow) => {
-            const quantity = roundValue(
-              getQtyRuleQuantity(assemblyRow.qtyRule, roomMetrics)
-            );
-            const costRow = findCostRow(
-              costRows,
-              assemblyRow.costItemId,
-              assemblyRow.itemName,
-              assemblyRow.unitId,
-              assemblyRow.unit
-            );
-            const unitRate = costRow?.rate || 0;
-            const rowId = `${room.id}-${assemblyId}-${assemblyRow.id}`;
-            const laborHours = roundValue(
-              quantity * toNumber(assemblyRow.laborHoursPerUnit)
-            );
-            const laborCostRow = findCostRow(
-              costRows,
-              assemblyRow.laborCostItemId,
-              assemblyRow.laborCostItemName,
-              "unit-hr",
-              "HR"
-            );
+        normalizedAssemblies
+          .filter((assembly) => getAssemblyGroupId(assembly) === assemblyId)
+          .flatMap((assembly) =>
+            [...assembly.items]
+              .sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0))
+              .map((item) => {
+                const quantity = roundValue(
+                  getAssemblyQuantity(item.quantityFormula || item.qtyRule, roomMetrics)
+                );
+                const costRow = findCostRow(
+                  costRows,
+                  item.costItemId,
+                  item.itemName,
+                  item.unitId,
+                  item.unit
+                );
+                const unitRate = costRow?.rate ?? toNumber(item.unitCost);
+                const rowId = `${room.id}-${assemblyId}-${item.id}`;
+                const laborHours = roundValue(
+                  quantity * toNumber(item.laborHoursPerUnit)
+                );
+                const laborCostRow = findCostRow(
+                  costRows,
+                  item.laborCostItemId,
+                  item.laborCostItemName,
+                  "unit-hr",
+                  "HR"
+                );
 
-            const materialRow = buildEstimateRow(
-              {
-                id: rowId,
-                roomId: room.id,
-                roomName: room.name,
-                roomType: room.roomType,
-                assemblyId,
-                assemblyCategory: assemblyRow.assemblyCategory,
-                assemblyName: assemblyRow.assemblyName,
-                stageId: assemblyRow.stageId || "",
-                stage: getStageName(stages, assemblyRow.stageId, assemblyRow.stage),
-                elementId: assemblyRow.elementId || "",
-                element: getElementName(elements, assemblyRow.elementId, assemblyRow.element),
-                tradeId: assemblyRow.tradeId || costRow?.tradeId || "",
-                trade: getTradeName(
-                  trades,
-                  assemblyRow.tradeId || costRow?.tradeId,
-                  assemblyRow.trade || costRow?.trade
-                ),
-                costCodeId: assemblyRow.costCodeId || costRow?.costCodeId || "",
-                costCode: getCostCodeName(
-                  costCodes,
-                  assemblyRow.costCodeId || costRow?.costCodeId,
-                  assemblyRow.costCode || costRow?.costCode
-                ),
-                itemName: assemblyRow.itemName,
-                displayNameOverride: assemblyRow.displayNameOverride || "",
-                workType: assemblyRow.workType || costRow?.workType || "",
-                itemFamily: assemblyRow.itemFamily || costRow?.itemFamily || "",
-                specification: assemblyRow.specification || costRow?.specification || "",
-                gradeOrQuality: assemblyRow.gradeOrQuality || costRow?.gradeOrQuality || "",
-                brand: assemblyRow.brand || costRow?.brand || "",
-                finishOrVariant: assemblyRow.finishOrVariant || costRow?.finishOrVariant || "",
-                qtyRule: assemblyRow.qtyRule,
-                unitId: assemblyRow.unitId || costRow?.unitId || "",
-                unit: getUnitAbbreviation(
-                  units,
-                  assemblyRow.unitId || costRow?.unitId,
-                  assemblyRow.unit || costRow?.unit
-                ),
-                generatedInclude: true,
-                generatedQuantity: quantity,
-                generatedRate: unitRate,
-                laborHours,
-                laborHoursPerUnit: assemblyRow.laborHoursPerUnit || 0,
-                sortOrder: assemblyRow.sortOrder ?? 0,
-                source: "generated",
-                sourceLink: assemblyRow.sourceLink || costRow?.sourceLink || "",
-              },
-              rowOverrides[rowId]
-            );
+                const materialRow = buildEstimateRow(
+                  {
+                    id: rowId,
+                    roomId: room.id,
+                    roomName: room.name,
+                    roomType: room.roomType,
+                    assemblyId,
+                    assemblyCategory: assembly.assemblyGroup,
+                    assemblyName: assembly.assemblyName,
+                    stageId: item.stageId || "",
+                    stage: getStageName(stages, item.stageId, item.stage),
+                    elementId: item.elementId || "",
+                    element: getElementName(elements, item.elementId, item.element),
+                    tradeId: item.tradeId || costRow?.tradeId || "",
+                    trade: getTradeName(
+                      trades,
+                      item.tradeId || costRow?.tradeId,
+                      item.trade || costRow?.trade
+                    ),
+                    costCodeId: item.costCodeId || costRow?.costCodeId || "",
+                    costCode: getCostCodeName(
+                      costCodes,
+                      item.costCodeId || costRow?.costCodeId,
+                      item.costCode || costRow?.costCode
+                    ),
+                    itemName: item.itemName,
+                    costType: item.costType || costRow?.costType || "",
+                    deliveryType:
+                      item.deliveryType || costRow?.deliveryType || item.workType || "",
+                    displayNameOverride: item.displayNameOverride || "",
+                    workType:
+                      item.workType ||
+                      (item.itemType === "LBR" ? "Labour" : "") ||
+                      costRow?.workType ||
+                      "",
+                    itemFamily: item.itemFamily || costRow?.itemFamily || "",
+                    specification: item.specification || costRow?.specification || "",
+                    gradeOrQuality: item.gradeOrQuality || costRow?.gradeOrQuality || "",
+                    brand: item.brand || costRow?.brand || "",
+                    finishOrVariant: item.finishOrVariant || costRow?.finishOrVariant || "",
+                    qtyRule: item.quantityFormula || item.qtyRule,
+                    unitId: item.unitId || costRow?.unitId || "",
+                    unit: getUnitAbbreviation(
+                      units,
+                      item.unitId || costRow?.unitId,
+                      item.unit || costRow?.unit
+                    ),
+                    generatedInclude: true,
+                    generatedQuantity: quantity,
+                    generatedRate: unitRate,
+                    laborHours,
+                    laborHoursPerUnit: item.laborHoursPerUnit || 0,
+                    sortOrder: item.sortOrder ?? 0,
+                    source: "generated",
+                    sourceLink: item.sourceLink || costRow?.sourceLink || "",
+                  },
+                  rowOverrides[rowId]
+                );
 
-            if (!laborHours || !assemblyRow.laborCostItemName) {
-              return [materialRow];
-            }
+                if (!laborHours || !item.laborCostItemName) {
+                  return [materialRow];
+                }
 
-            return [
-              materialRow,
-              buildLaborRow({
-                room,
-                assemblyId,
-                assemblyRow: {
-                  ...assemblyRow,
-                  stage: getStageName(stages, assemblyRow.stageId, assemblyRow.stage),
-                  element: getElementName(elements, assemblyRow.elementId, assemblyRow.element),
-                  trade: getTradeName(trades, assemblyRow.tradeId, assemblyRow.trade),
-                  costCode: getCostCodeName(
-                    costCodes,
-                    assemblyRow.costCodeId,
-                    assemblyRow.costCode
-                  ),
-                },
-                laborCostRow,
-                laborHours,
-                rowOverrides,
-                units,
-              }),
-            ];
-          })
-          .flat()
+                return [
+                  materialRow,
+                  buildLaborRow({
+                    room,
+                    assemblyId,
+                    assembly,
+                    item: {
+                      ...item,
+                      stage: getStageName(stages, item.stageId, item.stage),
+                      element: getElementName(elements, item.elementId, item.element),
+                      trade: getTradeName(trades, item.tradeId, item.trade),
+                      costCode: getCostCodeName(costCodes, item.costCodeId, item.costCode),
+                    },
+                    laborCostRow,
+                    laborHours,
+                    rowOverrides,
+                    units,
+                  }),
+                ];
+              })
+              .flat()
+          )
       );
 
       const customRows = getTemplateManualItems(room).map((customItem) =>
@@ -489,6 +513,8 @@ export function generateManualEstimateBuilderRows(
         costCodeId: line.costCodeId || "",
         costCode: getCostCodeName(costCodes, line.costCodeId, ""),
         itemName: line.itemName,
+        costType: line.costType || "",
+        deliveryType: line.deliveryType || line.workType || "",
         displayNameOverride: line.displayNameOverride || "",
         workType: line.workType || "",
         itemFamily: line.itemFamily || "",

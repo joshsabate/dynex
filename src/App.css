@@ -1606,6 +1606,680 @@ textarea {
   white-space: normal;
 }
 
+.assembly-editor-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.assembly-editor-actions .action-row {
+  justify-content: flex-end;
+}
+
+.assembly-library-status {
+  margin: 10px 0 0;
+  color: #425247;
+}
+
+.assembly-library-validation {
+  border-color: #d8b1a7;
+  background: #fff3f0;
+}
+
+.assembly-library-validation p {
+  margin: 0;
+  color: #8a3f30;
+}
+
+.assembly-library-validation-note {
+  margin: 8px 0 0;
+  color: #7c6650;
+}
+
+.cost-library-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr) minmax(340px, 420px);
+  gap: 12px;
+  align-items: start;
+}
+
+.cost-library-sidebar,
+.cost-library-browser-panel,
+.cost-library-editor {
+  min-width: 0;
+}
+
+.cost-library-sidebar {
+  padding: 14px;
+  border: 1px solid #e5ddd2;
+  border-radius: 14px;
+  background: #faf7f2;
+  display: grid;
+  gap: 10px;
+}
+
+.cost-library-sidebar-header {
+  display: grid;
+  gap: 8px;
+}
+
+.cost-library-sidebar-header h3 {
+  margin: 0;
+}
+
+.cost-library-trade-list {
+  display: grid;
+  gap: 4px;
+}
+
+.cost-library-trade-button {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #ddd4c8;
+  border-radius: 10px;
+  background: #fff;
+  color: #304138;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cost-library-trade-button.is-active {
+  border-color: #2f5d49;
+  background: #eef6ef;
+  box-shadow: inset 3px 0 0 #2f5d49;
+}
+
+.cost-library-browser-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.cost-library-filter-bar {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
+.cost-library-toolbar-row,
+.cost-library-toolbar-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cost-library-toolbar-meta span {
+  color: #667064;
+}
+
+.cost-library-table-wrap {
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.cost-library-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.cost-library-col-select {
+  width: 44px;
+}
+
+.cost-library-col-core {
+  width: 16%;
+}
+
+.cost-library-col-item {
+  width: 34%;
+}
+
+.cost-library-col-type {
+  width: 10%;
+}
+
+.cost-library-col-unit {
+  width: 7%;
+}
+
+.cost-library-col-rate {
+  width: 9%;
+}
+
+.cost-library-col-trade {
+  width: 13%;
+}
+
+.cost-library-col-actions {
+  width: 12%;
+}
+
+.cost-library-table td,
+.cost-library-table th {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cost-library-table td:first-child,
+.cost-library-table th:first-child {
+  text-align: center;
+}
+
+.cost-library-table tbody tr {
+  cursor: pointer;
+  transition: background-color 0.16s ease;
+}
+
+.cost-library-table tbody tr:hover td {
+  background: #f6f2ea;
+}
+
+.cost-library-table td .action-row {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.cost-library-table td .secondary-button,
+.cost-library-table td .danger-button {
+  min-width: 0;
+  padding: 6px 8px;
+}
+
+.cost-library-row-selected td {
+  background: #f5f1e8;
+}
+
+.cost-library-row-active td {
+  background: #edf3ef;
+}
+
+.cost-library-row-active td:first-child {
+  box-shadow: inset 3px 0 0 #7ca28a;
+}
+
+.cost-library-name-cell {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cost-library-name-primary,
+.cost-library-name-meta {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cost-library-name-primary {
+  color: #233128;
+  font-weight: 600;
+}
+
+.cost-library-name-meta,
+.cost-library-editor-subtitle {
+  color: #6e756d;
+  font-size: 12px;
+}
+
+.cost-library-editor-subtitle {
+  margin: 6px 0 0;
+}
+
+.cost-library-editor-header {
+  border-color: #cfe1d3;
+  background: #f2f8f2;
+}
+
+.cost-library-bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid #ddd4c8;
+  border-radius: 12px;
+  background: #f8f3eb;
+}
+
+.cost-library-editor .cost-library-editor-section {
+  border: 1px solid #e6e0d6;
+}
+
+.cost-library-editor .cost-library-editor-section-identity {
+  background: #edf4fb;
+  border-color: #dbe5f0;
+}
+
+.cost-library-editor .cost-library-editor-section-classification {
+  background: #edf6ed;
+  border-color: #d8e7d8;
+}
+
+.cost-library-editor .cost-library-editor-section-details {
+  background: #f8f2e8;
+  border-color: #e9dfd0;
+}
+
+.cost-library-editor .cost-library-editor-section-pricing {
+  background: #f0eef9;
+  border-color: #dfdaf0;
+}
+
+.assembly-library-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr) minmax(360px, 440px);
+  gap: 12px;
+  align-items: start;
+}
+
+.assembly-library-sidebar,
+.assembly-library-browser,
+.assembly-library-editor {
+  min-width: 0;
+}
+
+.assembly-library-sidebar {
+  padding: 14px;
+  border: 1px solid #e5ddd2;
+  border-radius: 14px;
+  background: #faf7f2;
+  display: grid;
+  gap: 10px;
+}
+
+.assembly-library-sidebar-header {
+  display: grid;
+  gap: 8px;
+}
+
+.assembly-library-sidebar-header h3 {
+  margin: 0;
+}
+
+.assembly-library-nav-list {
+  display: grid;
+  gap: 4px;
+}
+
+.assembly-library-nav-button {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #ddd4c8;
+  border-radius: 10px;
+  background: #fff;
+  color: #304138;
+  text-align: left;
+  cursor: pointer;
+}
+
+.assembly-library-nav-button.is-active {
+  border-color: #2f5d49;
+  background: #eef6ef;
+  box-shadow: inset 3px 0 0 #2f5d49;
+}
+
+.assembly-library-browser-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.assembly-library-filter-bar {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
+.assembly-library-toolbar-row,
+.assembly-library-toolbar-meta,
+.assembly-library-bulk-bar,
+.assembly-library-items-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.assembly-library-toolbar-meta span {
+  color: #667064;
+}
+
+.assembly-library-bulk-bar {
+  padding: 10px 12px;
+  border: 1px solid #ddd4c8;
+  border-radius: 12px;
+  background: #f8f3eb;
+}
+
+.assembly-library-table-wrap,
+.assembly-library-items-wrap {
+  max-height: 62vh;
+  overflow: auto;
+}
+
+.assembly-library-table,
+.assembly-library-items-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.assembly-library-col-select {
+  width: 44px;
+}
+
+.assembly-library-col-name {
+  width: 30%;
+}
+
+.assembly-library-col-room {
+  width: 16%;
+}
+
+.assembly-library-col-group {
+  width: 18%;
+}
+
+.assembly-library-col-count {
+  width: 10%;
+}
+
+.assembly-library-col-source {
+  width: 14%;
+}
+
+.assembly-library-col-actions {
+  width: 12%;
+}
+
+.assembly-library-item-col-name {
+  width: 52%;
+}
+
+.assembly-library-item-col-qty {
+  width: 22%;
+}
+
+.assembly-library-item-col-override {
+  width: 12%;
+}
+
+.assembly-library-table th,
+.assembly-library-table td,
+.assembly-library-items-table th,
+.assembly-library-items-table td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.assembly-library-table th:first-child,
+.assembly-library-table td:first-child,
+.assembly-library-items-table th:first-child,
+.assembly-library-items-table td:first-child {
+  text-align: center;
+}
+
+.assembly-library-table tbody tr,
+.assembly-library-items-table tbody tr {
+  cursor: pointer;
+  transition: background-color 0.16s ease;
+}
+
+.assembly-library-table tbody tr:hover td,
+.assembly-library-items-table tbody tr:hover td {
+  background: #f6f2ea;
+}
+
+.assembly-library-row-selected td {
+  background: #f5f1e8;
+}
+
+.assembly-library-row-active td {
+  background: #edf3ef;
+}
+
+.assembly-library-row-active td:first-child {
+  box-shadow: inset 3px 0 0 #7ca28a;
+}
+
+.assembly-library-table td .action-row,
+.assembly-library-items-table td .action-row {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.assembly-library-table td .secondary-button,
+.assembly-library-table td .danger-button,
+.assembly-library-items-table td .secondary-button,
+.assembly-library-items-table td .danger-button {
+  min-width: 0;
+  padding: 6px 8px;
+}
+
+.assembly-library-editor-header {
+  border-color: #cfe1d3;
+  background: #f2f8f2;
+}
+
+.assembly-library-editor .assembly-library-editor-section {
+  border: 1px solid #e6e0d6;
+}
+
+.assembly-library-editor .assembly-library-editor-section-identity {
+  background: #edf4fb;
+  border-color: #dbe5f0;
+}
+
+.assembly-library-editor .assembly-library-editor-section-notes {
+  background: #f8f3eb;
+  border-color: #e7dbc8;
+}
+
+.assembly-library-editor .assembly-library-editor-section-items {
+  background: #eef5ef;
+  border-color: #d7e4d7;
+}
+
+.assembly-library-inline-actions {
+  margin-bottom: 8px;
+  justify-content: flex-start;
+}
+
+.assembly-library-inline-actions .primary-button,
+.assembly-library-inline-actions .secondary-button {
+  min-width: 180px;
+}
+
+.assembly-library-item-detail {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #d7e4d7;
+  border-radius: 12px;
+  background: #f8fbf8;
+  display: grid;
+  gap: 10px;
+}
+
+.assembly-library-item-detail h3 {
+  margin: 0;
+}
+
+.assembly-library-item-cell {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.assembly-library-item-primary,
+.assembly-library-picker-primary {
+  display: block;
+  font-weight: 600;
+  color: #213229;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.assembly-library-item-meta,
+.assembly-library-picker-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: nowrap;
+  min-width: 0;
+  color: #6e756d;
+  font-size: 12px;
+}
+
+.assembly-library-item-meta span,
+.assembly-library-picker-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.assembly-library-source-badge,
+.assembly-library-trade-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.assembly-library-source-badge.is-linked {
+  background: #e8f0fb;
+  color: #31587c;
+}
+
+.assembly-library-source-badge.is-custom {
+  background: #f7ede2;
+  color: #8a5a23;
+}
+
+.assembly-library-trade-badge {
+  background: #eef5ef;
+  color: #35573c;
+}
+
+.assembly-library-trade-badge.is-unassigned {
+  background: #f1f1f1;
+  color: #757575;
+}
+
+.assembly-library-item-qty {
+  color: #415046;
+  font-size: 13px;
+}
+
+.assembly-library-quantity-field {
+  display: grid;
+  gap: 6px;
+}
+
+.assembly-library-field-hint {
+  margin: 0;
+  color: #6d756d;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.assembly-library-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(27, 33, 29, 0.42);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 1200;
+}
+
+.assembly-library-picker-modal {
+  width: min(860px, 100%);
+  max-height: min(80vh, 760px);
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid #ded7ca;
+  background: #fcfaf7;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.assembly-library-picker-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.assembly-library-picker-header h3 {
+  margin: 2px 0 0;
+}
+
+.assembly-library-picker-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(140px, 0.7fr));
+  gap: 10px;
+}
+
+.assembly-library-picker-results {
+  display: grid;
+  gap: 6px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.assembly-library-picker-row {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #e3ddd1;
+  border-radius: 12px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.assembly-library-picker-row:hover {
+  background: #f6f2ea;
+  border-color: #d3cabd;
+}
+
+@media (max-width: 1200px) {
+  .cost-library-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .cost-library-filter-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .assembly-library-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .assembly-library-filter-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .assembly-library-picker-filters {
+    grid-template-columns: 1fr;
+  }
+}
+
 .library-page {
   grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
   gap: 14px;

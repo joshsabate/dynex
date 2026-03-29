@@ -36,6 +36,8 @@ import {
   generateManualEstimateBuilderRows,
   summarizeEstimateRows,
 } from "./utils/estimateRows";
+import { normalizeAssemblies } from "./utils/assemblies";
+import { normalizeCosts } from "./utils/costs";
 
 const legacyLocalStorageKey = "estimator-app-project";
 const globalLibrariesStorageKey = "estimator-app-global-libraries";
@@ -420,6 +422,23 @@ function normalizeAppState(source = {}) {
   const defaultGlobalLibraries = getDefaultGlobalLibraries();
   const defaultLibraryData = getDefaultLibraryData();
   const defaultProjectData = getDefaultProjectData();
+  const normalizedUnits = Array.isArray(source.units) ? source.units : defaultGlobalLibraries.units;
+  const normalizedTrades = Array.isArray(source.trades) ? source.trades : defaultGlobalLibraries.trades;
+  const normalizedCostCodes = Array.isArray(source.costCodes)
+    ? source.costCodes
+    : defaultGlobalLibraries.costCodes;
+  const normalizedItemFamilies = Array.isArray(source.itemFamilies)
+    ? source.itemFamilies
+    : defaultGlobalLibraries.itemFamilies;
+  const normalizedCosts = normalizeCosts(
+    Array.isArray(source.costs) ? source.costs : defaultLibraryData.costs,
+    {
+      units: normalizedUnits,
+      trades: normalizedTrades,
+      costCodes: normalizedCostCodes,
+      itemFamilies: normalizedItemFamilies,
+    }
+  );
 
   return {
     ...defaultGlobalLibraries,
@@ -435,15 +454,11 @@ function normalizeAppState(source = {}) {
     parameters: Array.isArray(source.parameters)
       ? source.parameters
       : defaultGlobalLibraries.parameters,
-    units: Array.isArray(source.units) ? source.units : defaultGlobalLibraries.units,
-    costCodes: Array.isArray(source.costCodes)
-      ? source.costCodes
-      : defaultGlobalLibraries.costCodes,
+    units: normalizedUnits,
+    costCodes: normalizedCostCodes,
     stages: Array.isArray(source.stages) ? source.stages : defaultGlobalLibraries.stages,
-    trades: Array.isArray(source.trades) ? source.trades : defaultGlobalLibraries.trades,
-    itemFamilies: Array.isArray(source.itemFamilies)
-      ? source.itemFamilies
-      : defaultGlobalLibraries.itemFamilies,
+    trades: normalizedTrades,
+    itemFamilies: normalizedItemFamilies,
     elements: Array.isArray(source.elements)
       ? source.elements
       : defaultGlobalLibraries.elements,
@@ -452,10 +467,16 @@ function normalizeAppState(source = {}) {
       : Array.isArray(source.rooms)
         ? source.rooms
         : defaultLibraryData.roomTemplates,
-    assemblies: Array.isArray(source.assemblies)
-      ? source.assemblies
-      : defaultLibraryData.assemblies,
-    costs: Array.isArray(source.costs) ? source.costs : defaultLibraryData.costs,
+    assemblies: normalizeAssemblies(
+      Array.isArray(source.assemblies) ? source.assemblies : defaultLibraryData.assemblies,
+      {
+        units: normalizedUnits,
+        costs: normalizedCosts,
+        trades: normalizedTrades,
+        costCodes: normalizedCostCodes,
+      }
+    ),
+    costs: normalizedCosts,
     projectName: source.projectName ?? defaultProjectData.projectName,
     estimateName:
       source.estimateName ?? source.projectName ?? defaultProjectData.estimateName,

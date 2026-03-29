@@ -1,27 +1,34 @@
+import { normalizeAssemblies } from "./assemblies";
+
 const assemblyCsvHeaders = [
   "Assembly Name",
+  "Room Type",
+  "Assembly Group",
   "Item Name",
-  "Description",
+  "Cost Type",
+  "Delivery Type",
+  "Trade",
+  "Cost Code",
   "Quantity Formula",
   "Unit",
   "Unit Cost",
-  "Item Type",
 ];
 
 const costCsvHeaders = [
-  "Item Family",
   "Core Name",
-  "Work Type",
+  "Item Name",
+  "Cost Type",
+  "Delivery Type",
+  "Family",
   "Trade",
   "Cost Code",
-  "Specification",
-  "Grade / Quality",
+  "Spec",
+  "Grade",
+  "Finish",
   "Brand",
-  "Finish / Variant",
   "Unit",
   "Rate",
-  "Item Name",
-  "Source Link",
+  "Status",
 ];
 
 function escapeCsvValue(value) {
@@ -103,20 +110,27 @@ export function parseCSV(text) {
 }
 
 export function convertAssembliesToCSV(assemblies = []) {
+  const normalizedAssemblies = normalizeAssemblies(assemblies);
   const rows = [
     assemblyCsvHeaders.join(","),
-    ...assemblies.map((assembly) =>
-      [
-        assembly.assemblyName,
-        assembly.itemName,
-        assembly.description,
-        assembly.qtyRule,
-        assembly.unit,
-        assembly.unitCost,
-        assembly.itemType,
-      ]
-        .map(escapeCsvValue)
-        .join(",")
+    ...normalizedAssemblies.flatMap((assembly) =>
+      assembly.items.map((item) =>
+        [
+          assembly.assemblyName,
+          assembly.roomType,
+          assembly.assemblyGroup,
+          item.itemNameSnapshot || item.itemName,
+          item.costType || item.itemType,
+          item.deliveryType || item.workType,
+          item.trade,
+          item.costCode,
+          item.quantityFormula,
+          item.unit,
+          item.rateOverride === "" || item.rateOverride == null ? item.baseRate : item.rateOverride,
+        ]
+          .map(escapeCsvValue)
+          .join(",")
+      )
     ),
   ];
 
@@ -128,19 +142,20 @@ export function convertCostsToCSV(costs = []) {
     costCsvHeaders.join(","),
     ...costs.map((cost) =>
       [
-        cost.itemFamily,
-        cost.itemName,
-        cost.workType,
+        cost.coreName || cost.itemName,
+        cost.displayName || cost.itemName,
+        cost.costType,
+        cost.deliveryType,
+        cost.family || cost.itemFamily,
         cost.trade,
         cost.costCode,
-        cost.specification,
-        cost.gradeOrQuality,
+        cost.spec || cost.specification,
+        cost.grade || cost.gradeOrQuality,
+        cost.finish || cost.finishOrVariant,
         cost.brand,
-        cost.finishOrVariant,
         cost.unit,
         cost.rate,
-        cost.displayName,
-        cost.sourceLink,
+        cost.status,
       ]
         .map(escapeCsvValue)
         .join(",")
