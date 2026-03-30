@@ -2,14 +2,26 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import FormField from "../components/FormField";
 import SectionCard from "../components/SectionCard";
 import { createAssemblyId, normalizeAssemblies } from "../utils/assemblies";
-import { convertAssembliesToCSV, parseCSV } from "../utils/csvUtils";
+import {
+  getAssemblyGroupNames,
+  getStoredAssemblyGroupNames,
+  isAssemblyGroupDefined,
+  saveStoredAssemblyGroupNames,
+} from "../utils/assemblyGroups";
+import { applyImportMode, convertAssembliesToCSV, parseCSV } from "../utils/csvUtils";
 import { getStructuredItemPresentation } from "../utils/itemNaming";
 import {
   costTypeOptions,
   deliveryTypeOptions,
+  costStatusOptions,
   findMatchingCost,
   normalizeCosts,
 } from "../utils/costs";
+import {
+  buildQuantityFormula,
+  getQuantityFormulaOptions,
+  parseQuantityFormula,
+} from "../utils/quantityFormulaOptions";
 
 const assemblyCsvHeaders = [
   "Assembly Name",
@@ -25,15 +37,6 @@ const assemblyCsvHeaders = [
   "Unit Cost",
 ];
 
-const defaultAssemblyGroups = [
-  "Finishes",
-  "Waterproofing",
-  "Joinery",
-  "Fixtures",
-  "Services",
-  "Walls & Linings",
-];
-
 function sortActiveItems(items = []) {
   return [...items]
     .filter((item) => item.isActive !== false)
@@ -47,10 +50,39 @@ function cleanText(value) {
   return String(value || "").trim();
 }
 
+function buildAssemblyName(element, scope, spec) {
+  const parts = [cleanText(element), cleanText(scope), cleanText(spec)].filter(Boolean);
+  return parts.join("  ");
+}
+
+function deriveAssemblyNameParts(assemblyName) {
+  const rawName = cleanText(assemblyName);
+  if (!rawName) {
+    return { assemblyElement: "", assemblyScope: "", assemblySpec: "" };
+  }
+
+  const structuredParts = rawName.split("  ").map((part) => cleanText(part)).filter(Boolean);
+  if (structuredParts.length >= 2) {
+    return {
+      assemblyElement: structuredParts[0],
+      assemblyScope: structuredParts[1],
+      assemblySpec: structuredParts.slice(2).join("  "),
+    };
+  }
+
+  const fallbackParts = rawName.split(/\s+/).filter(Boolean);
+  return {
+    assemblyElement: fallbackParts[0] || "",
+    assemblyScope: fallbackParts.slice(1).join(" "),
+    assemblySpec: "",
+  };
+}
+
 function createEmptyAssemblyItem(index = 0) {
   return {
     id: `assembly-item-${Date.now()}-${index}`,
     libraryItemId: "",
+    costItemId: "",
     itemNameSnapshot: "",
     itemName: "",
     costType: "",
@@ -71,11 +103,47 @@ function createEmptyAssemblyItem(index = 0) {
   };
 }
 
+function createEmptyCostItemDraft(units = []) {
+  const unit = sortActiveItems(units)[0] || { id: "", abbreviation: "" };
+
+  return {
+    id: "",
+    internalId: "",
+    itemName: "",
+    coreName: "",
+    costType: "",
+    deliveryType: "",
+    itemFamily: "",
+    family: "",
+    tradeId: "",
+    trade: "",
+    costCodeId: "",
+    costCode: "",
+    specification: "",
+    spec: "",
+    gradeOrQuality: "",
+    grade: "",
+    finishOrVariant: "",
+    finish: "",
+    brand: "",
+    unitId: unit.id,
+    unit: unit.abbreviation,
+    rate: "",
+    status: "Active",
+    isActive: true,
+    notes: "",
+    sourceLink: "",
+  };
+}
+
 function createEmptyAssembly(roomTypes = []) {
   const roomType = sortActiveItems(roomTypes)[0] || { id: "", name: "" };
   return {
     id: "",
     assemblyName: "",
+    assemblyElement: "",
+    assemblyScope: "",
+    assemblySpec: "",
     roomTypeId: roomType.id,
     roomType: roomType.name,
     appliesToRoomTypeId: roomType.id,
@@ -87,10 +155,24 @@ function createEmptyAssembly(roomTypes = []) {
   };
 }
 
+const BULK_EDIT_UNCHANGED = "__UNCHANGED__";
+
+function getSharedBulkValue(items, selector) {
+  if (!items.length) {
+    return "";
+  }
+  const firstValue = selector(items[0]) ?? "";
+  return items.every((item) => (selector(item) ?? "") === firstValue) ? firstValue : "";
+}
+
 function cloneAssemblyForEditor(assembly, roomTypes = []) {
+  const derivedNameParts = deriveAssemblyNameParts(assembly.assemblyName);
   return {
     ...createEmptyAssembly(roomTypes),
     ...assembly,
+    assemblyElement: cleanText(assembly.assemblyElement || derivedNameParts.assemblyElement),
+    assemblyScope: cleanText(assembly.assemblyScope || derivedNameParts.assemblyScope),
+    assemblySpec: cleanText(assembly.assemblySpec || derivedNameParts.assemblySpec),
     notes: cleanText(assembly.notes),
     items: (assembly.items || []).map((item, index) => ({
       ...createEmptyAssemblyItem(index),
@@ -103,6 +185,15 @@ function cloneAssemblyForEditor(assembly, roomTypes = []) {
       itemName: item.itemNameSnapshot || item.itemName || "",
       isCustomItem: item.isCustomItem !== false,
     })),
+  };
+}
+
+function getAssemblyNameParts(assembly) {
+  const derivedParts = deriveAssemblyNameParts(assembly.assemblyName);
+  return {
+    element: cleanText(assembly.assemblyElement || derivedParts.assemblyElement),
+    scope: cleanText(assembly.assemblyScope || derivedParts.assemblyScope),
+    spec: cleanText(assembly.assemblySpec || derivedParts.assemblySpec),
   };
 }
 
@@ -121,6 +212,11 @@ function getAssemblySourceMix(assembly) {
   return "Mixed";
 }
 
+function getAssemblyItemMix(assembly) {
+  const mix = [...new Set((assembly.items || []).map((item) => cleanText(item.costType)).filter(Boolean))];
+  return mix.length ? mix : ["Unassigned"];
+}
+
 function createCopyName(value, fallback) {
   const base = cleanText(value) || fallback;
   return base.includes("(Copy)") ? base : `${base} (Copy)`;
@@ -130,23 +226,47 @@ function getTradeLabel(value) {
   return cleanText(value) || "Unassigned";
 }
 
+function getCostCodeLabel(value) {
+  return cleanText(value) || "Unassigned";
+}
+
+function formatCurrencyLabel(value) {
+  if (value === "" || value == null) {
+    return "Unassigned";
+  }
+
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return "Unassigned";
+  }
+
+  return `$${numericValue}`;
+}
+
 function AssemblyLibraryPage({
   assemblies,
   roomTypes,
+  elements = [],
   units,
   costs,
   trades,
   costCodes,
+  itemFamilies = [],
+  parameters = [],
   onAssembliesChange,
+  onCostsChange = () => {},
+  onItemFamiliesChange = () => {},
 }) {
   const importFileInputRef = useRef(null);
   const activeRoomTypes = useMemo(() => sortActiveItems(roomTypes), [roomTypes]);
+  const activeElements = useMemo(() => sortActiveItems(elements), [elements]);
   const activeUnits = useMemo(() => sortActiveItems(units), [units]);
   const activeTrades = useMemo(() => sortActiveItems(trades), [trades]);
   const activeCostCodes = useMemo(() => sortActiveItems(costCodes), [costCodes]);
+  const activeItemFamilies = useMemo(() => sortActiveItems(itemFamilies), [itemFamilies]);
   const normalizedCosts = useMemo(
-    () => normalizeCosts(costs, { units, trades, costCodes }),
-    [costCodes, costs, trades, units]
+    () => normalizeCosts(costs, { units, trades, costCodes, itemFamilies }),
+    [costCodes, costs, itemFamilies, trades, units]
   );
   const normalizedAssemblies = useMemo(
     () =>
@@ -158,15 +278,20 @@ function AssemblyLibraryPage({
       }),
     [assemblies, costCodes, normalizedCosts, trades, units]
   );
+  const quantityFormulaOptions = useMemo(
+    () => getQuantityFormulaOptions(parameters),
+    [parameters]
+  );
+  const quantityFormulaOptionValues = useMemo(
+    () => quantityFormulaOptions.map((option) => option.value),
+    [quantityFormulaOptions]
+  );
+  const [managedAssemblyGroups, setManagedAssemblyGroups] = useState(() =>
+    getStoredAssemblyGroupNames(typeof window === "undefined" ? null : window.localStorage)
+  );
   const assemblyGroupOptions = useMemo(
-    () =>
-      [...new Set([
-        ...defaultAssemblyGroups,
-        ...normalizedAssemblies.map((assembly) => assembly.assemblyGroup),
-      ])]
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b)),
-    [normalizedAssemblies]
+    () => getAssemblyGroupNames(normalizedAssemblies, managedAssemblyGroups),
+    [managedAssemblyGroups, normalizedAssemblies]
   );
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -177,7 +302,21 @@ function AssemblyLibraryPage({
   const [sortKey, setSortKey] = useState("assemblyName");
   const [selectedAssemblyIds, setSelectedAssemblyIds] = useState([]);
   const [selectedItemIds, setSelectedItemIds] = useState([]);
+  const [bulkEditState, setBulkEditState] = useState({
+    isOpen: false,
+    values: {
+      costType: BULK_EDIT_UNCHANGED,
+      deliveryType: BULK_EDIT_UNCHANGED,
+      tradeId: BULK_EDIT_UNCHANGED,
+      costCodeId: BULK_EDIT_UNCHANGED,
+      unitId: BULK_EDIT_UNCHANGED,
+      rateOverride: "",
+    },
+    touched: {},
+  });
+  const [isAdvancedQtyFormulaMode, setIsAdvancedQtyFormulaMode] = useState(false);
   const [csvStatus, setCsvStatus] = useState("");
+  const [importMode, setImportMode] = useState("append");
   const [editorState, setEditorState] = useState({
     isOpen: false,
     mode: "create",
@@ -185,12 +324,32 @@ function AssemblyLibraryPage({
     activeItemId: "",
   });
   const [draft, setDraft] = useState(createEmptyAssembly(roomTypes));
+  const [isNotesExpanded, setIsNotesExpanded] = useState(false);
+  const [isItemsManagerOpen, setIsItemsManagerOpen] = useState(false);
+  const [dragState, setDragState] = useState({
+    draggingItemId: "",
+    overItemId: "",
+  });
+  const [groupManagerState, setGroupManagerState] = useState({
+    isOpen: false,
+    newGroupName: "",
+    editingGroupName: "",
+    editValue: "",
+    error: "",
+  });
   const [validationErrors, setValidationErrors] = useState([]);
   const [costPickerState, setCostPickerState] = useState({
     isOpen: false,
     search: "",
     tradeId: "",
     family: "",
+    selectedCostIds: [],
+  });
+  const [newCostItemState, setNewCostItemState] = useState({
+    isOpen: false,
+    draft: createEmptyCostItemDraft(units),
+    validationErrors: [],
+    notice: "",
   });
 
   const roomTypeNavItems = useMemo(() => {
@@ -264,6 +423,11 @@ function AssemblyLibraryPage({
 
   const activeItem =
     draft.items.find((item) => item.id === editorState.activeItemId) || null;
+  const activeQuantityFormulaConfig = useMemo(
+    () => parseQuantityFormula(activeItem?.quantityFormula, quantityFormulaOptionValues),
+    [activeItem?.quantityFormula, quantityFormulaOptionValues]
+  );
+  const selectedEditorItems = draft.items.filter((item) => selectedItemIds.includes(item.id));
   const selectedEditorItemIds = draft.items
     .map((item) => item.id)
     .filter((itemId) => selectedItemIds.includes(itemId));
@@ -295,19 +459,66 @@ function AssemblyLibraryPage({
       );
     });
   }, [costPickerState.family, costPickerState.search, costPickerState.tradeId, normalizedCosts]);
+  const selectedPickerCostIds = filteredPickerCosts
+    .map((cost) => cost.id)
+    .filter((costId) => costPickerState.selectedCostIds.includes(costId));
+  const allFilteredPickerCostsSelected =
+    filteredPickerCosts.length > 0 &&
+    selectedPickerCostIds.length === filteredPickerCosts.length;
 
   useEffect(() => {
-    if (!costPickerState.isOpen || typeof window === "undefined") {
+    if (typeof window === "undefined") {
       return undefined;
     }
+
+    saveStoredAssemblyGroupNames(managedAssemblyGroups, window.localStorage);
+  }, [managedAssemblyGroups]);
+
+  useEffect(() => {
+    if (!selectedEditorItemIds.length && bulkEditState.isOpen) {
+      closeBulkEdit();
+    }
+  }, [bulkEditState.isOpen, selectedEditorItemIds.length]);
+
+  useEffect(() => {
+    if (!activeItem) {
+      setIsAdvancedQtyFormulaMode(false);
+      return;
+    }
+
+    setIsAdvancedQtyFormulaMode(Boolean(activeItem.quantityFormula) && !activeQuantityFormulaConfig.isGuided);
+  }, [activeItem?.id, activeItem?.quantityFormula, activeQuantityFormulaConfig.isGuided]);
+
+  useEffect(() => {
+    if (
+      (!costPickerState.isOpen && !isItemsManagerOpen && !groupManagerState.isOpen) ||
+      typeof window === "undefined"
+    ) {
+      return undefined;
+    }
+
     const handleKeyDown = (event) => {
       if (event.key === "Escape") {
-        setCostPickerState((current) => ({ ...current, isOpen: false }));
+        if (costPickerState.isOpen) {
+          setCostPickerState((current) => ({ ...current, isOpen: false }));
+          return;
+        }
+        if (groupManagerState.isOpen) {
+          setGroupManagerState({
+            isOpen: false,
+            newGroupName: "",
+            editingGroupName: "",
+            editValue: "",
+            error: "",
+          });
+          return;
+        }
+        setIsItemsManagerOpen(false);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [costPickerState.isOpen]);
+  }, [costPickerState.isOpen, groupManagerState.isOpen, isItemsManagerOpen]);
 
   const readFileAsText = (file) =>
     typeof file?.text === "function"
@@ -343,7 +554,21 @@ function AssemblyLibraryPage({
   const openCreateEditor = () => {
     setDraft(createEmptyAssembly(roomTypes));
     setSelectedItemIds([]);
+    setBulkEditState({
+      isOpen: false,
+      values: {
+        costType: BULK_EDIT_UNCHANGED,
+        deliveryType: BULK_EDIT_UNCHANGED,
+        tradeId: BULK_EDIT_UNCHANGED,
+        costCodeId: BULK_EDIT_UNCHANGED,
+        unitId: BULK_EDIT_UNCHANGED,
+        rateOverride: "",
+      },
+      touched: {},
+    });
     setValidationErrors([]);
+    setIsNotesExpanded(false);
+    setIsItemsManagerOpen(false);
     setEditorState({
       isOpen: true,
       mode: "create",
@@ -352,11 +577,25 @@ function AssemblyLibraryPage({
     });
   };
 
-  const openEditEditor = (assembly) => {
+  const openEditEditor = (assembly, options = {}) => {
     const nextDraft = cloneAssemblyForEditor(assembly, roomTypes);
     setDraft(nextDraft);
     setSelectedItemIds([]);
+    setBulkEditState({
+      isOpen: false,
+      values: {
+        costType: BULK_EDIT_UNCHANGED,
+        deliveryType: BULK_EDIT_UNCHANGED,
+        tradeId: BULK_EDIT_UNCHANGED,
+        costCodeId: BULK_EDIT_UNCHANGED,
+        unitId: BULK_EDIT_UNCHANGED,
+        rateOverride: "",
+      },
+      touched: {},
+    });
     setValidationErrors([]);
+    setIsNotesExpanded(Boolean(nextDraft.notes));
+    setIsItemsManagerOpen(Boolean(options.openItemsManager));
     setEditorState({
       isOpen: true,
       mode: "edit",
@@ -368,7 +607,21 @@ function AssemblyLibraryPage({
   const closeEditor = () => {
     setDraft(createEmptyAssembly(roomTypes));
     setSelectedItemIds([]);
+    setBulkEditState({
+      isOpen: false,
+      values: {
+        costType: BULK_EDIT_UNCHANGED,
+        deliveryType: BULK_EDIT_UNCHANGED,
+        tradeId: BULK_EDIT_UNCHANGED,
+        costCodeId: BULK_EDIT_UNCHANGED,
+        unitId: BULK_EDIT_UNCHANGED,
+        rateOverride: "",
+      },
+      touched: {},
+    });
     setValidationErrors([]);
+    setIsNotesExpanded(false);
+    setIsItemsManagerOpen(false);
     setEditorState({
       isOpen: false,
       mode: "create",
@@ -383,11 +636,174 @@ function AssemblyLibraryPage({
       search: "",
       tradeId: "",
       family: "",
+      selectedCostIds: [],
     });
   };
 
   const closeCostPicker = () => {
-    setCostPickerState((current) => ({ ...current, isOpen: false }));
+    setCostPickerState((current) => ({
+      ...current,
+      isOpen: false,
+      selectedCostIds: [],
+    }));
+  };
+
+  const openGroupManager = () => {
+    setGroupManagerState({
+      isOpen: true,
+      newGroupName: "",
+      editingGroupName: "",
+      editValue: "",
+      error: "",
+    });
+  };
+
+  const closeGroupManager = () => {
+    setGroupManagerState({
+      isOpen: false,
+      newGroupName: "",
+      editingGroupName: "",
+      editValue: "",
+      error: "",
+    });
+  };
+
+  const syncAssemblyGroupReferences = (previousGroupName, nextGroupName) => {
+    const normalizedPreviousName = cleanText(previousGroupName);
+    const normalizedNextName = cleanText(nextGroupName);
+
+    if (!normalizedPreviousName || normalizedPreviousName === normalizedNextName) {
+      return;
+    }
+
+    onAssembliesChange(
+      normalizedAssemblies.map((assembly) =>
+        assembly.assemblyGroup === normalizedPreviousName
+          ? {
+              ...assembly,
+              assemblyGroup: normalizedNextName,
+              assemblyCategory: normalizedNextName,
+            }
+          : assembly
+      )
+    );
+
+    setDraft((current) =>
+      current.assemblyGroup === normalizedPreviousName
+        ? {
+            ...current,
+            assemblyGroup: normalizedNextName,
+            assemblyCategory: normalizedNextName,
+          }
+        : current
+    );
+    setAssemblyGroupFilter((current) =>
+      current === normalizedPreviousName ? normalizedNextName : current
+    );
+  };
+
+  const addManagedAssemblyGroup = () => {
+    const nextGroupName = cleanText(groupManagerState.newGroupName);
+    if (!nextGroupName) {
+      setGroupManagerState((current) => ({
+        ...current,
+        error: "Group name is required.",
+      }));
+      return;
+    }
+    if (assemblyGroupOptions.includes(nextGroupName)) {
+      setGroupManagerState((current) => ({
+        ...current,
+        error: "Group name must be unique.",
+      }));
+      return;
+    }
+
+    setManagedAssemblyGroups((current) =>
+      [...new Set([...current, nextGroupName])].sort((left, right) => left.localeCompare(right))
+    );
+    updateAssemblyField("assemblyGroup", nextGroupName);
+    setGroupManagerState({
+      isOpen: true,
+      newGroupName: "",
+      editingGroupName: "",
+      editValue: "",
+      error: "",
+    });
+  };
+
+  const startEditingManagedAssemblyGroup = (groupName) => {
+    setGroupManagerState((current) => ({
+      ...current,
+      editingGroupName: groupName,
+      editValue: groupName,
+      error: "",
+    }));
+  };
+
+  const saveManagedAssemblyGroupRename = (groupName) => {
+    const nextGroupName = cleanText(groupManagerState.editValue);
+    if (!nextGroupName) {
+      setGroupManagerState((current) => ({
+        ...current,
+        error: "Group name is required.",
+      }));
+      return;
+    }
+    if (nextGroupName !== groupName && assemblyGroupOptions.includes(nextGroupName)) {
+      setGroupManagerState((current) => ({
+        ...current,
+        error: "Group name must be unique.",
+      }));
+      return;
+    }
+
+    setManagedAssemblyGroups((current) =>
+      [...new Set(
+        (current.includes(groupName)
+          ? current.map((entry) => (entry === groupName ? nextGroupName : entry))
+          : [...current, nextGroupName]
+        ).filter(Boolean)
+      )].sort((left, right) => left.localeCompare(right))
+    );
+    syncAssemblyGroupReferences(groupName, nextGroupName);
+    setGroupManagerState((current) => ({
+      ...current,
+      editingGroupName: "",
+      editValue: "",
+      error: "",
+    }));
+  };
+
+  const removeManagedAssemblyGroup = (groupName) => {
+    const isInUse = normalizedAssemblies.some((assembly) => assembly.assemblyGroup === groupName);
+    if (isInUse) {
+      setGroupManagerState((current) => ({
+        ...current,
+        error: `Cannot delete "${groupName}" while assemblies still use it.`,
+      }));
+      return;
+    }
+    if (!managedAssemblyGroups.includes(groupName)) {
+      setGroupManagerState((current) => ({
+        ...current,
+        error: `"${groupName}" is part of the default group list and cannot be deleted.`,
+      }));
+      return;
+    }
+
+    setManagedAssemblyGroups((current) => current.filter((entry) => entry !== groupName));
+    if (draft.assemblyGroup === groupName) {
+      updateAssemblyField("assemblyGroup", "");
+    }
+    setAssemblyGroupFilter((current) => (current === groupName ? "" : current));
+    setGroupManagerState((current) => ({
+      ...current,
+      editingGroupName:
+        current.editingGroupName === groupName ? "" : current.editingGroupName,
+      editValue: current.editingGroupName === groupName ? "" : current.editValue,
+      error: "",
+    }));
   };
 
   const updateAssemblyField = (key, value) =>
@@ -405,6 +821,15 @@ function AssemblyLibraryPage({
       if (key === "assemblyGroup") {
         return { ...current, assemblyGroup: value, assemblyCategory: value };
       }
+      if (key === "assemblyElement" || key === "assemblyScope" || key === "assemblySpec") {
+        const nextDraft = { ...current, [key]: value };
+        nextDraft.assemblyName = buildAssemblyName(
+          nextDraft.assemblyElement,
+          nextDraft.assemblyScope,
+          nextDraft.assemblySpec
+        );
+        return nextDraft;
+      }
       return { ...current, [key]: value };
     });
 
@@ -412,8 +837,23 @@ function AssemblyLibraryPage({
     setEditorState((current) => ({ ...current, activeItemId: itemId }));
   };
 
-  const addLinkedCostItem = (costId) => {
-    const cost = normalizedCosts.find((item) => item.id === costId);
+  const openItemsManager = () => {
+    if (!draft.items.length) {
+      setEditorState((current) => ({ ...current, activeItemId: "" }));
+    } else if (!editorState.activeItemId) {
+      setEditorState((current) => ({
+        ...current,
+        activeItemId: current.activeItemId || draft.items[0]?.id || "",
+      }));
+    }
+    setIsItemsManagerOpen(true);
+  };
+
+  const closeItemsManager = () => {
+    setIsItemsManagerOpen(false);
+  };
+
+  const appendLinkedCostItem = (cost) => {
     if (!cost) {
       return;
     }
@@ -421,6 +861,7 @@ function AssemblyLibraryPage({
     const nextItem = {
       ...createEmptyAssemblyItem(draft.items.length),
       libraryItemId: cost.id,
+      costItemId: cost.id,
       itemNameSnapshot: cost.itemName,
       itemName: cost.itemName,
       costType: cost.costType,
@@ -438,6 +879,83 @@ function AssemblyLibraryPage({
 
     setDraft((current) => ({ ...current, items: [...current.items, nextItem] }));
     setEditorState((current) => ({ ...current, activeItemId: nextItem.id }));
+    setSelectedItemIds([]);
+    setIsItemsManagerOpen(true);
+  };
+
+  const addLinkedCostItem = (costId) => {
+    const cost = normalizedCosts.find((item) => item.id === costId);
+    if (!cost) {
+      return;
+    }
+
+    appendLinkedCostItem(cost);
+    closeCostPicker();
+  };
+
+  const togglePickerCostSelection = (costId) => {
+    setCostPickerState((current) => ({
+      ...current,
+      selectedCostIds: current.selectedCostIds.includes(costId)
+        ? current.selectedCostIds.filter((selectedId) => selectedId !== costId)
+        : [...current.selectedCostIds, costId],
+    }));
+  };
+
+  const toggleSelectAllPickerCosts = () => {
+    setCostPickerState((current) => ({
+      ...current,
+      selectedCostIds: allFilteredPickerCostsSelected
+        ? current.selectedCostIds.filter((costId) => !filteredPickerCosts.some((cost) => cost.id === costId))
+        : [
+            ...new Set([
+              ...current.selectedCostIds,
+              ...filteredPickerCosts.map((cost) => cost.id),
+            ]),
+          ],
+    }));
+  };
+
+  const addSelectedLinkedCostItems = () => {
+    if (!costPickerState.selectedCostIds.length) {
+      return;
+    }
+
+    const selectedCosts = normalizedCosts.filter((cost) =>
+      costPickerState.selectedCostIds.includes(cost.id)
+    );
+    if (!selectedCosts.length) {
+      return;
+    }
+    const itemSeed = Date.now();
+    const nextItems = selectedCosts.map((cost, index) => ({
+          ...createEmptyAssemblyItem(draft.items.length + index),
+          id: `assembly-item-${itemSeed}-${draft.items.length + index}`,
+          libraryItemId: cost.id,
+          costItemId: cost.id,
+          itemNameSnapshot: cost.itemName,
+          itemName: cost.itemName,
+          costType: cost.costType,
+          deliveryType: cost.deliveryType,
+          tradeId: cost.tradeId,
+          trade: cost.trade,
+          costCodeId: cost.costCodeId,
+          costCode: cost.costCode,
+          unitId: cost.unitId,
+          unit: cost.unit,
+          baseRate: cost.rate,
+          unitCost: cost.rate,
+          isCustomItem: false,
+    }));
+
+    setDraft((current) => ({
+      ...current,
+      items: [...current.items, ...nextItems],
+    }));
+    setEditorState((current) => ({
+      ...current,
+      activeItemId: nextItems[0]?.id || current.activeItemId,
+    }));
     closeCostPicker();
   };
 
@@ -445,6 +963,178 @@ function AssemblyLibraryPage({
     const nextItem = createEmptyAssemblyItem(draft.items.length);
     setDraft((current) => ({ ...current, items: [...current.items, nextItem] }));
     setEditorState((current) => ({ ...current, activeItemId: nextItem.id }));
+    setIsItemsManagerOpen(true);
+  };
+
+  const ensureItemFamiliesExist = (familyNames) => {
+    const existing = new Set(activeItemFamilies.map((itemFamily) => itemFamily.name));
+    const missing = familyNames
+      .map((name) => cleanText(name))
+      .filter(Boolean)
+      .filter((name) => !existing.has(name));
+
+    if (!missing.length) {
+      return;
+    }
+
+    const nextSort =
+      itemFamilies.reduce(
+        (max, itemFamily) => Math.max(max, Number(itemFamily.sortOrder || 0)),
+        0
+      ) + 1;
+
+    onItemFamiliesChange([
+      ...itemFamilies,
+      ...missing.map((name, index) => ({
+        id: `item-family-${Date.now()}-${index}`,
+        name,
+        sortOrder: nextSort + index,
+        isActive: true,
+      })),
+    ]);
+  };
+
+  const openNewCostItemEditor = () => {
+    setNewCostItemState({
+      isOpen: true,
+      draft: createEmptyCostItemDraft(units),
+      validationErrors: [],
+      notice: "",
+    });
+  };
+
+  const closeNewCostItemEditor = () => {
+    setNewCostItemState((current) => ({
+      ...current,
+      isOpen: false,
+      draft: createEmptyCostItemDraft(units),
+      validationErrors: [],
+      notice: "",
+    }));
+  };
+
+  const updateNewCostDraftField = (key, value) =>
+    setNewCostItemState((current) => {
+      const draftState = current.draft;
+
+      if (key === "unitId") {
+        const unit = activeUnits.find((row) => row.id === value) || null;
+        return {
+          ...current,
+          draft: { ...draftState, unitId: value, unit: unit?.abbreviation || "" },
+        };
+      }
+
+      if (key === "tradeId") {
+        const trade = activeTrades.find((row) => row.id === value) || null;
+        return {
+          ...current,
+          draft: { ...draftState, tradeId: value, trade: trade?.name || "" },
+        };
+      }
+
+      if (key === "costCodeId") {
+        const costCode = activeCostCodes.find((row) => row.id === value) || null;
+        return {
+          ...current,
+          draft: { ...draftState, costCodeId: value, costCode: costCode?.name || "" },
+        };
+      }
+
+      if (key === "itemFamily") {
+        return {
+          ...current,
+          draft: { ...draftState, itemFamily: value, family: value },
+        };
+      }
+
+      if (key === "itemName") {
+        return {
+          ...current,
+          draft: { ...draftState, itemName: value, coreName: value },
+        };
+      }
+
+      if (key === "status") {
+        return {
+          ...current,
+          draft: { ...draftState, status: value, isActive: value === "Active" },
+        };
+      }
+
+      return {
+        ...current,
+        draft: { ...draftState, [key]: value },
+      };
+    });
+
+  const validateNewCostDraft = () => {
+    const { draft: newCostDraft } = newCostItemState;
+    const errors = [];
+
+    if (!cleanText(newCostDraft.itemName)) {
+      errors.push("Item Name is required.");
+    }
+    if (!cleanText(newCostDraft.costType)) {
+      errors.push("Cost Type is required.");
+    }
+    if (!cleanText(newCostDraft.deliveryType)) {
+      errors.push("Delivery Type is required.");
+    }
+    if (!cleanText(newCostDraft.tradeId)) {
+      errors.push("Trade is required.");
+    }
+    if (!cleanText(newCostDraft.costCodeId)) {
+      errors.push("Cost Code is required.");
+    }
+    if (!cleanText(newCostDraft.unitId)) {
+      errors.push("Unit is required.");
+    }
+    if (newCostDraft.rate === "" || !Number.isFinite(Number(newCostDraft.rate))) {
+      errors.push("Rate must be a valid number.");
+    }
+
+    return errors;
+  };
+
+  const saveNewCostItem = (event) => {
+    event.preventDefault();
+
+    const errors = validateNewCostDraft();
+    if (errors.length) {
+      setNewCostItemState((current) => ({
+        ...current,
+        validationErrors: errors,
+        notice: "",
+      }));
+      return;
+    }
+
+    const { draft: newCostDraft } = newCostItemState;
+    ensureItemFamiliesExist([newCostDraft.itemFamily]);
+
+    const nextId = newCostDraft.id || `cost-${Date.now()}`;
+    const nextCost = normalizeCosts(
+      [
+        {
+          ...newCostDraft,
+          id: nextId,
+          internalId:
+            cleanText(newCostDraft.internalId) || cleanText(newCostDraft.id) || nextId,
+          rate: Number(newCostDraft.rate),
+        },
+      ],
+      { units, trades, costCodes, itemFamilies }
+    )[0];
+
+    onCostsChange([...normalizedCosts, nextCost]);
+    appendLinkedCostItem(nextCost);
+    setNewCostItemState({
+      isOpen: false,
+      draft: createEmptyCostItemDraft(units),
+      validationErrors: [],
+      notice: "Cost item created and added to assembly.",
+    });
   };
 
   const updateItemField = (itemId, key, value) =>
@@ -485,6 +1175,7 @@ function AssemblyLibraryPage({
 
   const removeItemRow = (itemIds) => {
     const ids = Array.isArray(itemIds) ? itemIds : [itemIds];
+    const nextItems = draft.items.filter((item) => !ids.includes(item.id));
     setDraft((current) => ({
       ...current,
       items: current.items.filter((item) => !ids.includes(item.id)),
@@ -492,7 +1183,7 @@ function AssemblyLibraryPage({
     setSelectedItemIds((current) => current.filter((itemId) => !ids.includes(itemId)));
     setEditorState((current) => ({
       ...current,
-      activeItemId: ids.includes(current.activeItemId) ? "" : current.activeItemId,
+      activeItemId: ids.includes(current.activeItemId) ? nextItems[0]?.id || "" : current.activeItemId,
     }));
   };
 
@@ -512,6 +1203,91 @@ function AssemblyLibraryPage({
     };
     setDraft((current) => ({ ...current, items: [...current.items, nextItem] }));
     setEditorState((current) => ({ ...current, activeItemId: nextItem.id }));
+  };
+
+  const duplicateSelectedItems = () => {
+    const itemIds = selectedItemIds.length
+      ? selectedItemIds
+      : activeItem
+        ? [activeItem.id]
+        : [];
+    if (!itemIds.length) {
+      return;
+    }
+
+    const sourceItems = draft.items.filter((item) => itemIds.includes(item.id));
+    if (!sourceItems.length) {
+      return;
+    }
+
+    const duplicatedItems = sourceItems.map((item, index) => ({
+      ...item,
+      id: `assembly-item-${Date.now()}-${draft.items.length + index}`,
+      itemNameSnapshot: createCopyName(item.itemNameSnapshot || item.itemName, "Assembly Item"),
+      itemName: createCopyName(item.itemNameSnapshot || item.itemName, "Assembly Item"),
+    }));
+
+    setDraft((current) => ({
+      ...current,
+      items: [...current.items, ...duplicatedItems],
+    }));
+    setSelectedItemIds(duplicatedItems.map((item) => item.id));
+    setEditorState((current) => ({
+      ...current,
+      activeItemId: duplicatedItems[0]?.id || current.activeItemId,
+    }));
+  };
+
+  const reorderDraftItems = (fromItemId, toItemId) => {
+    if (!fromItemId || !toItemId || fromItemId === toItemId) {
+      return;
+    }
+
+    setDraft((current) => {
+      const sourceIndex = current.items.findIndex((item) => item.id === fromItemId);
+      const targetIndex = current.items.findIndex((item) => item.id === toItemId);
+      if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
+        return current;
+      }
+
+      const nextItems = [...current.items];
+      const [movedItem] = nextItems.splice(sourceIndex, 1);
+      nextItems.splice(targetIndex, 0, movedItem);
+      return {
+        ...current,
+        items: nextItems,
+      };
+    });
+  };
+
+  const handleItemDragStart = (itemId) => {
+    setDragState({
+      draggingItemId: itemId,
+      overItemId: itemId,
+    });
+  };
+
+  const handleItemDragEnter = (itemId) => {
+    setDragState((current) => ({
+      ...current,
+      overItemId: itemId,
+    }));
+  };
+
+  const handleItemDrop = (itemId) => {
+    const draggingItemId = dragState.draggingItemId;
+    reorderDraftItems(draggingItemId, itemId);
+    setDragState({
+      draggingItemId: "",
+      overItemId: "",
+    });
+  };
+
+  const clearItemDragState = () => {
+    setDragState({
+      draggingItemId: "",
+      overItemId: "",
+    });
   };
 
   const toggleAssemblySelection = (assemblyId) => {
@@ -550,6 +1326,127 @@ function AssemblyLibraryPage({
     setSelectedItemIds(draft.items.map((item) => item.id));
   };
 
+  const openBulkEdit = () => {
+    if (!selectedEditorItems.length) {
+      return;
+    }
+    setBulkEditState({
+      isOpen: true,
+      values: {
+        costType: getSharedBulkValue(selectedEditorItems, (item) => item.costType) || BULK_EDIT_UNCHANGED,
+        deliveryType:
+          getSharedBulkValue(selectedEditorItems, (item) => item.deliveryType) || BULK_EDIT_UNCHANGED,
+        tradeId: getSharedBulkValue(selectedEditorItems, (item) => item.tradeId) || BULK_EDIT_UNCHANGED,
+        costCodeId:
+          getSharedBulkValue(selectedEditorItems, (item) => item.costCodeId) || BULK_EDIT_UNCHANGED,
+        unitId: getSharedBulkValue(selectedEditorItems, (item) => item.unitId) || BULK_EDIT_UNCHANGED,
+        rateOverride: getSharedBulkValue(selectedEditorItems, (item) => String(item.rateOverride ?? "")),
+      },
+      touched: {},
+    });
+  };
+
+  const closeBulkEdit = () =>
+    setBulkEditState((current) => ({
+      ...current,
+      isOpen: false,
+      touched: {},
+    }));
+
+  const updateBulkEditField = (field, value) =>
+    setBulkEditState((current) => ({
+      ...current,
+      values: {
+        ...current.values,
+        [field]: value,
+      },
+      touched: {
+        ...current.touched,
+        [field]: true,
+      },
+    }));
+
+  const updateGuidedQuantityFormula = (field, value) => {
+    if (!activeItem) {
+      return;
+    }
+
+    const nextBaseParameter =
+      field === "baseParameter" ? value : activeQuantityFormulaConfig.baseParameter;
+    const nextOperator = field === "operator" ? value : activeQuantityFormulaConfig.operator || "*";
+    const nextFactor = field === "factor" ? value : activeQuantityFormulaConfig.factor;
+
+    updateItemField(
+      activeItem.id,
+      "quantityFormula",
+      buildQuantityFormula(nextBaseParameter, nextOperator, nextFactor)
+    );
+  };
+
+  const applyBulkEdit = () => {
+    if (!selectedEditorItemIds.length) {
+      return;
+    }
+
+    setDraft((current) => ({
+      ...current,
+      items: current.items.map((item) => {
+        if (!selectedEditorItemIds.includes(item.id)) {
+          return item;
+        }
+
+        let nextItem = { ...item };
+
+        if (bulkEditState.touched.costType) {
+          nextItem.costType =
+            bulkEditState.values.costType === BULK_EDIT_UNCHANGED ? nextItem.costType : bulkEditState.values.costType;
+        }
+
+        if (bulkEditState.touched.deliveryType) {
+          nextItem.deliveryType =
+            bulkEditState.values.deliveryType === BULK_EDIT_UNCHANGED
+              ? nextItem.deliveryType
+              : bulkEditState.values.deliveryType;
+        }
+
+        if (bulkEditState.touched.tradeId) {
+          if (bulkEditState.values.tradeId === BULK_EDIT_UNCHANGED) {
+            nextItem = nextItem;
+          } else {
+            const trade = activeTrades.find((row) => row.id === bulkEditState.values.tradeId) || null;
+            nextItem.tradeId = bulkEditState.values.tradeId;
+            nextItem.trade = trade?.name || "";
+          }
+        }
+
+        if (bulkEditState.touched.costCodeId) {
+          if (bulkEditState.values.costCodeId !== BULK_EDIT_UNCHANGED) {
+            const costCode =
+              activeCostCodes.find((row) => row.id === bulkEditState.values.costCodeId) || null;
+            nextItem.costCodeId = bulkEditState.values.costCodeId;
+            nextItem.costCode = costCode?.name || "";
+          }
+        }
+
+        if (bulkEditState.touched.unitId) {
+          if (bulkEditState.values.unitId !== BULK_EDIT_UNCHANGED) {
+            const unit = activeUnits.find((row) => row.id === bulkEditState.values.unitId) || null;
+            nextItem.unitId = bulkEditState.values.unitId;
+            nextItem.unit = unit?.abbreviation || "";
+          }
+        }
+
+        if (bulkEditState.touched.rateOverride) {
+          nextItem.rateOverride = bulkEditState.values.rateOverride;
+        }
+
+        return nextItem;
+      }),
+    }));
+
+    closeBulkEdit();
+  };
+
   const confirmTypedDelete = (message) => {
     if (typeof window === "undefined") {
       return true;
@@ -560,8 +1457,14 @@ function AssemblyLibraryPage({
   const validateDraft = () => {
     const errors = [];
     const nextAssemblyId = draft.id || createAssemblyId(draft);
+    if (!cleanText(draft.assemblyElement)) {
+      errors.push("Element is required.");
+    }
+    if (!cleanText(draft.assemblyScope)) {
+      errors.push("Scope is required.");
+    }
     if (!cleanText(draft.assemblyName)) {
-      errors.push("Assembly Name is required.");
+      errors.push("Generated Assembly Name is required.");
     }
     if (!draft.roomTypeId) {
       errors.push("Room Type is required.");
@@ -569,11 +1472,14 @@ function AssemblyLibraryPage({
     if (!cleanText(draft.assemblyGroup)) {
       errors.push("Assembly Group is required.");
     }
+    if (
+      cleanText(draft.assemblyGroup) &&
+      !isAssemblyGroupDefined(draft.assemblyGroup, normalizedAssemblies, managedAssemblyGroups)
+    ) {
+      errors.push("Assembly Group must come from the managed assembly group list.");
+    }
     if (!draft.items.length) {
       errors.push("At least one cost item is required.");
-    }
-    if (!draft.assemblyName.includes("  ")) {
-      errors.push("Naming guidance: use format `Element  Type  Optional Spec` where practical.");
     }
     if (
       normalizedAssemblies.find(
@@ -595,10 +1501,10 @@ function AssemblyLibraryPage({
       if (!cleanText(item.deliveryType)) {
         errors.push(`${label}: Delivery Type is required.`);
       }
-      if (!cleanText(item.tradeId || item.trade)) {
+      if (item.isCustomItem && !cleanText(item.tradeId || item.trade)) {
         errors.push(`${label}: Trade is required.`);
       }
-      if (!cleanText(item.costCodeId || item.costCode)) {
+      if (item.isCustomItem && !cleanText(item.costCodeId || item.costCode)) {
         errors.push(`${label}: Cost Code is required.`);
       }
       if (!cleanText(item.quantityFormula)) {
@@ -683,9 +1589,11 @@ function AssemblyLibraryPage({
     }
     const nextDraft = cloneAssemblyForEditor(sourceAssembly, roomTypes);
     nextDraft.id = "";
-    nextDraft.assemblyName = createCopyName(
-      sourceAssembly.assemblyName,
-      "Assembly"
+    nextDraft.assemblySpec = createCopyName(sourceAssembly.assemblySpec, "Copy");
+    nextDraft.assemblyName = buildAssemblyName(
+      nextDraft.assemblyElement,
+      nextDraft.assemblyScope,
+      nextDraft.assemblySpec
     );
     nextDraft.items = nextDraft.items.map((item, index) => ({
       ...item,
@@ -820,8 +1728,9 @@ function AssemblyLibraryPage({
         const trade = cleanText(row.Trade);
         const costCode = cleanText(row["Cost Code"]);
         const quantityFormula = cleanText(row["Quantity Formula"]);
-        const unit = cleanText(row.Unit);
-        const unitCost = Number(cleanText(row["Unit Cost"]));
+          const unit = cleanText(row.Unit);
+          const unitCost = Number(cleanText(row["Unit Cost"]));
+          const notes = cleanText(row.Notes);
 
         if (
           !assemblyName ||
@@ -890,10 +1799,13 @@ function AssemblyLibraryPage({
           baseRate: unitCost,
           unitCost,
           rateOverride: "",
-          notes: "",
-          isCustomItem: !matchedCost,
+            notes: "",
+            isCustomItem: !matchedCost,
+          });
+          if (notes && !group.notes) {
+            group.notes = notes;
+          }
         });
-      });
 
       const nextAssemblies = normalizeAssemblies(Array.from(groups.values()), {
         units,
@@ -905,23 +1817,41 @@ function AssemblyLibraryPage({
         setCsvStatus("Unable to import CSV. No valid assembly rows were found.");
         return;
       }
-      onAssembliesChange([...normalizedAssemblies, ...nextAssemblies]);
-      setCsvStatus(
-        `${nextAssemblies.length} assemblies imported${
-          skippedRows
-            ? `. ${skippedRows} invalid row${skippedRows === 1 ? "" : "s"} skipped.`
-            : "."
-        }`
-      );
+        const mergeResult = applyImportMode({
+          existingItems: normalizedAssemblies,
+          importedItems: nextAssemblies,
+          mode: importMode,
+          getMatchKey: (existing, incoming) =>
+            (cleanText(existing.id) && cleanText(existing.id) === cleanText(incoming.id)) ||
+            (cleanText(existing.assemblyName) === cleanText(incoming.assemblyName) &&
+              cleanText(existing.roomType) === cleanText(incoming.roomType) &&
+              cleanText(existing.assemblyGroup) === cleanText(incoming.assemblyGroup)),
+          shouldConfirmOverride: () =>
+            typeof window === "undefined" ||
+            window.confirm("Override all existing Assembly Library items with the imported CSV?"),
+        });
+
+        if (!mergeResult) {
+          return;
+        }
+
+        onAssembliesChange(mergeResult.items);
+        setCsvStatus(
+          `${mergeResult.summary.added} added, ${mergeResult.summary.replaced} replaced, ${
+            skippedRows + mergeResult.summary.skipped
+          } skipped.`
+        );
     } catch (error) {
       setCsvStatus("Unable to import CSV. Please choose a valid CSV file.");
     }
   };
 
   const namingGuidance =
-    !draft.assemblyName || draft.assemblyName.includes("  ")
-      ? ""
-      : "Use format: Element  Type  Optional Spec";
+    draft.assemblyName || draft.assemblyElement || draft.assemblyScope || draft.assemblySpec
+      ? buildAssemblyName(draft.assemblyElement, draft.assemblyScope, draft.assemblySpec)
+      : "";
+  const selectedAssemblyGroupLabel = draft.assemblyGroup || "No group selected";
+  const selectedAssemblyGroupFilterLabel = assemblyGroupFilter || "All groups";
 
   return (
     <SectionCard
@@ -963,17 +1893,23 @@ function AssemblyLibraryPage({
                 />
               </FormField>
               <FormField label="Group Filter">
-                <select
-                  value={assemblyGroupFilter}
-                  onChange={(event) => setAssemblyGroupFilter(event.target.value)}
-                >
-                  <option value="">All</option>
-                  {assemblyGroupOptions.map((group) => (
-                    <option key={group} value={group}>
-                      {group}
-                    </option>
-                  ))}
-                </select>
+                <div className="assembly-library-name-field">
+                  <select
+                    className="assembly-library-group-select"
+                    value={assemblyGroupFilter}
+                    onChange={(event) => setAssemblyGroupFilter(event.target.value)}
+                  >
+                    <option value="">All</option>
+                    {assemblyGroupOptions.map((group) => (
+                      <option key={group} value={group}>
+                        {group}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="assembly-library-selected-value">
+                    Selected: {selectedAssemblyGroupFilterLabel}
+                  </p>
+                </div>
               </FormField>
               <FormField label="Room Type">
                 <select
@@ -1054,6 +1990,13 @@ function AssemblyLibraryPage({
                 >
                   Import CSV
                 </button>
+                <FormField label="Import mode">
+                  <select value={importMode} onChange={(event) => setImportMode(event.target.value)}>
+                    <option value="append">Append</option>
+                    <option value="override">Override All</option>
+                    <option value="replace">Replace Duplicates</option>
+                  </select>
+                </FormField>
               </div>
               <input
                 ref={importFileInputRef}
@@ -1095,6 +2038,7 @@ function AssemblyLibraryPage({
                     <col className="assembly-library-col-room" />
                     <col className="assembly-library-col-group" />
                     <col className="assembly-library-col-count" />
+                    <col className="assembly-library-col-item-mix" />
                     <col className="assembly-library-col-source" />
                     <col className="assembly-library-col-actions" />
                   </colgroup>
@@ -1112,6 +2056,7 @@ function AssemblyLibraryPage({
                       <th>Room Type</th>
                       <th>Assembly Group</th>
                       <th>Item Count</th>
+                      <th>Item Mix</th>
                       <th>Source Mix</th>
                       <th>Actions</th>
                     </tr>
@@ -1120,6 +2065,8 @@ function AssemblyLibraryPage({
                     {filteredAssemblies.map((assembly) => {
                       const isActive = editorState.assemblyId === assembly.id;
                       const isSelected = selectedAssemblyIds.includes(assembly.id);
+                      const assemblyNameParts = getAssemblyNameParts(assembly);
+                      const itemMix = getAssemblyItemMix(assembly);
                       return (
                         <tr
                           key={assembly.id}
@@ -1137,22 +2084,79 @@ function AssemblyLibraryPage({
                               onChange={() => toggleAssemblySelection(assembly.id)}
                             />
                           </td>
-                          <td>{assembly.assemblyName}</td>
+                          <td>
+                            <div className="assembly-library-name-display">
+                              <span className="assembly-library-name-fulltext">
+                                {assembly.assemblyName}
+                              </span>
+                              <div className="assembly-library-name-main">
+                                {assemblyNameParts.element ? (
+                                  <span className="assembly-library-name-element">
+                                    {assemblyNameParts.element}
+                                  </span>
+                                ) : null}
+                                {assemblyNameParts.scope ? (
+                                  <span className="assembly-library-name-scope">
+                                    {assemblyNameParts.scope}
+                                  </span>
+                                ) : null}
+                                {!assemblyNameParts.element && !assemblyNameParts.scope ? (
+                                  <span className="assembly-library-name-scope">
+                                    {assembly.assemblyName}
+                                  </span>
+                                ) : null}
+                              </div>
+                              {assemblyNameParts.spec ? (
+                                <div className="assembly-library-name-spec-row">
+                                  <span className="assembly-library-name-spec">
+                                    {assemblyNameParts.spec}
+                                  </span>
+                                </div>
+                              ) : null}
+                            </div>
+                          </td>
                           <td>{assembly.roomType || "Unassigned"}</td>
                           <td>{assembly.assemblyGroup || "Unassigned"}</td>
                           <td>{assembly.items.length}</td>
-                          <td>{getAssemblySourceMix(assembly)}</td>
                           <td>
-                            <div className="action-row">
+                            <div className="assembly-library-item-mix">
+                              {itemMix.map((mix) => (
+                                <span key={`${assembly.id}-${mix}`} className="assembly-library-mix-badge">
+                                  {mix}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td>
+                            <span className="assembly-library-source-mix-label">
+                              {getAssemblySourceMix(assembly)}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="action-row assembly-library-row-icon-actions">
                               <button
                                 type="button"
-                                className="danger-button"
+                                className="secondary-button assembly-library-icon-button"
+                                aria-label={`Manage Items for ${assembly.assemblyName}`}
+                                title="Manage Items"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openEditEditor(assembly, { openItemsManager: true });
+                                }}
+                              >
+                                ::
+                              </button>
+                              <button
+                                type="button"
+                                className="danger-button assembly-library-icon-button"
+                                aria-label={`Delete ${assembly.assemblyName}`}
+                                title="Delete Assembly"
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   deleteAssembly(assembly.id);
                                 }}
                               >
-                                Delete
+                                X
                               </button>
                             </div>
                           </td>
@@ -1198,15 +2202,63 @@ function AssemblyLibraryPage({
               <div className="summary-section room-template-compact-section assembly-library-editor-section assembly-library-editor-section-identity">
                 <h3>Identity</h3>
                 <div className="form-grid room-template-fields-grid room-template-fields-grid-compact">
-                  <FormField label="Assembly Name">
+                  <div className="field">
+                    <label htmlFor="assembly-element-input">Element</label>
+                    <div className="assembly-library-name-field">
+                      <input
+                        id="assembly-element-input"
+                        list="assembly-element-options"
+                        value={draft.assemblyElement}
+                        onChange={(event) =>
+                          updateAssemblyField("assemblyElement", event.target.value)
+                        }
+                        placeholder="e.g. Wall"
+                      />
+                      <datalist id="assembly-element-options">
+                        {activeElements.map((element) => (
+                          <option key={element.id} value={element.name} />
+                        ))}
+                      </datalist>
+                    </div>
+                  </div>
+                  <FormField label="Scope">
                     <input
-                      value={draft.assemblyName}
+                      value={draft.assemblyScope}
                       onChange={(event) =>
-                        updateAssemblyField("assemblyName", event.target.value)
+                        updateAssemblyField("assemblyScope", event.target.value)
                       }
-                      placeholder="e.g. Wall  Villaboard Lining"
+                      placeholder="e.g. Villaboard Lining"
                     />
                   </FormField>
+                  <FormField label="Optional Spec">
+                    <input
+                      value={draft.assemblySpec}
+                      onChange={(event) =>
+                        updateAssemblyField("assemblySpec", event.target.value)
+                      }
+                      placeholder="e.g. 900mm"
+                    />
+                  </FormField>
+                  <div className="field">
+                    <label htmlFor="assembly-name-input">Assembly Name</label>
+                    <div className="assembly-library-name-field">
+                      <input
+                        id="assembly-name-input"
+                        value={draft.assemblyName}
+                        readOnly
+                        placeholder="Generated from Element, Scope, and Optional Spec"
+                        aria-describedby="assembly-name-format-hint"
+                      />
+                      <p id="assembly-name-format-hint" className="assembly-library-field-hint">
+                        Generated automatically as: Element  Scope  Optional Spec
+                      </p>
+                      {namingGuidance ? (
+                        <p className="assembly-library-selected-value">
+                          Preview: {namingGuidance}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
                   <FormField label="Room Type">
                     <select
                       value={draft.roomTypeId}
@@ -1222,401 +2274,107 @@ function AssemblyLibraryPage({
                       ))}
                     </select>
                   </FormField>
-                  <FormField label="Assembly Group">
-                    <select
-                      value={draft.assemblyGroup}
-                      onChange={(event) =>
-                        updateAssemblyField("assemblyGroup", event.target.value)
-                      }
-                    >
-                      <option value="">Select assembly group</option>
-                      {assemblyGroupOptions.map((group) => (
-                        <option key={group} value={group}>
-                          {group}
-                        </option>
-                      ))}
-                    </select>
-                  </FormField>
+                  <div className="field">
+                    <label htmlFor="assembly-group-select">Assembly Group</label>
+                    <div className="assembly-library-group-field">
+                      <select
+                        id="assembly-group-select"
+                        className="assembly-library-group-select"
+                        value={draft.assemblyGroup}
+                        onChange={(event) =>
+                          updateAssemblyField("assemblyGroup", event.target.value)
+                        }
+                      >
+                        <option value="">Select assembly group</option>
+                        {assemblyGroupOptions.map((group) => (
+                          <option key={group} value={group}>
+                            {group}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="secondary-button assembly-library-manage-button"
+                        onClick={openGroupManager}
+                      >
+                        Manage Groups
+                      </button>
+                    </div>
+                    <p className="assembly-library-selected-value">
+                      Selected: {selectedAssemblyGroupLabel}
+                    </p>
+                  </div>
                 </div>
               </div>
 
               <div className="summary-section room-template-compact-section assembly-library-editor-section assembly-library-editor-section-notes">
-                <h3>Notes / Setup</h3>
-                <div className="form-grid room-template-fields-grid room-template-fields-grid-compact">
-                  <FormField label="Assembly Notes">
-                    <textarea
-                      rows={3}
-                      value={draft.notes}
-                      onChange={(event) =>
-                        updateAssemblyField("notes", event.target.value)
-                      }
-                      placeholder="Optional setup or scope notes"
-                    />
-                  </FormField>
+                <div className="assembly-library-compact-header">
+                  <div>
+                    <h3>Notes / Setup</h3>
+                    <p>Optional scope notes for assembly-specific context.</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary-button assembly-library-manage-button"
+                    onClick={() => setIsNotesExpanded((current) => !current)}
+                  >
+                    {isNotesExpanded || draft.notes ? "Hide Notes" : "Add Notes"}
+                  </button>
                 </div>
-                <p className="assembly-library-status">
-                  Use format: Element  Type  Optional Spec
-                </p>
-                {namingGuidance ? (
-                  <p className="assembly-library-validation-note">{namingGuidance}</p>
-                ) : null}
+                {isNotesExpanded || draft.notes ? (
+                  <div className="form-grid room-template-fields-grid room-template-fields-grid-compact">
+                    <FormField label="Assembly Notes">
+                      <textarea
+                        rows={3}
+                        value={draft.notes}
+                        onChange={(event) =>
+                          updateAssemblyField("notes", event.target.value)
+                        }
+                        placeholder="Optional setup or scope notes"
+                      />
+                    </FormField>
+                  </div>
+                ) : (
+                  <p className="assembly-library-status">
+                    Notes are hidden until needed.
+                  </p>
+                )}
               </div>
 
               <div className="summary-section room-template-compact-section assembly-library-editor-section assembly-library-editor-section-items">
-                <div className="assembly-library-items-header">
+                <div className="assembly-library-compact-header">
                   <div>
                     <h3>Assembly Items</h3>
                     <p>
-                      Linked items inherit library classification and pricing. Custom
-                      items stay local to the assembly.
+                      Manage linked and custom items in a wider editor so the list and
+                      item details stay readable.
                     </p>
                   </div>
-                  <div className="action-row">
-                    {editorState.activeItemId ? (
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => duplicateItemRow(editorState.activeItemId)}
-                      >
-                        Duplicate Item
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={deleteSelectedItems}
-                      disabled={!selectedItemIds.length}
-                    >
-                      Delete Selected Items
-                    </button>
-                  </div>
-                </div>
-
-                <div className="action-row assembly-library-inline-actions">
                   <button
                     type="button"
                     className="primary-button"
-                    onClick={openCostPicker}
+                    onClick={openItemsManager}
                   >
-                    Add from Cost Library
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={addCustomItem}
-                  >
-                    Add Custom Item
+                    Manage Assembly Items
                   </button>
                 </div>
-
-                <div className="table-wrap assembly-library-items-wrap">
-                  <table className="data-table assembly-library-items-table">
-                    <colgroup>
-                      <col className="assembly-library-col-select" />
-                      <col className="assembly-library-item-col-name" />
-                      <col className="assembly-library-item-col-qty" />
-                      <col className="assembly-library-item-col-override" />
-                      <col className="assembly-library-col-actions" />
-                    </colgroup>
-                    <thead>
-                      <tr>
-                        <th>
-                          <input
-                            type="checkbox"
-                            checked={allEditorItemsSelected}
-                            aria-label="Select all assembly items"
-                            onChange={toggleSelectAllItems}
-                          />
-                        </th>
-                        <th>Item Name</th>
-                        <th>Quantity</th>
-                        <th>Override Rate</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {draft.items.length ? (
-                        draft.items.map((item) => {
-                          const isActive = editorState.activeItemId === item.id;
-                          const isSelected = selectedItemIds.includes(item.id);
-                          const tradeLabel = getTradeLabel(item.trade);
-                          return (
-                            <tr
-                              key={item.id}
-                              className={`${isActive ? "assembly-library-row-active" : ""}${
-                                isSelected ? " assembly-library-row-selected" : ""
-                              }`}
-                              onClick={() => selectItemRow(item.id)}
-                            >
-                              <td>
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  aria-label={`Select ${item.itemNameSnapshot || item.itemName}`}
-                                  onClick={(event) => event.stopPropagation()}
-                                  onChange={() => toggleItemSelection(item.id)}
-                                />
-                              </td>
-                              <td>
-                                <div className="assembly-library-item-cell">
-                                  <span className="assembly-library-item-primary">
-                                    {item.itemNameSnapshot || item.itemName}
-                                  </span>
-                                  <div className="assembly-library-item-meta">
-                                    <span
-                                      className={`assembly-library-source-badge ${
-                                        item.isCustomItem ? "is-custom" : "is-linked"
-                                      }`}
-                                    >
-                                      {item.isCustomItem ? "Custom" : "Linked"}
-                                    </span>
-                                    <span>{item.costType || "Unassigned"}</span>
-                                    <span>{item.deliveryType || "Unassigned"}</span>
-                                    <span>{item.unit || "Unassigned"}</span>
-                                    <span>${item.baseRate || 0}</span>
-                                    <span
-                                      className={`assembly-library-trade-badge ${
-                                        tradeLabel === "Unassigned" ? "is-unassigned" : ""
-                                      }`}
-                                    >
-                                      {tradeLabel}
-                                    </span>
-                                  </div>
-                                </div>
-                              </td>
-                              <td>
-                                <div className="assembly-library-item-qty">
-                                  <strong>Qty:</strong>{" "}
-                                  {item.quantityFormula || "Not set"}
-                                </div>
-                              </td>
-                              <td>{item.rateOverride || ""}</td>
-                              <td>
-                                <div className="action-row">
-                                  <button
-                                    type="button"
-                                    className="secondary-button"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      duplicateItemRow(item.id);
-                                    }}
-                                  >
-                                    Duplicate
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="danger-button"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      if (
-                                        typeof window !== "undefined" &&
-                                        !window.confirm("Delete this item row?")
-                                      ) {
-                                        return;
-                                      }
-                                      removeItemRow(item.id);
-                                    }}
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      ) : (
-                        <tr>
-                          <td colSpan={5}>No cost items added yet.</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                {activeItem ? (
-                  <div className="assembly-library-item-detail">
-                    <h3>Selected Item</h3>
-                    <div className="form-grid room-template-fields-grid room-template-fields-grid-compact">
-                      <FormField label="Item Name">
-                        <input
-                          value={activeItem.itemNameSnapshot}
-                          disabled={!activeItem.isCustomItem}
-                          onChange={(event) =>
-                            updateItemField(
-                              activeItem.id,
-                              "itemNameSnapshot",
-                              event.target.value
-                            )
-                          }
-                        />
-                      </FormField>
-                      <FormField label="Source">
-                        <input
-                          value={activeItem.isCustomItem ? "Custom" : "Linked"}
-                          readOnly
-                        />
-                      </FormField>
-                      <FormField label="Cost Type">
-                        {activeItem.isCustomItem ? (
-                          <select
-                            value={activeItem.costType}
-                            onChange={(event) =>
-                              updateItemField(activeItem.id, "costType", event.target.value)
-                            }
-                          >
-                            <option value="">Select</option>
-                            {costTypeOptions.map((costType) => (
-                              <option key={costType} value={costType}>
-                                {costType}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input value={activeItem.costType} readOnly />
-                        )}
-                      </FormField>
-                      <FormField label="Delivery Type">
-                        {activeItem.isCustomItem ? (
-                          <select
-                            value={activeItem.deliveryType}
-                            onChange={(event) =>
-                              updateItemField(
-                                activeItem.id,
-                                "deliveryType",
-                                event.target.value
-                              )
-                            }
-                          >
-                            <option value="">Select</option>
-                            {deliveryTypeOptions.map((deliveryType) => (
-                              <option key={deliveryType} value={deliveryType}>
-                                {deliveryType}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input value={activeItem.deliveryType} readOnly />
-                        )}
-                      </FormField>
-                      <FormField label="Trade">
-                        {activeItem.isCustomItem ? (
-                          <select
-                            value={activeItem.tradeId}
-                            onChange={(event) =>
-                              updateItemField(activeItem.id, "tradeId", event.target.value)
-                            }
-                          >
-                            <option value="">Select</option>
-                            {activeTrades.map((trade) => (
-                              <option key={trade.id} value={trade.id}>
-                                {trade.name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input value={getTradeLabel(activeItem.trade)} readOnly />
-                        )}
-                      </FormField>
-                      <FormField label="Cost Code">
-                        {activeItem.isCustomItem ? (
-                          <select
-                            value={activeItem.costCodeId}
-                            onChange={(event) =>
-                              updateItemField(
-                                activeItem.id,
-                                "costCodeId",
-                                event.target.value
-                              )
-                            }
-                          >
-                            <option value="">Select</option>
-                            {activeCostCodes.map((costCode) => (
-                              <option key={costCode.id} value={costCode.id}>
-                                {costCode.name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input value={activeItem.costCode} readOnly />
-                        )}
-                      </FormField>
-                      <FormField label="Unit">
-                        {activeItem.isCustomItem ? (
-                          <select
-                            value={activeItem.unitId}
-                            onChange={(event) =>
-                              updateItemField(activeItem.id, "unitId", event.target.value)
-                            }
-                          >
-                            <option value="">Select</option>
-                            {activeUnits.map((unit) => (
-                              <option key={unit.id} value={unit.id}>
-                                {unit.abbreviation}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input value={activeItem.unit} readOnly />
-                        )}
-                      </FormField>
-                      <FormField label="Base Rate">
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={activeItem.baseRate}
-                          readOnly={!activeItem.isCustomItem}
-                          onChange={(event) =>
-                            updateItemField(activeItem.id, "baseRate", event.target.value)
-                          }
-                        />
-                      </FormField>
-                      <FormField label="Quantity Formula">
-                        <div className="assembly-library-quantity-field">
-                          <input
-                            value={activeItem.quantityFormula}
-                            placeholder="e.g. wallArea, floorArea * 1.1"
-                            onChange={(event) =>
-                              updateItemField(
-                                activeItem.id,
-                                "quantityFormula",
-                                event.target.value
-                              )
-                            }
-                          />
-                          <p className="assembly-library-field-hint">
-                            Available: wallArea, floorArea, perimeter, ceilingArea
-                          </p>
-                          <p className="assembly-library-field-hint">
-                            Use variables and math operators (*, +, -, /)
-                          </p>
-                        </div>
-                      </FormField>
-                      <FormField label="Override Rate">
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={activeItem.rateOverride}
-                          onChange={(event) =>
-                            updateItemField(
-                              activeItem.id,
-                              "rateOverride",
-                              event.target.value
-                            )
-                          }
-                        />
-                      </FormField>
-                      <FormField label="Notes">
-                        <textarea
-                          rows={3}
-                          value={activeItem.notes}
-                          onChange={(event) =>
-                            updateItemField(activeItem.id, "notes", event.target.value)
-                          }
-                        />
-                      </FormField>
-                    </div>
+                <div className="assembly-library-items-summary">
+                  <div className="assembly-library-items-summary-card">
+                    <strong>{draft.items.length}</strong>
+                    <span>Total items</span>
                   </div>
-                ) : null}
+                  <div className="assembly-library-items-summary-card">
+                    <strong>{draft.items.filter((item) => !item.isCustomItem).length}</strong>
+                    <span>Linked items</span>
+                  </div>
+                  <div className="assembly-library-items-summary-card">
+                    <strong>{draft.items.filter((item) => item.isCustomItem).length}</strong>
+                    <span>Custom items</span>
+                  </div>
+                </div>
+                <p className="assembly-library-status">
+                  Linked items stay read-only for inherited fields. Custom items keep editable trade and cost code fields.
+                </p>
               </div>
 
               {validationErrors.length ? (
@@ -1651,6 +2409,973 @@ function AssemblyLibraryPage({
           )}
         </div>
       </div>
+      {groupManagerState.isOpen ? (
+        <div
+          className="assembly-library-drawer-backdrop assembly-library-modal-backdrop"
+          onClick={closeGroupManager}
+        >
+          <div
+            className="assembly-library-drawer assembly-library-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="assembly-library-drawer-header">
+              <div>
+                <p className="assembly-library-drawer-kicker">Assembly Groups</p>
+                <h3>Manage Groups</h3>
+              </div>
+              <button type="button" className="secondary-button" onClick={closeGroupManager}>
+                Close
+              </button>
+            </div>
+            <div className="assembly-library-drawer-form">
+              <div className="assembly-library-drawer-section">
+                <div className="field">
+                  <label htmlFor="assembly-group-add-input">Add Group</label>
+                  <div className="assembly-library-group-field">
+                    <input
+                      id="assembly-group-add-input"
+                      autoFocus
+                      value={groupManagerState.newGroupName}
+                      onChange={(event) =>
+                        setGroupManagerState((current) => ({
+                          ...current,
+                          newGroupName: event.target.value,
+                        }))
+                      }
+                      placeholder="e.g. Ceilings"
+                    />
+                    <button
+                      type="button"
+                      className="primary-button assembly-library-manage-button"
+                      onClick={addManagedAssemblyGroup}
+                    >
+                      Add Group
+                    </button>
+                  </div>
+                </div>
+                <p className="assembly-library-field-hint">
+                  Groups in use stay available automatically. Added groups are shared across Assembly Library filters and editors on this device.
+                </p>
+              </div>
+              <div className="assembly-library-group-list">
+                {assemblyGroupOptions.map((groupName) => {
+                  const isInUse = normalizedAssemblies.some(
+                    (assembly) => assembly.assemblyGroup === groupName
+                  );
+                  const isEditing = groupManagerState.editingGroupName === groupName;
+                  return (
+                    <div key={groupName} className="assembly-library-group-row">
+                      <div className="assembly-library-group-row-main">
+                        {isEditing ? (
+                          <div className="assembly-library-group-edit-row">
+                            <input
+                              autoFocus
+                              value={groupManagerState.editValue}
+                              onChange={(event) =>
+                                setGroupManagerState((current) => ({
+                                  ...current,
+                                  editValue: event.target.value,
+                                  error: "",
+                                }))
+                              }
+                              placeholder="Assembly group name"
+                            />
+                            <button
+                              type="button"
+                              className="primary-button"
+                              onClick={() => saveManagedAssemblyGroupRename(groupName)}
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() =>
+                                setGroupManagerState((current) => ({
+                                  ...current,
+                                  editingGroupName: "",
+                                  editValue: "",
+                                  error: "",
+                                }))
+                              }
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <strong>{groupName}</strong>
+                            <p>
+                              {isInUse
+                                ? "In use by existing assemblies"
+                                : "Available for new assemblies"}
+                            </p>
+                          </>
+                        )}
+                      </div>
+                      <div className="action-row assembly-library-group-row-actions">
+                        <span
+                          className={`assembly-library-source-badge ${
+                            isInUse ? "is-linked" : "is-custom"
+                          }`}
+                        >
+                          {isInUse ? "In Use" : "Managed"}
+                        </span>
+                        {!isEditing ? (
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => startEditingManagedAssemblyGroup(groupName)}
+                          >
+                            Rename
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="danger-button"
+                          onClick={() => removeManagedAssemblyGroup(groupName)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {groupManagerState.error ? (
+                <p className="assembly-library-validation-note">{groupManagerState.error}</p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {isItemsManagerOpen ? (
+        <div
+          className="assembly-library-drawer-backdrop assembly-library-modal-backdrop"
+          onClick={closeItemsManager}
+        >
+          <div
+            className="assembly-library-drawer assembly-library-modal assembly-library-item-modal assembly-library-items-manager-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="assembly-library-drawer-header">
+              <div>
+                <p className="assembly-library-drawer-kicker">Assembly Items</p>
+                <h3>Manage Assembly Items</h3>
+              </div>
+              <button type="button" className="secondary-button" onClick={closeItemsManager}>
+                Close
+              </button>
+            </div>
+            <div className="assembly-library-drawer-form">
+              <div className="assembly-library-items-manager-toolbar">
+                <div className="action-row assembly-library-inline-actions">
+                  <button type="button" className="primary-button" onClick={openCostPicker}>
+                    Add from Cost Library
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button assembly-library-create-cost-button"
+                    onClick={openNewCostItemEditor}
+                  >
+                    Create New Cost Item
+                  </button>
+                  <button type="button" className="secondary-button" onClick={addCustomItem}>
+                    Add Custom Item
+                  </button>
+                </div>
+                <label className="assembly-library-select-all">
+                  <input
+                    type="checkbox"
+                    checked={allEditorItemsSelected}
+                    aria-label="Select all assembly items"
+                    onChange={toggleSelectAllItems}
+                  />
+                  <span>Select all</span>
+                </label>
+              </div>
+              {newCostItemState.notice ? (
+                <p className="assembly-library-items-manager-notice">
+                  {newCostItemState.notice}
+                </p>
+              ) : null}
+              {selectedEditorItemIds.length ? (
+                <div className="assembly-library-items-bulk-bar">
+                  <span className="assembly-library-items-bulk-count">
+                    {selectedEditorItemIds.length} selected
+                  </span>
+                  <div className="action-row assembly-library-inline-actions">
+                    <button type="button" className="secondary-button" onClick={openBulkEdit}>
+                      Bulk Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={duplicateSelectedItems}
+                    >
+                      Duplicate Selected
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={deleteSelectedItems}
+                    >
+                      Delete Selected Items
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {bulkEditState.isOpen ? (
+                <div className="assembly-library-items-bulk-editor">
+                  <div className="assembly-library-item-detail-header">
+                    <div>
+                      <p className="assembly-library-drawer-kicker">Bulk Edit</p>
+                      <h3>Selected Items</h3>
+                    </div>
+                    <div className="assembly-library-item-detail-actions">
+                      <button type="button" className="secondary-button" onClick={closeBulkEdit}>
+                        Cancel
+                      </button>
+                      <button type="button" className="primary-button" onClick={applyBulkEdit}>
+                        Apply Changes
+                      </button>
+                    </div>
+                  </div>
+                  <div className="form-grid room-template-fields-grid room-template-fields-grid-compact">
+                    <FormField label="Cost Type">
+                      <select
+                        value={bulkEditState.values.costType}
+                        onChange={(event) => updateBulkEditField("costType", event.target.value)}
+                      >
+                        <option value={BULK_EDIT_UNCHANGED}>Mixed / keep existing</option>
+                        {costTypeOptions.map((costType) => (
+                          <option key={costType} value={costType}>
+                            {costType}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <FormField label="Delivery Type">
+                      <select
+                        value={bulkEditState.values.deliveryType}
+                        onChange={(event) => updateBulkEditField("deliveryType", event.target.value)}
+                      >
+                        <option value={BULK_EDIT_UNCHANGED}>Mixed / keep existing</option>
+                        {deliveryTypeOptions.map((deliveryType) => (
+                          <option key={deliveryType} value={deliveryType}>
+                            {deliveryType}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <FormField label="Trade">
+                      <select
+                        value={bulkEditState.values.tradeId}
+                        onChange={(event) => updateBulkEditField("tradeId", event.target.value)}
+                      >
+                        <option value={BULK_EDIT_UNCHANGED}>Mixed / keep existing</option>
+                        {activeTrades.map((trade) => (
+                          <option key={trade.id} value={trade.id}>
+                            {trade.name}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <FormField label="Cost Code">
+                      <select
+                        value={bulkEditState.values.costCodeId}
+                        onChange={(event) => updateBulkEditField("costCodeId", event.target.value)}
+                      >
+                        <option value={BULK_EDIT_UNCHANGED}>Mixed / keep existing</option>
+                        {activeCostCodes.map((costCode) => (
+                          <option key={costCode.id} value={costCode.id}>
+                            {costCode.name}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <FormField label="Unit">
+                      <select
+                        value={bulkEditState.values.unitId}
+                        onChange={(event) => updateBulkEditField("unitId", event.target.value)}
+                      >
+                        <option value={BULK_EDIT_UNCHANGED}>Mixed / keep existing</option>
+                        {activeUnits.map((unit) => (
+                          <option key={unit.id} value={unit.id}>
+                            {unit.abbreviation}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                    <FormField label="Override Rate">
+                      <input
+                        type="number"
+                        step="0.01"
+                        inputMode="decimal"
+                        value={bulkEditState.values.rateOverride}
+                        placeholder="Mixed / leave unchanged"
+                        onChange={(event) => updateBulkEditField("rateOverride", event.target.value)}
+                      />
+                    </FormField>
+                  </div>
+                </div>
+              ) : null}
+              <div className="assembly-library-items-manager-layout">
+                <div className="assembly-library-items-manager-list-pane">
+                  <div className="assembly-library-items-manager-list">
+                      {draft.items.length ? (
+                        draft.items.map((item) => {
+                          const isActive = editorState.activeItemId === item.id;
+                          const isSelected = selectedItemIds.includes(item.id);
+                          const tradeLabel = getTradeLabel(item.trade);
+                          return (
+                            <div
+                              key={item.id}
+                              className={`assembly-library-manager-card${
+                                isActive ? " is-active" : ""
+                              }${isSelected ? " is-selected" : ""}${
+                                item.isCustomItem ? " is-custom-item" : ""
+                              }${
+                                dragState.overItemId === item.id ? " is-drag-over" : ""
+                              }`}
+                              draggable
+                              onClick={() => selectItemRow(item.id)}
+                              onDragStart={() => handleItemDragStart(item.id)}
+                              onDragEnter={() => handleItemDragEnter(item.id)}
+                              onDragOver={(event) => event.preventDefault()}
+                              onDragEnd={clearItemDragState}
+                              onDrop={() => handleItemDrop(item.id)}
+                            >
+                              <div
+                                className="assembly-library-manager-card-handle"
+                                aria-label={`Reorder ${item.itemNameSnapshot || item.itemName}`}
+                              >
+                                ::
+                              </div>
+                              <div className="assembly-library-manager-card-toggle">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  aria-label={`Select ${item.itemNameSnapshot || item.itemName}`}
+                                  onClick={(event) => event.stopPropagation()}
+                                  onChange={() => toggleItemSelection(item.id)}
+                                />
+                              </div>
+                              <div className="assembly-library-manager-card-body">
+                                <div className="assembly-library-manager-card-title">
+                                  {item.itemNameSnapshot || item.itemName || "Untitled Item"}
+                                </div>
+                                <div className="assembly-library-manager-card-meta">
+                                  <span>{item.costType || "Unassigned"}</span>
+                                  <span>{item.unit || "Unassigned"}</span>
+                                  <span>{formatCurrencyLabel(item.baseRate)}</span>
+                                  <span
+                                    className={
+                                      tradeLabel === "Unassigned"
+                                        ? "assembly-library-manager-meta-muted"
+                                        : ""
+                                    }
+                                  >
+                                    {tradeLabel}
+                                  </span>
+                                  <span
+                                    className={`assembly-library-source-badge ${
+                                      item.isCustomItem ? "is-custom" : "is-linked"
+                                    }`}
+                                  >
+                                    {item.isCustomItem ? "Custom" : "Linked"}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <p className="empty-state">No cost items added yet.</p>
+                      )}
+                    </div>
+                  </div>
+                  {activeItem ? (
+                  <>
+                    <div
+                      className={`assembly-library-item-detail assembly-library-item-detail-locked${
+                        activeItem.isCustomItem ? " is-custom-item" : ""
+                      }`}
+                    >
+                      <div className="assembly-library-item-detail-header">
+                        <div>
+                          <p className="assembly-library-drawer-kicker">Locked / Inherited</p>
+                          <h3>Library Fields</h3>
+                        </div>
+                      </div>
+                      {activeItem.isCustomItem ? (
+                        <div className="assembly-library-custom-mode-banner">
+                          <span className="assembly-library-source-badge is-custom">
+                            Custom Item Mode
+                          </span>
+                          <p>
+                            This item is assembly-only and will not be saved to the Cost Library.
+                          </p>
+                        </div>
+                      ) : null}
+                      <div className="form-grid room-template-fields-grid room-template-fields-grid-compact">
+                        <FormField label="Item Name">
+                          <input
+                            value={activeItem.itemNameSnapshot}
+                            readOnly={!activeItem.isCustomItem}
+                            onChange={(event) =>
+                              updateItemField(
+                                activeItem.id,
+                                "itemNameSnapshot",
+                                event.target.value
+                              )
+                            }
+                          />
+                        </FormField>
+                        <FormField label="Source">
+                          <input value={activeItem.isCustomItem ? "Custom" : "Linked"} readOnly />
+                        </FormField>
+                        <FormField label="Cost Type">
+                          {activeItem.isCustomItem ? (
+                            <select
+                              value={activeItem.costType}
+                              onChange={(event) =>
+                                updateItemField(activeItem.id, "costType", event.target.value)
+                              }
+                            >
+                              <option value="">Select</option>
+                              {costTypeOptions.map((costType) => (
+                                <option key={costType} value={costType}>
+                                  {costType}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input value={activeItem.costType || "Unassigned"} readOnly />
+                          )}
+                        </FormField>
+                        <FormField label="Delivery Type">
+                          {activeItem.isCustomItem ? (
+                            <select
+                              value={activeItem.deliveryType}
+                              onChange={(event) =>
+                                updateItemField(activeItem.id, "deliveryType", event.target.value)
+                              }
+                            >
+                              <option value="">Select</option>
+                              {deliveryTypeOptions.map((deliveryType) => (
+                                <option key={deliveryType} value={deliveryType}>
+                                  {deliveryType}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input value={activeItem.deliveryType || "Unassigned"} readOnly />
+                          )}
+                        </FormField>
+                        <FormField label="Trade">
+                          {activeItem.isCustomItem ? (
+                            <select
+                              value={activeItem.tradeId}
+                              onChange={(event) =>
+                                updateItemField(activeItem.id, "tradeId", event.target.value)
+                              }
+                            >
+                              <option value="">Select</option>
+                              {activeTrades.map((trade) => (
+                                <option key={trade.id} value={trade.id}>
+                                  {trade.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input value={getTradeLabel(activeItem.trade)} readOnly />
+                          )}
+                        </FormField>
+                        <FormField label="Cost Code">
+                          {activeItem.isCustomItem ? (
+                            <select
+                              value={activeItem.costCodeId}
+                              onChange={(event) =>
+                                updateItemField(activeItem.id, "costCodeId", event.target.value)
+                              }
+                            >
+                              <option value="">Select</option>
+                              {activeCostCodes.map((costCode) => (
+                                <option key={costCode.id} value={costCode.id}>
+                                  {costCode.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input value={getCostCodeLabel(activeItem.costCode)} readOnly />
+                          )}
+                        </FormField>
+                        <FormField label="Unit">
+                          {activeItem.isCustomItem ? (
+                            <select
+                              value={activeItem.unitId}
+                              onChange={(event) =>
+                                updateItemField(activeItem.id, "unitId", event.target.value)
+                              }
+                            >
+                              <option value="">Select</option>
+                              {activeUnits.map((unit) => (
+                                <option key={unit.id} value={unit.id}>
+                                  {unit.abbreviation}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input value={activeItem.unit || "Unassigned"} readOnly />
+                          )}
+                        </FormField>
+                        <FormField label="Base Rate">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={activeItem.baseRate}
+                            readOnly={!activeItem.isCustomItem}
+                            onChange={(event) =>
+                              updateItemField(activeItem.id, "baseRate", event.target.value)
+                            }
+                          />
+                        </FormField>
+                        <FormField label="Link ID">
+                          <input value={activeItem.libraryItemId || "Unassigned"} readOnly />
+                        </FormField>
+                      </div>
+                    </div>
+                    <div
+                      className={`assembly-library-item-detail assembly-library-item-detail-editable${
+                        activeItem.isCustomItem ? " is-custom-item" : ""
+                      }`}
+                    >
+                      <div className="assembly-library-item-detail-header">
+                        <div>
+                          <p className="assembly-library-drawer-kicker">Editable</p>
+                          <h3>Assembly Use Fields</h3>
+                        </div>
+                        <div className="assembly-library-item-detail-actions">
+                          <button
+                            type="button"
+                            className="secondary-button assembly-library-icon-button"
+                            aria-label="Duplicate Item"
+                            title="Duplicate Item"
+                            onClick={() => duplicateItemRow(activeItem.id)}
+                          >
+                            ⧉
+                          </button>
+                          <button
+                            type="button"
+                            className="danger-button assembly-library-icon-button"
+                            aria-label="Delete Item"
+                            title="Delete Item"
+                            onClick={() => {
+                              if (
+                                typeof window !== "undefined" &&
+                                !window.confirm("Delete this item row?")
+                              ) {
+                                return;
+                              }
+                              removeItemRow(activeItem.id);
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                      <div className="form-grid room-template-fields-grid room-template-fields-grid-compact">
+                        <div className="field">
+                          <label>Quantity Formula</label>
+                          <div className="assembly-library-quantity-field">
+                            {!isAdvancedQtyFormulaMode ? (
+                              <div className="assembly-library-quantity-builder">
+                                <div className="assembly-library-quantity-builder-grid">
+                                  <FormField label="Base Parameter">
+                                    <select
+                                      value={activeQuantityFormulaConfig.baseParameter}
+                                      onChange={(event) =>
+                                        updateGuidedQuantityFormula("baseParameter", event.target.value)
+                                      }
+                                    >
+                                      <option value="">Select parameter</option>
+                                      {quantityFormulaOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                          {option.label} ({option.value})
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </FormField>
+                                  <FormField label="Operator">
+                                    <select
+                                      value={activeQuantityFormulaConfig.operator || "*"}
+                                      onChange={(event) =>
+                                        updateGuidedQuantityFormula("operator", event.target.value)
+                                      }
+                                    >
+                                      <option value="*">*</option>
+                                      <option value="/">/</option>
+                                      <option value="+">+</option>
+                                      <option value="-">-</option>
+                                    </select>
+                                  </FormField>
+                                  <FormField label="Factor">
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      inputMode="decimal"
+                                      value={activeQuantityFormulaConfig.factor || ""}
+                                      placeholder="Optional"
+                                      onChange={(event) =>
+                                        updateGuidedQuantityFormula("factor", event.target.value)
+                                      }
+                                    />
+                                  </FormField>
+                                </div>
+                                <p className="assembly-library-quantity-preview">
+                                  {buildQuantityFormula(
+                                    activeQuantityFormulaConfig.baseParameter,
+                                    activeQuantityFormulaConfig.operator,
+                                    activeQuantityFormulaConfig.factor
+                                  ) || "Select a parameter to build the formula"}
+                                </p>
+                              </div>
+                            ) : (
+                              <input
+                                value={activeItem.quantityFormula || ""}
+                                placeholder="e.g. floorArea * 1.1"
+                                onChange={(event) =>
+                                  updateItemField(activeItem.id, "quantityFormula", event.target.value)
+                                }
+                              />
+                            )}
+                            <button
+                              type="button"
+                              className="secondary-button assembly-library-inline-toggle"
+                              onClick={() =>
+                                setIsAdvancedQtyFormulaMode((current) => !current)
+                              }
+                            >
+                              {isAdvancedQtyFormulaMode ? "Use Guided Builder" : "Use Advanced Formula"}
+                            </button>
+                            <p className="assembly-library-field-hint">
+                              Choose from predefined room metrics and parameter library values, then add
+                              an optional operator and factor.
+                            </p>
+                          </div>
+                        </div>
+                        <FormField label="Override Rate">
+                          <input
+                            type="number"
+                            step="0.01"
+                            inputMode="decimal"
+                            value={activeItem.rateOverride ?? ""}
+                            placeholder="Leave blank to use base rate"
+                            onChange={(event) =>
+                              updateItemField(activeItem.id, "rateOverride", event.target.value)
+                            }
+                          />
+                        </FormField>
+                        <FormField label="Notes">
+                          <textarea
+                            rows={3}
+                            value={activeItem.notes || ""}
+                            placeholder="Optional item notes"
+                            onChange={(event) =>
+                              updateItemField(activeItem.id, "notes", event.target.value)
+                            }
+                          />
+                        </FormField>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="assembly-library-item-detail assembly-library-item-detail-empty">
+                    <h3>Selected Item</h3>
+                    <p className="empty-state">
+                      Select an item to view inherited details and edit quantity, override rate, and notes.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {newCostItemState.isOpen ? (
+        <div
+          className="assembly-library-nested-backdrop"
+          onClick={closeNewCostItemEditor}
+        >
+          <div
+            className="assembly-library-nested-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <form className="assembly-editor-panel cost-library-editor" onSubmit={saveNewCostItem}>
+              <div className="summary-section room-template-editor-header cost-library-editor-header">
+                <div>
+                  <p className="room-template-editor-kicker">Assembly Workflow</p>
+                  <h3>Create Cost Item</h3>
+                  <p className="cost-library-editor-subtitle">
+                    Save a reusable Cost Library item, then link it to this assembly immediately.
+                  </p>
+                </div>
+                <div className="room-template-editor-header-meta">
+                  <span className="room-template-selected-badge">
+                    {newCostItemState.draft.trade || "Unassigned Trade"}
+                  </span>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={closeNewCostItemEditor}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+
+              <div className="summary-section room-template-compact-section cost-library-editor-section cost-library-editor-section-identity">
+                <h3>Identity</h3>
+                <div className="form-grid room-template-fields-grid room-template-fields-grid-compact">
+                  <FormField label="Core Name">
+                    <input
+                      value={newCostItemState.draft.itemName}
+                      onChange={(event) =>
+                        updateNewCostDraftField("itemName", event.target.value)
+                      }
+                      placeholder="Floor Tile"
+                    />
+                  </FormField>
+
+                  <FormField label="Item Name">
+                    <input value={newCostItemState.draft.itemName || ""} readOnly />
+                  </FormField>
+
+                  <FormField label="Status">
+                    <select
+                      value={newCostItemState.draft.status}
+                      onChange={(event) =>
+                        updateNewCostDraftField("status", event.target.value)
+                      }
+                    >
+                      {costStatusOptions.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+                </div>
+              </div>
+
+              <div className="summary-section room-template-compact-section cost-library-editor-section cost-library-editor-section-classification">
+                <h3>Classification</h3>
+                <div className="form-grid room-template-fields-grid room-template-fields-grid-compact">
+                  <FormField label="Cost Type">
+                    <select
+                      value={newCostItemState.draft.costType}
+                      onChange={(event) =>
+                        updateNewCostDraftField("costType", event.target.value)
+                      }
+                    >
+                      <option value="">Select cost type</option>
+                      {costTypeOptions.map((costType) => (
+                        <option key={costType} value={costType}>
+                          {costType}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+
+                  <FormField label="Delivery Type">
+                    <select
+                      value={newCostItemState.draft.deliveryType}
+                      onChange={(event) =>
+                        updateNewCostDraftField("deliveryType", event.target.value)
+                      }
+                    >
+                      <option value="">Select delivery type</option>
+                      {deliveryTypeOptions.map((deliveryType) => (
+                        <option key={deliveryType} value={deliveryType}>
+                          {deliveryType}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+
+                  <FormField label="Family">
+                    <select
+                      value={newCostItemState.draft.itemFamily}
+                      onChange={(event) =>
+                        updateNewCostDraftField("itemFamily", event.target.value)
+                      }
+                    >
+                      <option value="">Unassigned</option>
+                      {activeItemFamilies.map((itemFamily) => (
+                        <option key={itemFamily.id} value={itemFamily.name}>
+                          {itemFamily.name}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+
+                  <FormField label="Trade">
+                    <select
+                      value={newCostItemState.draft.tradeId}
+                      onChange={(event) =>
+                        updateNewCostDraftField("tradeId", event.target.value)
+                      }
+                    >
+                      <option value="">Select trade</option>
+                      {activeTrades.map((trade) => (
+                        <option key={trade.id} value={trade.id}>
+                          {trade.name}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+
+                  <FormField label="Cost Code">
+                    <select
+                      value={newCostItemState.draft.costCodeId}
+                      onChange={(event) =>
+                        updateNewCostDraftField("costCodeId", event.target.value)
+                      }
+                    >
+                      <option value="">Select cost code</option>
+                      {activeCostCodes.map((costCode) => (
+                        <option key={costCode.id} value={costCode.id}>
+                          {costCode.name}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+                </div>
+              </div>
+
+              <div className="summary-section room-template-compact-section cost-library-editor-section cost-library-editor-section-details">
+                <h3>Details</h3>
+                <div className="form-grid room-template-fields-grid room-template-fields-grid-compact">
+                  <FormField label="Spec">
+                    <input
+                      value={newCostItemState.draft.specification}
+                      onChange={(event) =>
+                        updateNewCostDraftField("specification", event.target.value)
+                      }
+                      placeholder="600x600"
+                    />
+                  </FormField>
+
+                  <FormField label="Grade">
+                    <input
+                      value={newCostItemState.draft.gradeOrQuality}
+                      onChange={(event) =>
+                        updateNewCostDraftField("gradeOrQuality", event.target.value)
+                      }
+                      placeholder="Premium"
+                    />
+                  </FormField>
+
+                  <FormField label="Finish">
+                    <input
+                      value={newCostItemState.draft.finishOrVariant}
+                      onChange={(event) =>
+                        updateNewCostDraftField("finishOrVariant", event.target.value)
+                      }
+                      placeholder="Matt"
+                    />
+                  </FormField>
+
+                  <FormField label="Brand">
+                    <input
+                      value={newCostItemState.draft.brand}
+                      onChange={(event) =>
+                        updateNewCostDraftField("brand", event.target.value)
+                      }
+                      placeholder="ABC"
+                    />
+                  </FormField>
+
+                  <FormField label="Source Link">
+                    <input
+                      value={newCostItemState.draft.sourceLink}
+                      onChange={(event) =>
+                        updateNewCostDraftField("sourceLink", event.target.value)
+                      }
+                      placeholder="https://supplier.example/item"
+                    />
+                  </FormField>
+
+                  <FormField label="Notes">
+                    <textarea
+                      rows={4}
+                      value={newCostItemState.draft.notes}
+                      onChange={(event) =>
+                        updateNewCostDraftField("notes", event.target.value)
+                      }
+                      placeholder="Optional notes or pricing context"
+                    />
+                  </FormField>
+                </div>
+              </div>
+
+              <div className="summary-section room-template-compact-section cost-library-editor-section cost-library-editor-section-pricing">
+                <h3>Pricing</h3>
+                <div className="form-grid room-template-fields-grid room-template-fields-grid-compact">
+                  <FormField label="Unit">
+                    <select
+                      value={newCostItemState.draft.unitId}
+                      onChange={(event) =>
+                        updateNewCostDraftField("unitId", event.target.value)
+                      }
+                    >
+                      <option value="">Select unit</option>
+                      {activeUnits.map((unit) => (
+                        <option key={unit.id} value={unit.id}>
+                          {unit.abbreviation}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+
+                  <FormField label="Rate">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={newCostItemState.draft.rate}
+                      onChange={(event) =>
+                        updateNewCostDraftField("rate", event.target.value)
+                      }
+                    />
+                  </FormField>
+                </div>
+              </div>
+
+              {newCostItemState.validationErrors.length ? (
+                <div className="summary-section room-template-compact-section assembly-library-validation">
+                  {newCostItemState.validationErrors.map((error) => (
+                    <p key={error}>{error}</p>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="assembly-library-form-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={closeNewCostItemEditor}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="primary-button">
+                  Save to Cost Library and Add to Assembly
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
       {costPickerState.isOpen ? (
         <div
           className="assembly-library-picker-backdrop"
@@ -1665,13 +3390,26 @@ function AssemblyLibraryPage({
                 <p className="room-template-editor-kicker">Cost Library Picker</p>
                 <h3>Add from Cost Library</h3>
               </div>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={closeCostPicker}
-              >
-                Close
-              </button>
+              <div className="action-row">
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={addSelectedLinkedCostItems}
+                  disabled={!costPickerState.selectedCostIds.length}
+                >
+                  Add Selected
+                  {costPickerState.selectedCostIds.length
+                    ? ` (${costPickerState.selectedCostIds.length})`
+                    : ""}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={closeCostPicker}
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
             <div className="assembly-library-picker-filters">
@@ -1725,18 +3463,42 @@ function AssemblyLibraryPage({
                 </select>
               </FormField>
             </div>
+            <div className="assembly-library-picker-toolbar">
+              <label className="assembly-library-select-all">
+                <input
+                  type="checkbox"
+                  checked={allFilteredPickerCostsSelected}
+                  aria-label="Select all visible cost items"
+                  onChange={toggleSelectAllPickerCosts}
+                />
+                <span>Select all</span>
+              </label>
+              <span className="assembly-library-items-bulk-count">
+                {costPickerState.selectedCostIds.length} selected
+              </span>
+            </div>
 
             <div className="assembly-library-picker-results">
               {filteredPickerCosts.length ? (
                 filteredPickerCosts.map((cost) => {
                   const presentation = getStructuredItemPresentation(cost);
+                  const isSelected = costPickerState.selectedCostIds.includes(cost.id);
                   return (
                     <button
                       key={cost.id}
                       type="button"
-                      className="assembly-library-picker-row"
-                      onClick={() => addLinkedCostItem(cost.id)}
+                      className={`assembly-library-picker-row${isSelected ? " is-selected" : ""}`}
+                      onClick={() => togglePickerCostSelection(cost.id)}
                     >
+                      <span className="assembly-library-picker-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          aria-label={`Select ${presentation.primaryLabel}`}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={() => togglePickerCostSelection(cost.id)}
+                        />
+                      </span>
                       <span className="assembly-library-picker-primary">
                         {presentation.primaryLabel}
                       </span>

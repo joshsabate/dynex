@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import FormField from "../components/FormField";
 import SectionCard from "../components/SectionCard";
-import { convertCostsToCSV, parseCSV } from "../utils/csvUtils";
+import { applyImportMode, convertCostsToCSV, parseCSV } from "../utils/csvUtils";
 import { getStructuredItemPresentation } from "../utils/itemNaming";
 import {
   costStatusOptions,
@@ -115,6 +115,7 @@ function CostLibraryPage({
   const [costTypeFilter, setCostTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [csvStatus, setCsvStatus] = useState("");
+  const [importMode, setImportMode] = useState("append");
   const [sortKey, setSortKey] = useState("itemName");
   const [editorState, setEditorState] = useState({
     isOpen: false,
@@ -560,15 +561,32 @@ function CostLibraryPage({
       }
 
       ensureFamiliesExist(validCosts.map((cost) => cost.itemFamily));
-      onCostsChange([...normalizedCosts, ...validCosts]);
+      const mergeResult = applyImportMode({
+        existingItems: normalizedCosts,
+        importedItems: validCosts,
+        mode: importMode,
+        getMatchKey: (existing, incoming) =>
+          (cleanText(existing.id) && cleanText(existing.id) === cleanText(incoming.id)) ||
+          (cleanText(existing.internalId) &&
+            cleanText(existing.internalId) === cleanText(incoming.internalId)) ||
+          (cleanText(existing.itemName) === cleanText(incoming.itemName) &&
+            cleanText(existing.unit) === cleanText(incoming.unit)) ||
+          (cleanText(existing.coreName) === cleanText(incoming.coreName) &&
+            cleanText(existing.itemName) === cleanText(incoming.itemName)),
+        shouldConfirmOverride: () =>
+          typeof window === "undefined" ||
+          window.confirm("Override all existing Cost Library items with the imported CSV?"),
+      });
 
-      const skippedCount = importedCosts.length - validCosts.length;
+      if (!mergeResult) {
+        return;
+      }
+
+      onCostsChange(mergeResult.items);
+
+      const skippedCount = importedCosts.length - validCosts.length + mergeResult.summary.skipped;
       setCsvStatus(
-        `${validCosts.length} cost items imported${
-          skippedCount
-            ? `. ${skippedCount} invalid row${skippedCount === 1 ? "" : "s"} skipped.`
-            : "."
-        }`
+        `${mergeResult.summary.added} added, ${mergeResult.summary.replaced} replaced, ${skippedCount} skipped.`
       );
     } catch (error) {
       setCsvStatus("Unable to import CSV. Please choose a valid CSV file.");
@@ -734,6 +752,13 @@ function CostLibraryPage({
                 >
                   Import CSV
                 </button>
+                <FormField label="Import mode">
+                  <select value={importMode} onChange={(event) => setImportMode(event.target.value)}>
+                    <option value="append">Append</option>
+                    <option value="override">Override All</option>
+                    <option value="replace">Replace Duplicates</option>
+                  </select>
+                </FormField>
               </div>
 
               <input

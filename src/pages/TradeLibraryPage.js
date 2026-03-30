@@ -1,16 +1,22 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import DataTable from "../components/DataTable";
 import FormField from "../components/FormField";
 import SectionCard from "../components/SectionCard";
+import { applyImportMode, convertTradesToCSV, parseTradeCsv } from "../utils/csvUtils";
 
 const defaultForm = {
   name: "",
+  description: "",
+  status: "Active",
   sortOrder: "1",
   isActive: true,
 };
 
 function TradeLibraryPage({ trades, onTradesChange }) {
+  const importFileInputRef = useRef(null);
   const [form, setForm] = useState(defaultForm);
+  const [csvStatus, setCsvStatus] = useState("");
+  const [importMode, setImportMode] = useState("append");
 
   const updateField = (key, value) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -27,6 +33,8 @@ function TradeLibraryPage({ trades, onTradesChange }) {
       {
         id: `trade-${Date.now()}`,
         name: form.name,
+        description: form.description,
+        status: form.status,
         sortOrder: Number(form.sortOrder),
         isActive: Boolean(form.isActive),
       },
@@ -55,6 +63,52 @@ function TradeLibraryPage({ trades, onTradesChange }) {
     onTradesChange(trades.filter((trade) => trade.id !== tradeId));
   };
 
+  const exportTradesAsCsv = () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const csvText = convertTradesToCSV(trades);
+    const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "trade-library.csv";
+    link.click();
+    window.URL.revokeObjectURL(url);
+    setCsvStatus(`Exported ${trades.length} trades.`);
+  };
+
+  const importTradesFromCsv = async (file) => {
+    if (!file) {
+      return;
+    }
+    try {
+      const { rows, skippedRows } = parseTradeCsv(await file.text());
+      const mergeResult = applyImportMode({
+        existingItems: trades,
+        importedItems: rows,
+        mode: importMode,
+        getMatchKey: (existing, incoming) =>
+          String(existing.name || "").trim().toLowerCase() ===
+          String(incoming.name || "").trim().toLowerCase(),
+        shouldConfirmOverride: () =>
+          typeof window === "undefined" ||
+          window.confirm("Override all existing Trade Library items with the imported CSV?"),
+      });
+      if (!mergeResult) {
+        return;
+      }
+      onTradesChange(mergeResult.items);
+      setCsvStatus(
+        `${mergeResult.summary.added} added, ${mergeResult.summary.replaced} replaced, ${
+          skippedRows + mergeResult.summary.skipped
+        } skipped.`
+      );
+    } catch (error) {
+      setCsvStatus("Import failed. Check the CSV format and try again.");
+    }
+  };
+
   const sortedTrades = [...trades].sort(
     (left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name)
   );
@@ -66,6 +120,40 @@ function TradeLibraryPage({ trades, onTradesChange }) {
     >
       <div className="page-grid library-page">
         <form className="library-form-card" onSubmit={addTrade}>
+          <div className="library-form-actions library-form-actions-top">
+            <button type="button" className="secondary-button" onClick={exportTradesAsCsv}>
+              Export CSV
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => importFileInputRef.current?.click()}
+            >
+              Import CSV
+            </button>
+            <input
+              ref={importFileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              hidden
+              aria-label="Import Trade CSV"
+              onChange={(event) => {
+                const [file] = event.target.files || [];
+                importTradesFromCsv(file);
+                event.target.value = "";
+              }}
+            />
+          </div>
+          <div className="library-form-grid">
+            <FormField label="Import mode">
+              <select value={importMode} onChange={(event) => setImportMode(event.target.value)}>
+                <option value="append">Append</option>
+                <option value="override">Override All</option>
+                <option value="replace">Replace Duplicates</option>
+              </select>
+            </FormField>
+          </div>
+          {csvStatus ? <p className="assembly-library-status">{csvStatus}</p> : null}
           <div className="library-form-grid">
             <div className="library-form-span-2">
               <FormField label="Trade name">
@@ -76,6 +164,24 @@ function TradeLibraryPage({ trades, onTradesChange }) {
                 />
               </FormField>
             </div>
+
+            <div className="library-form-span-2">
+              <FormField label="Description">
+                <input
+                  value={form.description}
+                  onChange={(event) => updateField("description", event.target.value)}
+                  placeholder="Optional"
+                />
+              </FormField>
+            </div>
+
+            <FormField label="Status">
+              <input
+                value={form.status}
+                onChange={(event) => updateField("status", event.target.value)}
+                placeholder="Active"
+              />
+            </FormField>
 
             <FormField label="Sort order">
               <input
@@ -116,6 +222,28 @@ function TradeLibraryPage({ trades, onTradesChange }) {
                   <input
                     value={row.name}
                     onChange={(event) => updateTrade(row.id, "name", event.target.value)}
+                  />
+                ),
+              },
+              {
+                key: "description",
+                header: "Description",
+                className: "table-col-wide",
+                render: (row) => (
+                  <input
+                    value={row.description || ""}
+                    onChange={(event) => updateTrade(row.id, "description", event.target.value)}
+                  />
+                ),
+              },
+              {
+                key: "status",
+                header: "Status",
+                className: "table-col-medium",
+                render: (row) => (
+                  <input
+                    value={row.status || ""}
+                    onChange={(event) => updateTrade(row.id, "status", event.target.value)}
                   />
                 ),
               },

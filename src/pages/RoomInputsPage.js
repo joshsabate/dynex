@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import DataTable from "../components/DataTable";
 import FormField from "../components/FormField";
 import SectionCard from "../components/SectionCard";
+import {
+  applyImportMode,
+  convertRoomTemplatesToCSV,
+  parseRoomTemplatesCsv,
+} from "../utils/csvUtils";
 import { getAssemblyGroups } from "../utils/assemblyGroups";
 import { generateEstimateRows } from "../utils/estimateRows";
 import {
@@ -67,6 +72,7 @@ function RoomInputsPage({
   units = [],
   costCodes = [],
 }) {
+  const importFileInputRef = useRef(null);
   const activeRoomTypes = useMemo(() => sortActiveItems(roomTypes), [roomTypes]);
   const activeStages = useMemo(() => sortActiveItems(stages), [stages]);
   const activeTrades = useMemo(() => sortActiveItems(trades), [trades]);
@@ -91,6 +97,8 @@ function RoomInputsPage({
   const [manualCostSelection, setManualCostSelection] = useState("");
   const [labourCostSearchTerm, setLabourCostSearchTerm] = useState("");
   const [labourCostSelection, setLabourCostSelection] = useState("");
+  const [csvStatus, setCsvStatus] = useState("");
+  const [importMode, setImportMode] = useState("append");
 
   useEffect(() => {
     if (!normalizedTemplates.length) {
@@ -216,6 +224,94 @@ function RoomInputsPage({
 
   const deleteTemplate = (templateId) => {
     commitTemplates(normalizedTemplates.filter((template) => template.id !== templateId));
+  };
+
+  const exportTemplatesAsCsv = () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const csvText = convertRoomTemplatesToCSV(normalizedTemplates, assemblies, roomTypes);
+    const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "room-template-library.csv";
+    link.click();
+    window.URL.revokeObjectURL(url);
+    setCsvStatus(`Exported ${normalizedTemplates.length} room templates.`);
+  };
+
+  const importTemplatesFromCsv = async (file) => {
+    if (!file) {
+      return;
+    }
+    try {
+      const { rows, skippedRows } = parseRoomTemplatesCsv(await file.text());
+      const importedTemplates = rows.map((row, index) => {
+        const matchedRoomType =
+          roomTypes.find(
+            (roomType) =>
+              roomType.id === row.roomType ||
+              roomType.name.toLowerCase() === row.roomType.toLowerCase()
+          ) || null;
+
+        const matchedAssemblyIds = row.assemblyNames
+          .map(
+            (assemblyName) =>
+              assemblies.find(
+                (assembly) =>
+                  assembly.id === assemblyName ||
+                  assembly.assemblyName.toLowerCase() === assemblyName.toLowerCase()
+              )?.id || ""
+          )
+          .filter(Boolean);
+
+        return normalizeRoomTemplate(
+          {
+            id: row.id || `room-template-import-${Date.now()}-${index}`,
+            name: row.name,
+            roomTypeId: matchedRoomType?.id || "",
+            roomType: matchedRoomType?.name || row.roomType,
+            include: row.include,
+            assemblyIds: matchedAssemblyIds,
+            notes: row.notes,
+            manualItems: [],
+            labourItems: [],
+          },
+          roomTypes,
+          parameters
+        );
+      });
+
+      const mergeResult = applyImportMode({
+        existingItems: normalizedTemplates,
+        importedItems: importedTemplates,
+        mode: importMode,
+        getMatchKey: (existing, incoming) =>
+          (String(existing.id || "").trim() &&
+            String(existing.id || "").trim() === String(incoming.id || "").trim()) ||
+          (String(existing.roomType || "").trim().toLowerCase() ===
+            String(incoming.roomType || "").trim().toLowerCase() &&
+            String(existing.name || "").trim().toLowerCase() ===
+              String(incoming.name || "").trim().toLowerCase()),
+        shouldConfirmOverride: () =>
+          typeof window === "undefined" ||
+          window.confirm("Override all existing Room Templates with the imported CSV?"),
+      });
+
+      if (!mergeResult) {
+        return;
+      }
+
+      commitTemplates(mergeResult.items);
+      setCsvStatus(
+        `${mergeResult.summary.added} added, ${mergeResult.summary.replaced} replaced, ${
+          skippedRows + mergeResult.summary.skipped
+        } skipped.`
+      );
+    } catch (error) {
+      setCsvStatus("Import failed. Check the CSV format and try again.");
+    }
   };
 
   const updateRoomType = (roomTypeId) => {
@@ -615,15 +711,49 @@ function RoomInputsPage({
       description="Define complete reusable room templates in one place, including parameters, linked assemblies, manual items, labour, and a generated preview."
     >
       <div className="page-grid room-template-page">
-        <div className="room-template-list-panel">
-          <div className="room-template-list-header">
-            <h3>Room Templates</h3>
-            <button type="button" className="primary-button" onClick={addTemplate}>
-              Add Room Template
-            </button>
-          </div>
+          <div className="room-template-list-panel">
+            <div className="room-template-list-header">
+              <h3>Room Templates</h3>
+              <div className="action-row">
+                <button type="button" className="secondary-button" onClick={exportTemplatesAsCsv}>
+                  Export CSV
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => importFileInputRef.current?.click()}
+                >
+                  Import CSV
+                </button>
+                <button type="button" className="primary-button" onClick={addTemplate}>
+                  Add Room Template
+                </button>
+              </div>
+            </div>
+            <div className="room-template-import-row">
+              <FormField label="Import mode">
+                <select value={importMode} onChange={(event) => setImportMode(event.target.value)}>
+                  <option value="append">Append</option>
+                  <option value="override">Override All</option>
+                  <option value="replace">Replace Duplicates</option>
+                </select>
+              </FormField>
+              <input
+                ref={importFileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                hidden
+                aria-label="Import Room Template CSV"
+                onChange={(event) => {
+                  const [file] = event.target.files || [];
+                  importTemplatesFromCsv(file);
+                  event.target.value = "";
+                }}
+              />
+            </div>
+            {csvStatus ? <p className="assembly-library-status">{csvStatus}</p> : null}
 
-          {normalizedTemplates.length ? (
+            {normalizedTemplates.length ? (
             <div className="room-template-card-list">
               {normalizedTemplates.map((template) => {
                 const isSelected = template.id === selectedTemplateId;

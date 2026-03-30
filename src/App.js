@@ -47,6 +47,7 @@ const projectFileFormat = "estimator-app-project-file";
 const projectFileVersion = 1;
 const defaultProjectName = "Untitled Project";
 const defaultEstimateName = "Untitled Estimate";
+const showSidebarBrand = false;
 
 const pages = [
   { id: "estimate-builder", label: "Estimate Builder", icon: "◫", group: "Workflow" },
@@ -66,6 +67,53 @@ const pages = [
   { id: "rooms", label: "Room Library", icon: "▤", group: "Room Setup" },
   { id: "assemblies", label: "Assembly Library", icon: "▦", group: "Room Setup" },
 ];
+
+function getSidebarGroupClassName(groupName) {
+  switch (groupName) {
+    case "Workflow":
+      return "nav-group-workflow";
+    case "Core Libraries":
+      return "nav-group-core-libraries";
+    case "Room Setup":
+      return "nav-group-room-setup";
+    default:
+      return "";
+  }
+}
+
+function getSidebarButtonPriorityClassName(pageId) {
+  if (
+    [
+      "estimate-builder",
+      "estimate",
+      "costs",
+      "parameters",
+      "room-types",
+      "rooms",
+      "assemblies",
+    ].includes(pageId)
+  ) {
+    return "nav-button-primary";
+  }
+
+  if (
+    [
+      "summary",
+      "labour-summary",
+      "missing-rates",
+      "cost-codes",
+      "item-families",
+    ].includes(pageId)
+  ) {
+    return "nav-button-secondary";
+  }
+
+  if (["stages", "trades", "elements", "units"].includes(pageId)) {
+    return "nav-button-tertiary";
+  }
+
+  return "";
+}
 
 function getDefaultGlobalLibraries() {
   return {
@@ -1100,22 +1148,30 @@ function App() {
     <div className={activePage === "home" ? "home-background" : ""}>
       <div className="app-shell">
         <aside className="sidebar">
-        <div className="sidebar-brand">
-          <button
-            type="button"
-            className="sidebar-brand-button"
-            onClick={() => setActivePage("home")}
-          >
-            <span className="sidebar-brand-mark">Dynex</span>
-            <span className="sidebar-brand-tagline">
-              dynamic estimating system
-            </span>
-          </button>
-        </div>
+        {showSidebarBrand ? (
+          <div className="sidebar-brand">
+            <button
+              type="button"
+              className="sidebar-brand-button"
+              onClick={() => setActivePage("home")}
+            >
+              <span className="sidebar-brand-mark">Dynex</span>
+              <span className="sidebar-brand-tagline">
+                dynamic estimating system
+              </span>
+            </button>
+          </div>
+        ) : null}
 
         <button
           type="button"
-          className={["nav-button", activePage === "project-details" ? "active" : ""].filter(Boolean).join(" ")}
+          className={[
+            "nav-button",
+            "nav-button-secondary",
+            activePage === "project-details" ? "active" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
           onClick={() => setActivePage("project-details")}
         >
           <span className="nav-button-icon" aria-hidden="true">
@@ -1126,7 +1182,12 @@ function App() {
 
         <nav className="nav-list" aria-label="App sections">
           {Object.entries(pageGroups).map(([groupName, groupPages]) => (
-            <div key={groupName} className="nav-group">
+            <div
+              key={groupName}
+              className={["nav-group", getSidebarGroupClassName(groupName)]
+                .filter(Boolean)
+                .join(" ")}
+            >
               <p className="nav-group-label">{groupName}</p>
               <div className="nav-group-items">
                 {groupPages.map((page) => (
@@ -1136,7 +1197,7 @@ function App() {
                     className={
                       [
                         "nav-button",
-                        page.id === "estimate-builder" ? "nav-button-priority" : "",
+                        getSidebarButtonPriorityClassName(page.id),
                         page.id === activePage ? "active" : "",
                       ]
                         .filter(Boolean)
@@ -1274,7 +1335,10 @@ function App() {
             itemFamilies={itemFamilies}
             units={units}
             costs={costs}
+            parameters={parameters}
             onAssembliesChange={setAssemblies}
+            onCostsChange={setCosts}
+            onItemFamiliesChange={setItemFamilies}
           />
         )}
 

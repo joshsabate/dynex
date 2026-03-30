@@ -103,47 +103,58 @@ function getResolvedCostCode(costCodes = [], costCodeId, costCodeName) {
 
 function normalizeAssemblyItem(item = {}, itemIndex, assembly = {}, options = {}) {
   const { units = [], costs = [], trades = [], costCodes = [] } = resolveAssemblyOptions(options);
+  const libraryItemId = cleanText(item.libraryItemId || item.costItemId);
   const unitId = item.unitId || "";
   const unit = String(item.unit || getUnitAbbreviation(units, unitId, "", "") || "").trim();
   const legacyClassification = mapLegacyWorkType(item.workType, unitId, unit, units);
   const matchedCost =
-    costs.find((cost) => cost.id === item.libraryItemId || cost.id === item.costItemId) ||
+    costs.find((cost) => cost.id === libraryItemId) ||
     findMatchingCost(costs, item.itemNameSnapshot || item.itemName, unitId, unit);
+  const isCustomItem =
+    typeof item.isCustomItem === "boolean" ? item.isCustomItem : !libraryItemId;
+  const linkedSource = !isCustomItem ? matchedCost : null;
   const resolvedTrade = getResolvedTrade(
     trades,
-    item.tradeId || matchedCost?.tradeId,
-    item.trade || matchedCost?.trade
+    item.tradeId || linkedSource?.tradeId || matchedCost?.tradeId,
+    item.trade || linkedSource?.trade || matchedCost?.trade
   );
   const resolvedCostCode = getResolvedCostCode(
     costCodes,
-    item.costCodeId || matchedCost?.costCodeId,
-    item.costCode || matchedCost?.costCode
+    item.costCodeId || linkedSource?.costCodeId || matchedCost?.costCodeId,
+    item.costCode || linkedSource?.costCode || matchedCost?.costCode
   );
   const costType =
+    cleanText(linkedSource?.costType) ||
     cleanText(item.costType) ||
     cleanText(item.itemType) ||
     cleanText(matchedCost?.costType) ||
     legacyClassification.costType;
   const deliveryType =
+    cleanText(linkedSource?.deliveryType) ||
     cleanText(item.deliveryType) ||
     cleanText(matchedCost?.deliveryType) ||
     legacyClassification.deliveryType;
-  const itemNameSnapshot = cleanText(item.itemNameSnapshot || item.itemName || matchedCost?.itemName);
-  const normalizedUnitId = unitId || matchedCost?.unitId || "";
-  const normalizedUnit = cleanText(
-    item.unit || matchedCost?.unit || getUnitAbbreviation(units, normalizedUnitId, "", "")
+  const itemNameSnapshot = cleanText(
+    linkedSource?.itemName || item.itemNameSnapshot || item.itemName || matchedCost?.itemName
   );
-  const baseRate = toNumberOrValue(item.baseRate ?? item.unitCost ?? matchedCost?.rate ?? "");
+  const normalizedUnitId = linkedSource?.unitId || unitId || matchedCost?.unitId || "";
+  const normalizedUnit = cleanText(
+    linkedSource?.unit ||
+      item.unit ||
+      matchedCost?.unit ||
+      getUnitAbbreviation(units, normalizedUnitId, "", "")
+  );
+  const baseRate = toNumberOrValue(
+    linkedSource?.rate ?? item.baseRate ?? item.unitCost ?? matchedCost?.rate ?? ""
+  );
   const rateOverride = toNumberOrValue(item.rateOverride);
-  const libraryItemId = cleanText(item.libraryItemId || item.costItemId || matchedCost?.id);
-  const isCustomItem =
-    typeof item.isCustomItem === "boolean" ? item.isCustomItem : !libraryItemId;
+  const resolvedLibraryItemId = cleanText(libraryItemId || matchedCost?.id);
 
   return {
     ...item,
     id: item.id || `${createAssemblyId(assembly)}-item-${itemIndex + 1}`,
-    libraryItemId,
-    costItemId: libraryItemId,
+    libraryItemId: resolvedLibraryItemId,
+    costItemId: resolvedLibraryItemId,
     itemNameSnapshot,
     itemName: itemNameSnapshot,
     costType,
@@ -153,9 +164,11 @@ function normalizeAssemblyItem(item = {}, itemIndex, assembly = {}, options = {}
     quantityFormula: String(item.quantityFormula || item.qtyRule || "").trim(),
     qtyRule: String(item.quantityFormula || item.qtyRule || "").trim(),
     tradeId: resolvedTrade?.id || cleanText(item.tradeId),
-    trade: resolvedTrade?.name || cleanText(item.trade),
+    trade: resolvedTrade?.name || cleanText(item.trade || linkedSource?.trade || matchedCost?.trade),
     costCodeId: resolvedCostCode?.id || cleanText(item.costCodeId),
-    costCode: resolvedCostCode?.name || cleanText(item.costCode),
+    costCode:
+      resolvedCostCode?.name ||
+      cleanText(item.costCode || linkedSource?.costCode || matchedCost?.costCode),
     unitId: normalizedUnitId,
     unit: normalizedUnit,
     baseRate,

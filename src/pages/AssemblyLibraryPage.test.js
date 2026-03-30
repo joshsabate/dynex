@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import AssemblyLibraryPage from "./AssemblyLibraryPage";
 import { convertAssembliesToCSV } from "../utils/csvUtils";
@@ -18,6 +18,9 @@ const costCodes = [
   { id: "cost-code-finishes", name: "Finishes", sortOrder: 1, isActive: true },
   { id: "cost-code-wall", name: "S10", sortOrder: 2, isActive: true },
 ];
+const itemFamilies = [
+  { id: "item-family-lining", name: "Linings", sortOrder: 1, isActive: true },
+];
 const costs = [
   {
     id: "cost-1",
@@ -35,6 +38,10 @@ const costs = [
     status: "Active",
     isActive: true,
   },
+];
+const parameters = [
+  { id: "parameter-floor-area", key: "floorArea", label: "Floor Area", inputType: "number", unit: "m2" },
+  { id: "parameter-wall-area", key: "wallArea", label: "Wall Area", inputType: "number", unit: "m2" },
 ];
 const assemblies = [
   {
@@ -71,6 +78,8 @@ const assemblies = [
 
 function renderPage(overrides = {}) {
   const onAssembliesChange = jest.fn();
+  const onCostsChange = jest.fn();
+  const onItemFamiliesChange = jest.fn();
   render(
     <AssemblyLibraryPage
       assemblies={overrides.assemblies || assemblies}
@@ -78,11 +87,15 @@ function renderPage(overrides = {}) {
       units={units}
       trades={trades}
       costCodes={costCodes}
-      costs={costs}
+      itemFamilies={overrides.itemFamilies || itemFamilies}
+      costs={overrides.costs || costs}
+      parameters={overrides.parameters || parameters}
       onAssembliesChange={onAssembliesChange}
+      onCostsChange={onCostsChange}
+      onItemFamiliesChange={onItemFamiliesChange}
     />
   );
-  return { onAssembliesChange };
+  return { onAssembliesChange, onCostsChange, onItemFamiliesChange };
 }
 
 test("builds dynex assembly csv rows with classification fields", () => {
@@ -100,8 +113,10 @@ test("requires linked or custom assembly items to include the new classification
   renderPage({ assemblies: [] });
 
   await userEvent.click(screen.getByRole("button", { name: /add assembly/i }));
+  await userEvent.click(screen.getByRole("button", { name: /manage assembly items/i }));
   await userEvent.click(screen.getByRole("button", { name: /add custom item/i }));
-  await userEvent.type(screen.getByLabelText(/assembly name/i), "Wall  Villaboard Lining");
+  await userEvent.type(screen.getByLabelText(/element/i), "Wall");
+  await userEvent.type(screen.getByLabelText(/scope/i), "Villaboard Lining");
   await userEvent.selectOptions(screen.getByLabelText(/assembly group/i), "Walls & Linings");
   await userEvent.click(screen.getByRole("button", { name: /save assembly/i }));
 
@@ -145,4 +160,328 @@ test("imports dynex assembly csv rows and relinks cost library items where possi
     deliveryType: "Install",
     isCustomItem: true,
   });
+});
+
+test("builds assembly names from structured identity fields and keeps notes collapsed by default", async () => {
+  renderPage({ assemblies: [] });
+
+  await userEvent.click(screen.getByRole("button", { name: /add assembly/i }));
+
+  expect(
+    screen.getByText(/Generated automatically as:\s*Element\s*Scope\s*Optional Spec/i)
+  ).toBeInTheDocument();
+  await userEvent.type(screen.getByLabelText(/element/i), "Wall");
+  await userEvent.type(screen.getByLabelText(/scope/i), "Villaboard Lining");
+  expect(screen.getByLabelText(/assembly name/i)).toHaveValue("Wall  Villaboard Lining");
+  expect(screen.queryByLabelText(/assembly notes/i)).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: /add notes/i }));
+
+  expect(screen.getByLabelText(/assembly notes/i)).toBeInTheDocument();
+});
+
+test("supports add rename and delete in manage groups", async () => {
+  const { onAssembliesChange } = renderPage({ assemblies });
+
+  await userEvent.click(screen.getByRole("button", { name: /add assembly/i }));
+  await userEvent.click(screen.getByRole("button", { name: /manage groups/i }));
+
+  await userEvent.type(screen.getByLabelText(/add group/i), "Ceilings");
+  await userEvent.click(screen.getByRole("button", { name: /add group/i }));
+  const ceilingsRow = screen
+    .getByText("Ceilings", { selector: "strong" })
+    .closest(".assembly-library-group-row");
+  await userEvent.click(within(ceilingsRow).getByRole("button", { name: /^rename$/i }));
+  const editInput = within(ceilingsRow).getByDisplayValue("Ceilings");
+  await userEvent.clear(editInput);
+  await userEvent.type(editInput, "Feature Ceilings");
+  await userEvent.click(within(ceilingsRow).getByRole("button", { name: /^save$/i }));
+  expect(screen.getByText("Feature Ceilings", { selector: "strong" })).toBeInTheDocument();
+
+  const featureCeilingsRow = screen
+    .getByText("Feature Ceilings", { selector: "strong" })
+    .closest(".assembly-library-group-row");
+  await userEvent.click(within(featureCeilingsRow).getByRole("button", { name: /^delete$/i }));
+  expect(screen.queryByText("Feature Ceilings")).not.toBeInTheDocument();
+
+  const wallsRow = screen
+    .getByText("Walls & Linings", { selector: "strong" })
+    .closest(".assembly-library-group-row");
+  await userEvent.click(within(wallsRow).getByRole("button", { name: /^rename$/i }));
+  const usedEditInput = within(wallsRow).getByDisplayValue("Walls & Linings");
+  await userEvent.clear(usedEditInput);
+  await userEvent.type(usedEditInput, "Wall Systems");
+  await userEvent.click(within(wallsRow).getByRole("button", { name: /^save$/i }));
+
+  expect(screen.getByText("Wall Systems", { selector: "strong" })).toBeInTheDocument();
+  expect(screen.getByText(/in use by existing assemblies/i)).toBeInTheDocument();
+  expect(onAssembliesChange).toHaveBeenCalled();
+});
+
+test("shows the selected assembly group value after selection", async () => {
+  renderPage({ assemblies: [] });
+
+  await userEvent.click(screen.getByRole("button", { name: /add assembly/i }));
+  await userEvent.selectOptions(screen.getByLabelText(/assembly group/i), "Walls & Linings");
+
+  expect(screen.getByText(/selected: walls & linings/i)).toBeInTheDocument();
+});
+
+test("supports selecting multiple linked cost items and adding them together", async () => {
+  const multiCosts = [
+    ...costs,
+    {
+      id: "cost-2",
+      itemName: "Waterproof Membrane",
+      displayName: "Waterproof Membrane",
+      costType: "MTL",
+      deliveryType: "Supply",
+      tradeId: "trade-general",
+      trade: "General",
+      costCodeId: "cost-code-wall",
+      costCode: "S10",
+      unitId: "unit-sqm",
+      unit: "SQM",
+      rate: 39,
+      status: "Active",
+      isActive: true,
+    },
+  ];
+
+  renderPage({ assemblies: [], costs: multiCosts });
+
+  await userEvent.click(screen.getByRole("button", { name: /add assembly/i }));
+  await userEvent.click(screen.getByRole("button", { name: /manage assembly items/i }));
+  await userEvent.click(screen.getByRole("button", { name: /add from cost library/i }));
+  await userEvent.click(screen.getByLabelText(/select villaboard sheets/i));
+  await userEvent.click(screen.getByLabelText(/select waterproof membrane/i));
+  await userEvent.click(screen.getByRole("button", { name: /add selected \(2\)/i }));
+
+  expect(screen.getByText("Villaboard Sheets")).toBeInTheDocument();
+  expect(screen.getByText("Waterproof Membrane")).toBeInTheDocument();
+});
+
+test("inherits all linked cost library fields and shows unassigned labels for missing linked values", async () => {
+  const linkedCosts = [
+    {
+      id: "cost-linked-full",
+      itemName: "Tile Adhesive",
+      displayName: "Tile Adhesive",
+      costType: "MTL",
+      deliveryType: "Supply",
+      tradeId: "trade-general",
+      trade: "General",
+      costCodeId: "cost-code-wall",
+      costCode: "S10",
+      unitId: "unit-sqm",
+      unit: "SQM",
+      rate: 19,
+      status: "Active",
+      isActive: true,
+    },
+    {
+      id: "cost-linked-unassigned",
+      itemName: "Primer",
+      displayName: "Primer",
+      costType: "MTL",
+      deliveryType: "Supply",
+      tradeId: "",
+      trade: "",
+      costCodeId: "",
+      costCode: "",
+      unitId: "unit-sqm",
+      unit: "SQM",
+      rate: 7,
+      status: "Active",
+      isActive: true,
+    },
+  ];
+
+  renderPage({ assemblies: [], costs: linkedCosts });
+
+  await userEvent.click(screen.getByRole("button", { name: /add assembly/i }));
+  await userEvent.click(screen.getByRole("button", { name: /manage assembly items/i }));
+  await userEvent.click(screen.getByRole("button", { name: /add from cost library/i }));
+  await userEvent.click(screen.getByLabelText(/select tile adhesive/i));
+  await userEvent.click(screen.getByRole("button", { name: /add selected \(1\)/i }));
+
+  expect(screen.getByLabelText(/item name/i)).toHaveValue("Tile Adhesive");
+  expect(screen.getByLabelText(/^cost type$/i)).toHaveValue("MTL");
+  expect(screen.getByLabelText(/delivery type/i)).toHaveValue("Supply");
+  expect(screen.getByLabelText(/^trade$/i)).toHaveValue("General");
+  expect(screen.getByLabelText(/cost code/i)).toHaveValue("S10");
+  expect(screen.getByLabelText(/^unit$/i)).toHaveValue("SQM");
+  expect(screen.getByLabelText(/base rate/i)).toHaveValue(19);
+  expect(screen.getByLabelText(/link id/i)).toHaveValue("cost-linked-full");
+
+  await userEvent.click(screen.getByRole("button", { name: /add from cost library/i }));
+  await userEvent.click(screen.getByLabelText(/select primer/i));
+  await userEvent.click(screen.getByRole("button", { name: /add selected \(1\)/i }));
+
+  expect(screen.getByLabelText(/^trade$/i)).toHaveValue("Unassigned");
+  expect(screen.getByLabelText(/cost code/i)).toHaveValue("Unassigned");
+});
+
+test("keeps override rate editable as a normal blank-allowed numeric input", async () => {
+  renderPage({ assemblies });
+
+  await userEvent.click(screen.getByText(/wall\s+villaboard lining/i));
+  await userEvent.click(screen.getByRole("button", { name: /manage assembly items/i }));
+
+  const editablePanel = screen
+    .getByRole("heading", { name: /assembly use fields/i })
+    .closest(".assembly-library-item-detail-editable");
+  const overrideRateInput = within(editablePanel).getByLabelText(/^override rate$/i);
+  expect(overrideRateInput).toHaveValue(null);
+
+  await userEvent.type(overrideRateInput, "45.5");
+  expect(overrideRateInput).toHaveValue(45.5);
+
+  await userEvent.clear(overrideRateInput);
+  expect(overrideRateInput).toHaveValue(null);
+});
+
+test("builds quantity formulas from guided parameters and stores the formula string", async () => {
+  renderPage({ assemblies });
+
+  await userEvent.click(screen.getByText(/wall\s+villaboard lining/i));
+  await userEvent.click(screen.getByRole("button", { name: /manage assembly items/i }));
+  await userEvent.click(screen.getByRole("button", { name: /use guided builder/i }));
+
+  await userEvent.selectOptions(screen.getByLabelText(/base parameter/i), "floorArea");
+  await userEvent.clear(screen.getByLabelText(/factor/i));
+  await userEvent.type(screen.getByLabelText(/factor/i), "1.1");
+
+  expect(screen.getByText(/floorArea \* 1.1/i)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: /use advanced formula/i }));
+
+  expect(screen.getByDisplayValue("floorArea * 1.1")).toBeInTheDocument();
+});
+
+test("opens manage assembly items directly from the assembly row icon", async () => {
+  renderPage({ assemblies });
+
+  await userEvent.click(screen.getByRole("button", { name: /manage items for wall\s+villaboard lining/i }));
+
+  expect(screen.getByRole("heading", { name: /manage assembly items/i })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /assembly use fields/i })).toBeInTheDocument();
+});
+
+test("supports bulk edit across selected assembly items and keeps the selection", async () => {
+  const bulkAssemblies = [
+    {
+      ...assemblies[0],
+      items: [
+        {
+          id: "assembly-1-item-1",
+          libraryItemId: "",
+          itemNameSnapshot: "Villaboard Sheets",
+          itemName: "Villaboard Sheets",
+          costType: "MTL",
+          deliveryType: "Supply",
+          tradeId: "trade-general",
+          trade: "General",
+          costCodeId: "cost-code-wall",
+          costCode: "S10",
+          quantityFormula: "villaboardArea",
+          unitId: "unit-sqm",
+          unit: "SQM",
+          baseRate: 22,
+          rateOverride: "",
+          isCustomItem: true,
+        },
+        {
+          id: "assembly-1-item-2",
+          libraryItemId: "",
+          itemNameSnapshot: "Joint Compound",
+          itemName: "Joint Compound",
+          costType: "LBR",
+          deliveryType: "Install",
+          tradeId: "trade-tile",
+          trade: "Tile",
+          costCodeId: "cost-code-finishes",
+          costCode: "Finishes",
+          quantityFormula: "jointArea",
+          unitId: "unit-hr",
+          unit: "HR",
+          baseRate: 18,
+          rateOverride: "",
+          isCustomItem: true,
+        },
+      ],
+    },
+  ];
+
+  renderPage({ assemblies: bulkAssemblies });
+
+  await userEvent.click(screen.getByText(/wall\s+villaboard lining/i));
+  await userEvent.click(screen.getByRole("button", { name: /manage assembly items/i }));
+  await userEvent.click(screen.getByLabelText(/select all assembly items/i));
+
+  expect(screen.getByText(/2 selected/i)).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: /bulk edit/i }));
+  const bulkEditor = screen
+    .getByRole("heading", { name: /selected items/i })
+    .closest(".assembly-library-items-bulk-editor");
+  await userEvent.selectOptions(within(bulkEditor).getByLabelText(/^trade$/i), "trade-general");
+
+  const bulkOverrideRateInput = within(bulkEditor).getByLabelText(/^override rate$/i);
+  await userEvent.type(bulkOverrideRateInput, "45");
+  await userEvent.click(within(bulkEditor).getByRole("button", { name: /apply changes/i }));
+
+  expect(screen.getByText(/2 selected/i)).toBeInTheDocument();
+
+  await userEvent.click(screen.getByText("Joint Compound"));
+
+  expect(screen.getByLabelText(/^trade$/i)).toHaveValue("trade-general");
+  expect(screen.getByLabelText(/^override rate$/i)).toHaveValue(45);
+});
+
+test("creates a reusable cost item inside manage assembly items and auto-adds it as linked", async () => {
+  const { onCostsChange } = renderPage({ assemblies: [] });
+
+  await userEvent.click(screen.getByRole("button", { name: /add assembly/i }));
+  await userEvent.click(screen.getByRole("button", { name: /manage assembly items/i }));
+  await userEvent.click(screen.getByRole("button", { name: /create new cost item/i }));
+
+  expect(screen.getByRole("heading", { name: /create cost item/i })).toBeInTheDocument();
+
+  await userEvent.type(screen.getByLabelText(/core name/i), "Waterproof Membrane");
+  await userEvent.selectOptions(screen.getByLabelText(/^cost type$/i), "MTL");
+  await userEvent.selectOptions(screen.getByLabelText(/delivery type/i), "Supply");
+  await userEvent.selectOptions(screen.getByLabelText(/^trade$/i), "trade-general");
+  await userEvent.selectOptions(screen.getByLabelText(/cost code/i), "cost-code-wall");
+  await userEvent.selectOptions(screen.getByLabelText(/^unit$/i), "unit-sqm");
+  await userEvent.type(screen.getByLabelText(/^rate$/i), "39.5");
+  await userEvent.click(
+    screen.getByRole("button", { name: /save to cost library and add to assembly/i })
+  );
+
+  await waitFor(() => expect(onCostsChange).toHaveBeenCalledTimes(1));
+
+  const nextCosts = onCostsChange.mock.calls[0][0];
+  expect(nextCosts).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        itemName: "Waterproof Membrane",
+        costType: "MTL",
+        deliveryType: "Supply",
+        tradeId: "trade-general",
+        costCodeId: "cost-code-wall",
+        unitId: "unit-sqm",
+        rate: 39.5,
+      }),
+    ])
+  );
+
+  expect(screen.getByText(/cost item created and added to assembly/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/item name/i)).toHaveValue("Waterproof Membrane");
+  expect(screen.getByLabelText(/^cost type$/i)).toHaveValue("MTL");
+  expect(screen.getByLabelText(/delivery type/i)).toHaveValue("Supply");
+  expect(screen.getByLabelText(/^trade$/i)).toHaveValue("General");
+  expect(screen.getByLabelText(/cost code/i)).toHaveValue("S10");
+  expect(screen.getByLabelText(/^unit$/i)).toHaveValue("SQM");
+  expect(screen.getByLabelText(/base rate/i)).toHaveValue(39.5);
+  expect(screen.getByLabelText(/link id/i).value).toMatch(/^cost-/);
 });

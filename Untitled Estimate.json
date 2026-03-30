@@ -1,0 +1,1343 @@
+{
+  "format": "estimator-app-project-file",
+  "version": 1,
+  "savedAt": "2026-03-30T14:53:38.735Z",
+  "appState": {
+    "roomTypes": [
+      {
+        "id": "room-type-bathroom",
+        "name": "Bathroom",
+        "sortOrder": 2,
+        "isActive": true
+      },
+      {
+        "id": "room-type-kitchen",
+        "name": "Kitchen",
+        "sortOrder": 3,
+        "isActive": true
+      },
+      {
+        "id": "room-type-living",
+        "name": "Living",
+        "sortOrder": 4,
+        "isActive": true
+      },
+      {
+        "id": "room-type-service",
+        "name": "Service",
+        "sortOrder": 5,
+        "isActive": true
+      },
+      {
+        "id": "room-type-exterior",
+        "name": "Exterior",
+        "sortOrder": 6,
+        "isActive": true
+      }
+    ],
+    "parameters": [
+      {
+        "id": "parameter-length",
+        "key": "length",
+        "label": "Length",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0
+      },
+      {
+        "id": "parameter-width",
+        "key": "width",
+        "label": "Width",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0,
+        "description": "",
+        "category": "",
+        "status": "Active"
+      },
+      {
+        "id": "parameter-height",
+        "key": "height",
+        "label": "Height",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 2.7
+      },
+      {
+        "id": "parameter-tile-height",
+        "key": "tileHeight",
+        "label": "Tile Height",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0
+      },
+      {
+        "id": "parameter-waterproof-wall-height",
+        "key": "waterproofWallHeight",
+        "label": "Waterproof Wall Height",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0
+      },
+      {
+        "id": "parameter-base-cabinet-length",
+        "key": "baseCabinetLength",
+        "label": "Base Cabinet Length",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0
+      },
+      {
+        "id": "parameter-overhead-cabinet-length",
+        "key": "overheadCabinetLength",
+        "label": "Overhead Cabinet Length",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0
+      },
+      {
+        "id": "parameter-benchtop-length",
+        "key": "benchtopLength",
+        "label": "Benchtop Length",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0
+      },
+      {
+        "id": "parameter-splashback-length",
+        "key": "splashbackLength",
+        "label": "Splashback Length",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0
+      },
+      {
+        "id": "parameter-splashback-height",
+        "key": "splashbackHeight",
+        "label": "Splashback Height",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": 0.6
+      },
+      {
+        "id": "parameter-1774871884952",
+        "key": "wallArea",
+        "label": "Wall Area",
+        "inputType": "number",
+        "unit": "sqm",
+        "defaultValue": "",
+        "description": "",
+        "category": "",
+        "status": "Active"
+      },
+      {
+        "id": "parameter-1774871910491",
+        "key": "perimeter",
+        "label": "Perimeter",
+        "inputType": "number",
+        "unit": "m",
+        "defaultValue": "",
+        "description": "",
+        "category": "",
+        "status": "Active"
+      }
+    ],
+    "units": [
+      {
+        "id": "unit-sqm",
+        "name": "Square Metre",
+        "abbreviation": "SQM",
+        "sortOrder": 1,
+        "isActive": true
+      },
+      {
+        "id": "unit-lm",
+        "name": "Lineal Metre",
+        "abbreviation": "LM",
+        "sortOrder": 2,
+        "isActive": true
+      },
+      {
+        "id": "unit-ea",
+        "name": "Each",
+        "abbreviation": "EA",
+        "sortOrder": 3,
+        "isActive": true
+      },
+      {
+        "id": "unit-set",
+        "name": "Set",
+        "abbreviation": "SET",
+        "sortOrder": 4,
+        "isActive": true
+      },
+      {
+        "id": "unit-hr",
+        "name": "Hour",
+        "abbreviation": "HR",
+        "sortOrder": 5,
+        "isActive": true
+      },
+      {
+        "id": "unit-1774112167041",
+        "name": "Lump Sum",
+        "abbreviation": "LS",
+        "sortOrder": 6,
+        "isActive": true
+      },
+      {
+        "id": "unit-1774112175464",
+        "name": "Month",
+        "abbreviation": "MTH",
+        "sortOrder": 7,
+        "isActive": true
+      },
+      {
+        "id": "unit-1774112184305",
+        "name": "Day",
+        "abbreviation": "DAY",
+        "sortOrder": 8,
+        "isActive": true
+      },
+      {
+        "id": "unit-1774112194626",
+        "name": "Cubic Meter",
+        "abbreviation": "M3",
+        "sortOrder": 9,
+        "isActive": true
+      }
+    ],
+    "costCodes": [
+      {
+        "id": "cost-code-prelims",
+        "name": "06 - Preliminary",
+        "sortOrder": 1,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-demo",
+        "name": "07 - Site Establishment",
+        "sortOrder": 2,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-joinery",
+        "name": "08 - Sub Structure",
+        "sortOrder": 3,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-finishes",
+        "name": "09 - Structure",
+        "sortOrder": 4,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-fixtures",
+        "name": "10 - Trusses Fascia & Battens",
+        "sortOrder": 5,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-plumbing",
+        "name": "11 - Windows & External Doors",
+        "sortOrder": 6,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-electrical",
+        "name": "12 - Insulation",
+        "sortOrder": 7,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-labour",
+        "name": "13 - Roofing",
+        "sortOrder": 8,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-1774112075495",
+        "name": "14 - Plumbing",
+        "sortOrder": 9,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-1774112082553",
+        "name": "15 - Electrical",
+        "sortOrder": 10,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-1774112087668",
+        "name": "16 - Cladding & Brickwork",
+        "sortOrder": 11,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-1774112092939",
+        "name": "17 - Lockup & Decks",
+        "sortOrder": 12,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-1774112098385",
+        "name": "18 - HVAC",
+        "sortOrder": 13,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-1774112102848",
+        "name": "19 - Internal Linings",
+        "sortOrder": 14,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-1774112107505",
+        "name": "20 - Joinery",
+        "sortOrder": 15,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-1774112112208",
+        "name": "21 - Fix",
+        "sortOrder": 16,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-1774112116986",
+        "name": "22 - Painter",
+        "sortOrder": 17,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-1774112122400",
+        "name": "23 - Floor and Tile Finishes",
+        "sortOrder": 18,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-1774112127785",
+        "name": "24 - Fittings & Appliances",
+        "sortOrder": 19,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-1774112132931",
+        "name": "25 - Specialty Items",
+        "sortOrder": 20,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-1774112137745",
+        "name": "26 - External Items",
+        "sortOrder": 21,
+        "isActive": true
+      },
+      {
+        "id": "cost-code-1774112142651",
+        "name": "30 - Finishing",
+        "sortOrder": 22,
+        "isActive": true
+      }
+    ],
+    "stages": [
+      {
+        "id": "stage-demolition",
+        "name": "Preliminaries",
+        "sortOrder": 1,
+        "isActive": true,
+        "color": "#80bc6c"
+      },
+      {
+        "id": "stage-structural",
+        "name": "Site Establishment",
+        "sortOrder": 2,
+        "isActive": true,
+        "color": "#b75c9f"
+      },
+      {
+        "id": "stage-rough-in",
+        "name": "Demolition",
+        "sortOrder": 3,
+        "isActive": true,
+        "color": "#e5aa43"
+      },
+      {
+        "id": "stage-waterproofing",
+        "name": "Base",
+        "sortOrder": 4,
+        "isActive": true,
+        "color": "#434bb1"
+      },
+      {
+        "id": "stage-finishes",
+        "name": "Frame",
+        "sortOrder": 5,
+        "isActive": true,
+        "color": "#5b9348"
+      },
+      {
+        "id": "stage-fixtures",
+        "name": "Building Envelope",
+        "sortOrder": 6,
+        "isActive": true,
+        "color": "#710404"
+      },
+      {
+        "id": "stage-services",
+        "name": "Pre-Plaster",
+        "sortOrder": 7,
+        "isActive": true,
+        "color": "#3d46bd"
+      },
+      {
+        "id": "stage-final",
+        "name": "Lock-Up",
+        "sortOrder": 8,
+        "isActive": true,
+        "color": "#ac170c"
+      },
+      {
+        "id": "stage-1774112007319",
+        "name": "First Fix",
+        "sortOrder": 9,
+        "isActive": true,
+        "color": "#cf7293"
+      },
+      {
+        "id": "stage-1774112013208",
+        "name": "Second Fix",
+        "sortOrder": 10,
+        "isActive": true,
+        "color": "#349358"
+      },
+      {
+        "id": "stage-1774112017962",
+        "name": "External Works",
+        "sortOrder": 11,
+        "isActive": true,
+        "color": "#4b4ea0"
+      },
+      {
+        "id": "stage-1774112022747",
+        "name": "Final",
+        "sortOrder": 12,
+        "isActive": true,
+        "color": "#5a2630"
+      }
+    ],
+    "trades": [
+      {
+        "id": "trade-general",
+        "name": "General",
+        "sortOrder": 1,
+        "isActive": true
+      },
+      {
+        "id": "trade-demolition",
+        "name": "Demolition",
+        "sortOrder": 2,
+        "isActive": true
+      },
+      {
+        "id": "trade-carpentry",
+        "name": "Carpentry",
+        "sortOrder": 3,
+        "isActive": true
+      },
+      {
+        "id": "trade-joinery",
+        "name": "Joinery",
+        "sortOrder": 4,
+        "isActive": true
+      },
+      {
+        "id": "trade-stone",
+        "name": "Stone",
+        "sortOrder": 5,
+        "isActive": true
+      },
+      {
+        "id": "trade-tile",
+        "name": "Tiler",
+        "sortOrder": 20,
+        "isActive": true
+      },
+      {
+        "id": "trade-waterproofing",
+        "name": "Waterproofing",
+        "sortOrder": 7,
+        "isActive": true
+      },
+      {
+        "id": "trade-painting",
+        "name": "Painting",
+        "sortOrder": 8,
+        "isActive": true
+      },
+      {
+        "id": "trade-plumbing",
+        "name": "Plumbing",
+        "sortOrder": 9,
+        "isActive": true
+      },
+      {
+        "id": "trade-electrical",
+        "name": "Electrical",
+        "sortOrder": 10,
+        "isActive": true
+      },
+      {
+        "id": "trade-install",
+        "name": "Insulation",
+        "sortOrder": 11,
+        "isActive": true
+      },
+      {
+        "id": "trade-1774112222392",
+        "name": "Supervision",
+        "sortOrder": 12,
+        "isActive": true
+      },
+      {
+        "id": "trade-1774112229569",
+        "name": "Site Assist",
+        "sortOrder": 13,
+        "isActive": true
+      },
+      {
+        "id": "trade-1774112241719",
+        "name": "Flooring",
+        "sortOrder": 14,
+        "isActive": true
+      },
+      {
+        "id": "trade-1774112250907",
+        "name": "HVAC",
+        "sortOrder": 15,
+        "isActive": true
+      },
+      {
+        "id": "trade-1774112258743",
+        "name": "Windows",
+        "sortOrder": 16,
+        "isActive": true
+      },
+      {
+        "id": "trade-1774112264533",
+        "name": "Glazing",
+        "sortOrder": 17,
+        "isActive": true
+      },
+      {
+        "id": "trade-1774112321078",
+        "name": "Roofing",
+        "sortOrder": 18,
+        "isActive": true
+      },
+      {
+        "id": "trade-1774156870319",
+        "name": "Tile Supplier",
+        "sortOrder": 19,
+        "isActive": true
+      },
+      {
+        "id": "trade-1774158139447",
+        "name": "Fittings",
+        "sortOrder": 21,
+        "isActive": true
+      },
+      {
+        "id": "trade-1774878723812",
+        "name": "Plaster",
+        "description": "",
+        "status": "Active",
+        "sortOrder": 22,
+        "isActive": true
+      }
+    ],
+    "itemFamilies": [
+      {
+        "id": "item-family-timber",
+        "name": "Timber",
+        "sortOrder": 1,
+        "isActive": true
+      },
+      {
+        "id": "item-family-plumbing",
+        "name": "Plumbing",
+        "sortOrder": 2,
+        "isActive": true
+      },
+      {
+        "id": "item-family-electrical",
+        "name": "Electrical",
+        "sortOrder": 3,
+        "isActive": true
+      },
+      {
+        "id": "item-family-cladding",
+        "name": "Cladding",
+        "sortOrder": 4,
+        "isActive": true
+      },
+      {
+        "id": "item-family-roofing",
+        "name": "Roofing",
+        "sortOrder": 5,
+        "isActive": true
+      },
+      {
+        "id": "item-family-joinery",
+        "name": "Joinery",
+        "sortOrder": 6,
+        "isActive": true
+      },
+      {
+        "id": "item-family-tiles",
+        "name": "Tiles",
+        "sortOrder": 7,
+        "isActive": true
+      },
+      {
+        "id": "item-family-painting",
+        "name": "Painting",
+        "sortOrder": 8,
+        "isActive": true
+      },
+      {
+        "id": "item-family-hardware",
+        "name": "Hardware",
+        "sortOrder": 9,
+        "isActive": true
+      },
+      {
+        "id": "item-family-1774536120760-0",
+        "name": "Tile",
+        "sortOrder": 10,
+        "isActive": true
+      },
+      {
+        "id": "item-family-1774536120760-6",
+        "name": "Paint",
+        "sortOrder": 16,
+        "isActive": true
+      },
+      {
+        "id": "item-family-1774536120760-7",
+        "name": "Waterproofing",
+        "sortOrder": 17,
+        "isActive": true
+      },
+      {
+        "id": "item-family-1774536120760-10",
+        "name": "Kitchen",
+        "sortOrder": 20,
+        "isActive": true
+      },
+      {
+        "id": "item-family-1774536120760-11",
+        "name": "Kitchen",
+        "sortOrder": 21,
+        "isActive": true
+      },
+      {
+        "id": "item-family-1774536120760-15",
+        "name": "Kitchen",
+        "sortOrder": 25,
+        "isActive": true
+      },
+      {
+        "id": "item-family-1774536120760-16",
+        "name": "Pantry",
+        "sortOrder": 26,
+        "isActive": true
+      },
+      {
+        "id": "item-family-1774536120760-44",
+        "name": "Bathroom",
+        "sortOrder": 54,
+        "isActive": true
+      },
+      {
+        "id": "item-family-1774536120760-49",
+        "name": "Labour",
+        "sortOrder": 59,
+        "isActive": true
+      },
+      {
+        "id": "item-family-1774878656388",
+        "name": "Wall Lining",
+        "sortOrder": 15,
+        "isActive": true
+      }
+    ],
+    "elements": [
+      {
+        "id": "element-floor",
+        "name": "Floor",
+        "sortOrder": 1,
+        "isActive": true
+      },
+      {
+        "id": "element-wall",
+        "name": "Wall",
+        "sortOrder": 2,
+        "isActive": true
+      },
+      {
+        "id": "element-ceiling",
+        "name": "Ceiling",
+        "sortOrder": 3,
+        "isActive": true
+      },
+      {
+        "id": "element-trim",
+        "name": "Trim",
+        "sortOrder": 4,
+        "isActive": true
+      },
+      {
+        "id": "element-cabinetry",
+        "name": "Cabinetry",
+        "sortOrder": 5,
+        "isActive": true
+      },
+      {
+        "id": "element-benchtop",
+        "name": "Benchtop",
+        "sortOrder": 6,
+        "isActive": true
+      },
+      {
+        "id": "element-sink",
+        "name": "Sink",
+        "sortOrder": 7,
+        "isActive": true
+      },
+      {
+        "id": "element-mixer",
+        "name": "Mixer",
+        "sortOrder": 8,
+        "isActive": true
+      },
+      {
+        "id": "element-appliances",
+        "name": "Appliances",
+        "sortOrder": 9,
+        "isActive": true
+      },
+      {
+        "id": "element-electrical",
+        "name": "Electrical",
+        "sortOrder": 10,
+        "isActive": true
+      },
+      {
+        "id": "element-accessory",
+        "name": "Accessory",
+        "sortOrder": 11,
+        "isActive": true
+      },
+      {
+        "id": "element-1774158611478",
+        "name": "Tiles",
+        "sortOrder": 12,
+        "isActive": true
+      }
+    ],
+    "roomTemplates": [],
+    "assemblies": [
+      {
+        "id": "assembly-room-type-bathroom-wall-villaboard-lining-6mm-walls-linings",
+        "assemblyName": "Wall  Villaboard Lining  6mm",
+        "assemblyElement": "Wall",
+        "assemblyScope": "Villaboard Lining",
+        "assemblySpec": "6mm",
+        "roomTypeId": "room-type-bathroom",
+        "roomType": "Bathroom",
+        "appliesToRoomTypeId": "room-type-bathroom",
+        "appliesToRoomType": "Bathroom",
+        "assemblyGroup": "Walls & Linings",
+        "assemblyCategory": "Walls & Linings",
+        "notes": "",
+        "items": [
+          {
+            "id": "assembly-item-1774880975460-0",
+            "libraryItemId": "cost-import-1774879744604-0",
+            "costItemId": "cost-import-1774879744604-0",
+            "itemNameSnapshot": "Villaboard™",
+            "itemName": "Villaboard™",
+            "costType": "SUB",
+            "deliveryType": "Supply & Install",
+            "tradeId": "trade-1774878723812",
+            "trade": "Plaster",
+            "costCodeId": "cost-code-1774112102848",
+            "costCode": "19 - Internal Linings",
+            "unitId": "unit-sqm",
+            "unit": "SQM",
+            "baseRate": 55,
+            "unitCost": 55,
+            "quantityFormula": "wallArea * 1.10",
+            "qtyRule": "wallArea * 1.10",
+            "rateOverride": "",
+            "notes": "",
+            "isCustomItem": false,
+            "workType": "Supply & Install",
+            "itemType": "SUB"
+          },
+          {
+            "id": "assembly-item-1774880975460-1",
+            "libraryItemId": "cost-import-1774879744604-1",
+            "costItemId": "cost-import-1774879744604-1",
+            "itemNameSnapshot": "Sealant",
+            "itemName": "Sealant",
+            "costType": "MTL",
+            "deliveryType": "Supply",
+            "tradeId": "trade-1774878723812",
+            "trade": "Plaster",
+            "costCodeId": "cost-code-1774112102848",
+            "costCode": "19 - Internal Linings",
+            "unitId": "unit-sqm",
+            "unit": "SQM",
+            "baseRate": 1.8,
+            "unitCost": 1.8,
+            "quantityFormula": "wallArea * 0.05",
+            "qtyRule": "wallArea * 0.05",
+            "rateOverride": "",
+            "notes": "",
+            "isCustomItem": false,
+            "workType": "Supply",
+            "itemType": "MTL"
+          }
+        ],
+        "assemblyId": "assembly-room-type-bathroom-wall-villaboard-lining-6mm-walls-linings",
+        "sortOrder": 0
+      }
+    ],
+    "costs": [
+      {
+        "id": "cost-import-1774879744604-0",
+        "internalId": "cost-1774878795027",
+        "itemName": "Villaboard™",
+        "coreName": "Villaboard™",
+        "costType": "SUB",
+        "deliveryType": "Supply & Install",
+        "itemFamily": "Wall Lining",
+        "family": "Wall Lining",
+        "tradeId": "trade-1774878723812",
+        "trade": "Plaster",
+        "costCodeId": "cost-code-1774112102848",
+        "costCode": "19 - Internal Linings",
+        "specification": "6mm FC Sheet",
+        "spec": "6mm FC Sheet",
+        "gradeOrQuality": "Wet Area",
+        "grade": "Wet Area",
+        "finishOrVariant": "Standard",
+        "finish": "Standard",
+        "brand": "James Hardie™",
+        "unitId": "unit-sqm",
+        "unit": "SQM",
+        "rate": 55,
+        "status": "Active",
+        "isActive": true,
+        "notes": "Includes supply, install, fixings, jointing for bathroom villaboard walls",
+        "sourceLink": "https://www.jameshardie.com.au/productrange/villaboard-lining",
+        "workType": "Supply & Install",
+        "displayName": "Wall Lining Villaboard™ 6mm FC Sheet Wet Area James Hardie™ Standard"
+      },
+      {
+        "id": "cost-import-1774879744604-1",
+        "internalId": "cost-import-1774879744604-1",
+        "itemName": "Sealant",
+        "costType": "MTL",
+        "deliveryType": "Supply",
+        "workType": "Supply",
+        "itemFamily": "Wall Lining",
+        "trade": "Plaster",
+        "costCode": "19 - Internal Linings",
+        "specification": "Polyurethane Sealant",
+        "gradeOrQuality": "Wet Area",
+        "finishOrVariant": "Standard",
+        "brand": "Sika/Equivalent",
+        "unit": "SQM",
+        "rate": 1.8,
+        "status": "Active",
+        "sourceLink": "",
+        "notes": "Sealant for junctions, penetrations and perimeter joints",
+        "coreName": "Sealant",
+        "family": "Wall Lining",
+        "tradeId": "trade-1774878723812",
+        "costCodeId": "cost-code-1774112102848",
+        "spec": "Polyurethane Sealant",
+        "grade": "Wet Area",
+        "finish": "Standard",
+        "unitId": "unit-sqm",
+        "isActive": true,
+        "displayName": "Wall Lining Sealant Polyurethane Sealant Wet Area Sika/Equivalent Standard"
+      }
+    ],
+    "localProjectId": "9788e682-88b3-496a-b6a9-8f72b7b84e55",
+    "createdAt": "2026-03-26T11:46:42.916Z",
+    "updatedAt": "2026-03-30T14:53:38.735Z",
+    "projectName": "Test 01",
+    "estimateName": "Untitled Estimate",
+    "clientName": "Internal",
+    "projectAddress": "",
+    "contactDetails": "",
+    "projectManager": "",
+    "estimator": "",
+    "revision": "01",
+    "revisionNumber": 1,
+    "projectRooms": [
+      {
+        "id": "project-room-1774190638034",
+        "name": "Master Bathroom 02",
+        "roomTypeId": "room-type-bathroom",
+        "roomType": "Bathroom",
+        "length": 3.6,
+        "width": 3.2,
+        "height": 2.7,
+        "tileHeight": 2.1,
+        "waterproofWallHeight": 1,
+        "baseCabinetLength": 0,
+        "overheadCabinetLength": 0,
+        "benchtopLength": 0,
+        "splashbackLength": 0,
+        "splashbackHeight": 0,
+        "quantity": 1,
+        "include": true,
+        "assemblyIds": [
+          "assembly-room-type-bedroom-bathroom-accessories",
+          "assembly-bathroom-bathroom-wall-tile",
+          "assembly-room-type-bathroom-bathroom-lights-sockets-fans",
+          "assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof"
+        ],
+        "customItems": [],
+        "templateId": "room-1774169548360",
+        "sectionId": ""
+      },
+      {
+        "id": "project-room-1774366583908",
+        "name": "Master Bathroom",
+        "roomTypeId": "room-type-bathroom",
+        "roomType": "Bathroom",
+        "quantity": 1,
+        "include": true,
+        "assemblyIds": [
+          "assembly-room-type-bedroom-bathroom-accessories",
+          "assembly-bathroom-bathroom-wall-tile",
+          "assembly-room-type-bathroom-bathroom-lights-sockets-fans",
+          "assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof"
+        ],
+        "manualItems": [],
+        "labourItems": [],
+        "length": 3.6,
+        "width": 3.2,
+        "height": 2.7,
+        "tileHeight": 2.1,
+        "waterproofWallHeight": 1,
+        "templateId": "room-1774169548360",
+        "sectionId": ""
+      },
+      {
+        "id": "project-room-1774606250789",
+        "name": "Master Bathroom",
+        "roomTypeId": "room-type-bathroom",
+        "roomType": "Bathroom",
+        "quantity": 1,
+        "include": true,
+        "assemblyIds": [
+          "assembly-room-type-bedroom-bathroom-accessories",
+          "assembly-bathroom-bathroom-wall-tile",
+          "assembly-room-type-bathroom-bathroom-lights-sockets-fans",
+          "assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof"
+        ],
+        "manualItems": [],
+        "labourItems": [],
+        "length": 3.6,
+        "width": 3.2,
+        "height": 2.7,
+        "tileHeight": 2.1,
+        "waterproofWallHeight": 1,
+        "templateId": "room-1774169548360",
+        "sectionId": ""
+      },
+      {
+        "id": "project-room-1774608961423",
+        "name": "Master Bathroom",
+        "roomTypeId": "room-type-bathroom",
+        "roomType": "Bathroom",
+        "quantity": 1,
+        "include": true,
+        "assemblyIds": [
+          "assembly-room-type-bedroom-bathroom-accessories",
+          "assembly-bathroom-bathroom-wall-tile",
+          "assembly-room-type-bathroom-bathroom-lights-sockets-fans",
+          "assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof"
+        ],
+        "manualItems": [],
+        "labourItems": [],
+        "length": 3.6,
+        "width": 3.2,
+        "height": 2.7,
+        "tileHeight": 2.1,
+        "waterproofWallHeight": 1,
+        "templateId": "room-1774169548360",
+        "sectionId": ""
+      },
+      {
+        "id": "project-room-1774609936499",
+        "name": "Master Bathroom",
+        "roomTypeId": "room-type-bathroom",
+        "roomType": "Bathroom",
+        "quantity": 1,
+        "include": true,
+        "assemblyIds": [
+          "assembly-room-type-bedroom-bathroom-accessories",
+          "assembly-bathroom-bathroom-wall-tile",
+          "assembly-room-type-bathroom-bathroom-lights-sockets-fans",
+          "assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof"
+        ],
+        "manualItems": [],
+        "labourItems": [],
+        "length": 3.6,
+        "width": 3.2,
+        "height": 2.7,
+        "tileHeight": 2.1,
+        "waterproofWallHeight": 1,
+        "templateId": "room-1774169548360",
+        "sectionId": ""
+      },
+      {
+        "id": "project-room-1774625488134",
+        "name": "Master Bathroom",
+        "roomTypeId": "room-type-bathroom",
+        "roomType": "Bathroom",
+        "quantity": 1,
+        "include": true,
+        "assemblyIds": [
+          "assembly-room-type-bedroom-bathroom-accessories",
+          "assembly-bathroom-bathroom-wall-tile",
+          "assembly-room-type-bathroom-bathroom-lights-sockets-fans",
+          "assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof"
+        ],
+        "manualItems": [],
+        "labourItems": [],
+        "length": 3.6,
+        "width": 3.2,
+        "height": 2.7,
+        "tileHeight": 2.1,
+        "waterproofWallHeight": 1,
+        "templateId": "room-1774169548360",
+        "sectionId": ""
+      }
+    ],
+    "estimateSections": [
+      {
+        "id": "estimate-section-1774880021823",
+        "name": "6",
+        "parentSectionId": "",
+        "stageId": "",
+        "sortOrder": 1
+      }
+    ],
+    "manualEstimateLines": [
+      {
+        "id": "manual-estimate-line-1774880037812",
+        "sortOrder": 10,
+        "include": true,
+        "itemName": "Villaboard™",
+        "displayNameOverride": "",
+        "workType": "Supply & Install",
+        "itemFamily": "Wall Lining",
+        "specification": "6mm FC Sheet",
+        "gradeOrQuality": "Wet Area",
+        "brand": "James Hardie™",
+        "finishOrVariant": "Standard",
+        "unitId": "unit-sqm",
+        "unit": "SQM",
+        "quantity": 1,
+        "rate": 55,
+        "stageId": "",
+        "sectionId": "estimate-section-1774880021823",
+        "costCodeId": "cost-code-1774112102848",
+        "tradeId": "trade-1774878723812",
+        "elementId": "",
+        "notes": "",
+        "sourceLink": "https://www.jameshardie.com.au/productrange/villaboard-lining",
+        "sourceCostItemId": "cost-import-1774879744604-0"
+      }
+    ],
+    "generatedRowSectionAssignments": {},
+    "estimateRowOverrides": {
+      "project-room-1774190638034-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158819313": {
+        "includeOverride": true
+      },
+      "project-room-1774190638034-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158775446": {
+        "includeOverride": false
+      },
+      "project-room-1774190638034-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158640218": {
+        "rateOverride": "110"
+      },
+      "project-room-1774370190497-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158640218": {
+        "rateOverride": "110"
+      },
+      "project-room-1774606250789-assembly-room-type-bathroom-bathroom-lights-sockets-fans-assembly-row-1774159198059": {
+        "sortOrder": 10
+      },
+      "project-room-1774606250789-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158027510": {
+        "sortOrder": 20
+      },
+      "project-room-1774606250789-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158775446": {
+        "sortOrder": 30
+      },
+      "project-room-1774606250789-assembly-room-type-bathroom-bathroom-lights-sockets-fans-assembly-row-1774159200623": {
+        "sortOrder": 40
+      },
+      "project-room-1774606250789-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158029301": {
+        "sortOrder": 50
+      },
+      "project-room-1774606250789-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158776697": {
+        "sortOrder": 60
+      },
+      "project-room-1774606250789-assembly-room-type-bathroom-bathroom-lights-sockets-fans-assembly-row-1774159213741": {
+        "sortOrder": 70
+      },
+      "project-room-1774606250789-assembly-bathroom-bathroom-wall-tile-assembly-row-003": {
+        "sortOrder": 80
+      },
+      "project-room-1774606250789-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158819313": {
+        "sortOrder": 90
+      },
+      "project-room-1774606250789-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158092578": {
+        "sortOrder": 100
+      },
+      "project-room-1774606250789-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158168705": {
+        "sortOrder": 110
+      },
+      "project-room-1774606250789-assembly-bathroom-bathroom-wall-tile-assembly-row-1774156986780": {
+        "sortOrder": 120
+      },
+      "project-room-1774606250789-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158872915": {
+        "sortOrder": 130
+      },
+      "project-room-1774606250789-assembly-bathroom-bathroom-wall-tile-assembly-row-1774157027062": {
+        "sortOrder": 140
+      },
+      "project-room-1774606250789-assembly-room-type-bathroom-bathroom-lights-sockets-fans-assembly-row-1774159229333": {
+        "sortOrder": 160
+      },
+      "project-room-1774606250789-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158925543": {
+        "sortOrder": 150
+      },
+      "project-room-1774606250789-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158234029": {
+        "sortOrder": 170
+      },
+      "project-room-1774606250789-assembly-bathroom-bathroom-wall-tile-assembly-row-1774157061098": {
+        "sortOrder": 180
+      },
+      "project-room-1774606250789-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158341281": {
+        "sortOrder": 190
+      },
+      "project-room-1774606250789-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158966126": {
+        "sortOrder": 200
+      },
+      "project-room-1774606250789-assembly-bathroom-bathroom-wall-tile-assembly-row-1774157073001": {
+        "sortOrder": 210
+      },
+      "project-room-1774606250789-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774159012889": {
+        "sortOrder": 220
+      },
+      "project-room-1774606250789-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158449221": {
+        "sortOrder": 230
+      },
+      "project-room-1774606250789-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158512786": {
+        "sortOrder": 240
+      },
+      "project-room-1774606250789-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158561197": {
+        "sortOrder": 250
+      },
+      "project-room-1774606250789-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158640218": {
+        "sortOrder": 260
+      },
+      "project-room-1774608961423-assembly-room-type-bathroom-bathroom-lights-sockets-fans-assembly-row-1774159198059": {
+        "sourceLink": "https://www.bowens.com.au/p/90x45mm-structural-pine-kd/?q=e6116de063275c6f51b96371752a2ef6",
+        "notes": "GPO Double Iconic",
+        "sortOrder": 20
+      },
+      "project-room-1774608961423-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158027510": {
+        "sortOrder": 10
+      },
+      "project-room-1774608961423-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158775446": {
+        "sortOrder": 30
+      },
+      "project-room-1774608961423-assembly-room-type-bathroom-bathroom-lights-sockets-fans-assembly-row-1774159200623": {
+        "sortOrder": 40
+      },
+      "project-room-1774608961423-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158029301": {
+        "sortOrder": 50
+      },
+      "project-room-1774608961423-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158776697": {
+        "sortOrder": 60
+      },
+      "project-room-1774608961423-assembly-room-type-bathroom-bathroom-lights-sockets-fans-assembly-row-1774159213741": {
+        "sortOrder": 70
+      },
+      "project-room-1774608961423-assembly-bathroom-bathroom-wall-tile-assembly-row-003": {
+        "sortOrder": 80
+      },
+      "project-room-1774608961423-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158819313": {
+        "sortOrder": 90
+      },
+      "project-room-1774608961423-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158092578": {
+        "sortOrder": 100
+      },
+      "project-room-1774608961423-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158168705": {
+        "sortOrder": 110
+      },
+      "project-room-1774608961423-assembly-bathroom-bathroom-wall-tile-assembly-row-1774156986780": {
+        "sortOrder": 120
+      },
+      "project-room-1774608961423-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158872915": {
+        "sortOrder": 130
+      },
+      "project-room-1774608961423-assembly-bathroom-bathroom-wall-tile-assembly-row-1774157027062": {
+        "sortOrder": 140
+      },
+      "project-room-1774608961423-assembly-room-type-bathroom-bathroom-lights-sockets-fans-assembly-row-1774159229333": {
+        "sortOrder": 160
+      },
+      "project-room-1774608961423-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158925543": {
+        "sortOrder": 150
+      },
+      "project-room-1774608961423-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158234029": {
+        "sortOrder": 170
+      },
+      "project-room-1774608961423-assembly-bathroom-bathroom-wall-tile-assembly-row-1774157061098": {
+        "sortOrder": 180
+      },
+      "project-room-1774608961423-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158341281": {
+        "sortOrder": 190
+      },
+      "project-room-1774608961423-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158966126": {
+        "sortOrder": 200
+      },
+      "project-room-1774608961423-assembly-bathroom-bathroom-wall-tile-assembly-row-1774157073001": {
+        "sortOrder": 220
+      },
+      "project-room-1774608961423-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774159012889": {
+        "sortOrder": 210
+      },
+      "project-room-1774608961423-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158449221": {
+        "sortOrder": 230
+      },
+      "project-room-1774608961423-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158512786": {
+        "sortOrder": 240
+      },
+      "project-room-1774608961423-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158561197": {
+        "sortOrder": 250
+      },
+      "project-room-1774608961423-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158640218": {
+        "sortOrder": 260
+      },
+      "project-room-1774609936499-assembly-room-type-bathroom-bathroom-lights-sockets-fans-assembly-row-1774159213741": {
+        "sourceLink": "",
+        "sortOrder": 70
+      },
+      "project-room-1774609936499-assembly-room-type-bathroom-bathroom-lights-sockets-fans-assembly-row-1774159198059": {
+        "sourceLink": "bowens.com",
+        "notes": "",
+        "sortOrder": 20
+      },
+      "project-room-1774609936499-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158029301": {
+        "sourceLink": "",
+        "sortOrder": 50
+      },
+      "project-room-1774609936499-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158027510": {
+        "notes": "Sample",
+        "sortOrder": 10,
+        "unitId": "",
+        "unit": "SQM",
+        "tradeId": "trade-painting",
+        "trade": "Painting",
+        "costCodeId": "cost-code-1774112107505",
+        "costCode": "20 - Joinery"
+      },
+      "project-room-1774609936499-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158775446": {
+        "sortOrder": 30
+      },
+      "project-room-1774609936499-assembly-room-type-bathroom-bathroom-lights-sockets-fans-assembly-row-1774159200623": {
+        "sortOrder": 40
+      },
+      "project-room-1774609936499-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158776697": {
+        "sortOrder": 60
+      },
+      "project-room-1774609936499-assembly-bathroom-bathroom-wall-tile-assembly-row-003": {
+        "sortOrder": 80
+      },
+      "project-room-1774609936499-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158819313": {
+        "sortOrder": 90
+      },
+      "project-room-1774609936499-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158092578": {
+        "sortOrder": 100
+      },
+      "project-room-1774609936499-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158168705": {
+        "sortOrder": 110
+      },
+      "project-room-1774609936499-assembly-bathroom-bathroom-wall-tile-assembly-row-1774156986780": {
+        "sortOrder": 120
+      },
+      "project-room-1774609936499-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158872915": {
+        "sortOrder": 130
+      },
+      "project-room-1774609936499-assembly-room-type-bathroom-bathroom-lights-sockets-fans-assembly-row-1774159229333": {
+        "sortOrder": 140
+      },
+      "project-room-1774609936499-assembly-bathroom-bathroom-wall-tile-assembly-row-1774157027062": {
+        "sortOrder": 150
+      },
+      "project-room-1774609936499-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158925543": {
+        "sortOrder": 160
+      },
+      "project-room-1774609936499-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158234029": {
+        "sortOrder": 170
+      },
+      "project-room-1774609936499-assembly-bathroom-bathroom-wall-tile-assembly-row-1774157061098": {
+        "sortOrder": 180
+      },
+      "project-room-1774609936499-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158341281": {
+        "sortOrder": 190
+      },
+      "project-room-1774609936499-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774158966126": {
+        "sortOrder": 200
+      },
+      "project-room-1774609936499-assembly-bathroom-bathroom-wall-tile-assembly-row-1774157073001": {
+        "sortOrder": 210
+      },
+      "project-room-1774609936499-assembly-room-type-bedroom-bathroom-accessories-assembly-row-1774159012889": {
+        "sortOrder": 220
+      },
+      "project-room-1774609936499-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158449221": {
+        "sortOrder": 230
+      },
+      "project-room-1774609936499-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158512786": {
+        "sortOrder": 240
+      },
+      "project-room-1774609936499-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158561197": {
+        "sortOrder": 250
+      },
+      "project-room-1774609936499-assembly-room-type-bathroom-vanity-cabinet-stone-fitting-splash-waterproof-assembly-row-1774158640218": {
+        "sortOrder": 260
+      },
+      "project-room-1774618926472-assembly-room-type-bathroom-bathroom-lights-sockets-fans-assembly-row-1774159198059": {
+        "unitId": "unit-sqm",
+        "unit": "SQM"
+      }
+    },
+    "lastSavedAt": "2026-03-30T14:53:38.735Z",
+    "lastBackupAt": "2026-03-30T14:53:38.735Z",
+    "lastFileName": "Untitled Estimate.json"
+  }
+}

@@ -101,6 +101,9 @@ export function normalizeManagedParameter(parameter = {}) {
     inputType: "number",
     unit: "",
     defaultValue: "",
+    description: "",
+    category: "",
+    status: "Active",
   };
 
   return {
@@ -108,6 +111,11 @@ export function normalizeManagedParameter(parameter = {}) {
     ...parameter,
     key: normalizedKey,
     defaultValue: normalizedDefaultValue,
+    label: String(parameter.label || "").trim(),
+    unit: String(parameter.unit || "").trim(),
+    description: String(parameter.description || "").trim(),
+    category: String(parameter.category || "").trim(),
+    status: String(parameter.status || defaults.status).trim() || defaults.status,
   };
 }
 
