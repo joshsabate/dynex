@@ -1,4 +1,5 @@
 import { normalizeManagedParameter } from "./parameters";
+import { evaluateDerivedParameters } from "./parameterEvaluation";
 
 const coreParameterDefinitions = [
   {
@@ -227,6 +228,9 @@ function normalizeParameterDefinition(parameterDefinition, parameterMaps) {
     parameterId: managedParameter?.id || parameterDefinition.parameterId || "",
     key: hasManagedParameter ? managedParameter.key : parameterDefinition.key || "",
     label: hasManagedParameter ? managedParameter.label : parameterDefinition.label || "",
+    parameterType: hasManagedParameter
+      ? managedParameter.parameterType
+      : parameterDefinition.parameterType || "Input",
     inputType: hasManagedParameter
       ? managedParameter.inputType
       : parameterDefinition.inputType || "number",
@@ -239,6 +243,7 @@ function normalizeParameterDefinition(parameterDefinition, parameterMaps) {
     defaultValue: resolvedDefaultValue,
     isRequired: Boolean(parameterDefinition.isRequired),
     sortOrder: Number(parameterDefinition.sortOrder ?? 0),
+    formula: hasManagedParameter ? managedParameter.formula : parameterDefinition.formula || "",
     isManaged: hasManagedParameter,
   };
 }
@@ -305,30 +310,40 @@ export function serializeRoomTypeParameterDefinitions(parameterDefinitions = [],
     return {
       key: parameterDefinition.key,
       label: parameterDefinition.label,
+      parameterType: parameterDefinition.parameterType || "Input",
       inputType: parameterDefinition.inputType || "number",
       unit: parameterDefinition.unit ?? parameterDefinition.unitText ?? "",
       defaultValue: nextDefinition.defaultValue,
       isRequired: nextDefinition.isRequired,
       sortOrder: nextDefinition.sortOrder,
+      formula: parameterDefinition.formula || "",
     };
   });
 }
 
 export function buildRoomParameterFormValues(roomType = {}, existingValues = {}, parameters = []) {
-  return getRoomTypeParameterDefinitions(roomType, parameters).reduce(
-    (nextValues, parameterDefinition) => {
-      const existingValue = existingValues[parameterDefinition.key];
+  const parameterDefinitions = getRoomTypeParameterDefinitions(roomType, parameters);
+  const baseValues = parameterDefinitions.reduce((nextValues, parameterDefinition) => {
+    const existingValue = existingValues[parameterDefinition.key];
+    const fallbackValue =
+      existingValue == null || existingValue === ""
+        ? parameterDefinition.defaultValue ?? ""
+        : existingValue;
 
-      return {
-        ...nextValues,
-        [parameterDefinition.key]:
-          existingValue == null || existingValue === ""
-            ? String(parameterDefinition.defaultValue ?? "")
-            : String(existingValue),
-      };
-    },
-    { ...existingValues }
-  );
+    return {
+      ...nextValues,
+      [parameterDefinition.key]:
+        parameterDefinition.parameterType === "Derived"
+          ? ""
+          : fallbackValue,
+    };
+  }, { ...existingValues });
+  const { values: derivedValues } = evaluateDerivedParameters(parameterDefinitions, baseValues);
+
+  return {
+    ...baseValues,
+    ...derivedValues,
+  };
 }
 
 export function buildInitialRoomTypeParameterDefinitions(roomTypeId, parameters = []) {

@@ -261,6 +261,44 @@ test("updates visible parameter fields when the room type changes", async () => 
   ]);
 });
 
+test("renders derived parameters as read-only values", () => {
+  renderPage({
+    roomTypes: [
+      {
+        id: "room-type-custom",
+        name: "Custom",
+        sortOrder: 1,
+        isActive: true,
+        parameterDefinitions: [
+          { key: "length", defaultValue: 0, isRequired: true, sortOrder: 1 },
+          { key: "width", defaultValue: 0, isRequired: true, sortOrder: 2 },
+          { key: "floorArea", defaultValue: "", isRequired: false, sortOrder: 3 },
+        ],
+      },
+    ],
+    parameters: [
+      { id: "parameter-length", key: "length", label: "Length", parameterType: "Input", inputType: "number", unit: "m", defaultValue: 0, category: "Core Geometry" },
+      { id: "parameter-width", key: "width", label: "Width", parameterType: "Input", inputType: "number", unit: "m", defaultValue: 0, category: "Core Geometry" },
+      { id: "parameter-floor-area", key: "floorArea", label: "Floor Area", parameterType: "Derived", inputType: "number", unit: "sqm", defaultValue: "", formula: "length * width", category: "Derived" },
+    ],
+    rooms: [
+      {
+        id: "template-1",
+        name: "Custom Template",
+        roomTypeId: "room-type-custom",
+        roomType: "Custom",
+        length: 2,
+        width: 3,
+        include: true,
+        quantity: 1,
+      },
+    ],
+  });
+
+  const floorAreaInput = screen.getByDisplayValue("6");
+  expect(floorAreaInput).toHaveAttribute("readonly");
+});
+
 test("stores parameter-based quantity sources on manual items", async () => {
   const onRoomsChange = jest.fn();
 

@@ -9,22 +9,16 @@ import {
   deliveryTypeOptions,
   normalizeCosts,
 } from "../utils/costs";
+import { resolveUnit } from "../utils/units";
 
-const costCsvHeaders = [
+const requiredCostImportHeaders = [
   "Core Name",
-  "Item Name",
   "Cost Type",
   "Delivery Type",
-  "Family",
   "Trade",
   "Cost Code",
-  "Spec",
-  "Grade",
-  "Finish",
-  "Brand",
   "Unit",
   "Rate",
-  "Status",
 ];
 
 function sortActiveItems(items = []) {
@@ -86,6 +80,73 @@ function createDuplicateName(itemName) {
   return baseName.includes("(Copy)") ? baseName : `${baseName} (Copy)`;
 }
 
+function buildImportedCostSource(row, index) {
+  const coreName = cleanText(row["Core Name"] || row["Item Name"]);
+
+  return {
+    id: `cost-import-${Date.now()}-${index}`,
+    internalId: cleanText(row["Internal ID"]),
+    coreName,
+    itemName: coreName,
+    costType: cleanText(row["Cost Type"]),
+    deliveryType: cleanText(row["Delivery Type"]),
+    workType: cleanText(row["Work Type"]),
+    itemFamily: cleanText(row.Family || row["Item Family"]),
+    trade: cleanText(row.Trade),
+    costCode: cleanText(row["Cost Code"]),
+    specification: cleanText(row.Spec || row.Specification),
+    gradeOrQuality: cleanText(row.Grade || row["Grade / Quality"]),
+    finishOrVariant: cleanText(row.Finish || row["Finish / Variant"]),
+    brand: cleanText(row.Brand),
+    unit: cleanText(row.Unit),
+    rate: cleanText(row.Rate),
+    status: cleanText(row.Status) || "Active",
+    sourceLink: cleanText(row["Source Link"]),
+    notes: cleanText(row.Notes),
+  };
+}
+
+function validateImportedCostRow(row, units = []) {
+  const requiredFields = [
+    "Core Name",
+    "Cost Type",
+    "Delivery Type",
+    "Trade",
+    "Cost Code",
+    "Unit",
+    "Rate",
+  ];
+  const errors = [];
+
+  requiredFields.forEach((field) => {
+    if (!cleanText(row[field])) {
+      errors.push(`Missing required field: ${field}`);
+    }
+  });
+
+  const rate = cleanText(row.Rate);
+  if (rate && !Number.isFinite(Number(rate))) {
+    errors.push("Invalid Rate");
+  }
+
+  const costType = cleanText(row["Cost Type"]);
+  if (costType && !costTypeOptions.includes(costType)) {
+    errors.push("Invalid Cost Type");
+  }
+
+  const deliveryType = cleanText(row["Delivery Type"]);
+  if (deliveryType && !deliveryTypeOptions.includes(deliveryType)) {
+    errors.push("Invalid Delivery Type");
+  }
+
+  const unit = cleanText(row.Unit);
+  if (unit && !resolveUnit(units, "", unit)) {
+    errors.push("Invalid Unit");
+  }
+
+  return errors;
+}
+
 function CostLibraryPage({
   costs,
   units,
@@ -115,6 +176,7 @@ function CostLibraryPage({
   const [costTypeFilter, setCostTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [csvStatus, setCsvStatus] = useState("");
+  const [importFailures, setImportFailures] = useState([]);
   const [importMode, setImportMode] = useState("append");
   const [sortKey, setSortKey] = useState("itemName");
   const [editorState, setEditorState] = useState({
@@ -495,6 +557,7 @@ function CostLibraryPage({
     link.download = "cost-library-export.csv";
     link.click();
     window.URL.revokeObjectURL(url);
+    setImportFailures([]);
     setCsvStatus(`Exported ${normalizedCosts.length} cost items.`);
   };
 
@@ -507,11 +570,12 @@ function CostLibraryPage({
       const csvText = await readFileAsText(file);
       const parsedRows = parseCSV(csvText);
       const parsedHeaders = Object.keys(parsedRows[0] || {});
-      const missingHeaders = costCsvHeaders.filter(
+      const missingHeaders = requiredCostImportHeaders.filter(
         (header) => !parsedHeaders.includes(header)
       );
 
       if (missingHeaders.length && !parsedHeaders.includes("Work Type")) {
+        setImportFailures([]);
         setCsvStatus(
           `Unable to import CSV. Missing required columns: ${missingHeaders.join(
             ", "
@@ -520,53 +584,88 @@ function CostLibraryPage({
         return;
       }
 
-      const importedCosts = normalizeCosts(
-        parsedRows.map((row, index) => ({
-          id: `cost-import-${Date.now()}-${index}`,
-          internalId: cleanText(row["Internal ID"]),
-          itemName: cleanText(row["Core Name"] || row["Item Name"]),
-          costType: cleanText(row["Cost Type"]),
-          deliveryType: cleanText(row["Delivery Type"]),
-          workType: cleanText(row["Work Type"]),
-          itemFamily: cleanText(row.Family || row["Item Family"]),
-          trade: cleanText(row.Trade),
-          costCode: cleanText(row["Cost Code"]),
-          specification: cleanText(row.Spec || row.Specification),
-          gradeOrQuality: cleanText(row.Grade || row["Grade / Quality"]),
-          finishOrVariant: cleanText(row.Finish || row["Finish / Variant"]),
-          brand: cleanText(row.Brand),
-          unit: cleanText(row.Unit),
-          rate: cleanText(row.Rate),
-          status: cleanText(row.Status) || "Active",
-          sourceLink: cleanText(row["Source Link"]),
-          notes: cleanText(row.Notes),
-        })),
-        { units, trades, costCodes, itemFamilies }
-      );
+      const validationFailures = [];
+      const validRows = [];
 
-      const validCosts = importedCosts.filter(
-        (cost) =>
-          cleanText(cost.itemName) &&
-          costTypeOptions.includes(cost.costType) &&
-          deliveryTypeOptions.includes(cost.deliveryType) &&
-          cleanText(cost.tradeId) &&
-          cleanText(cost.costCodeId) &&
-          cleanText(cost.unitId) &&
-          Number.isFinite(Number(cost.rate))
-      );
+      parsedRows.forEach((row, index) => {
+        const rowNumber = index + 2;
+        const errors = validateImportedCostRow(row, units);
 
-      if (!validCosts.length) {
-        setCsvStatus("Unable to import CSV. No valid cost items were found.");
+        if (errors.length) {
+          validationFailures.push({
+            rowNumber,
+            reasons: errors,
+          });
+          return;
+        }
+
+        validRows.push({
+          rowNumber,
+          source: buildImportedCostSource(row, index),
+        });
+      });
+
+      if (!validRows.length) {
+        setImportFailures(validationFailures);
+        setCsvStatus(
+          `Imported 0 rows. Skipped ${validationFailures.length} row${
+            validationFailures.length === 1 ? "" : "s"
+          }.`
+        );
         return;
       }
 
-      ensureFamiliesExist(validCosts.map((cost) => cost.itemFamily));
+      const normalizedImportedCosts = normalizeCosts(
+        validRows.map((row) => row.source),
+        { units, trades, costCodes, itemFamilies }
+      );
+
+      ensureFamiliesExist(normalizedImportedCosts.map((cost) => cost.itemFamily));
+
+      if (importMode === "append") {
+        const seenInternalIds = new Set(
+          normalizedCosts.map((cost) => cleanText(cost.internalId)).filter(Boolean)
+        );
+        const nextItems = [...normalizedCosts];
+        let importedCount = 0;
+
+        normalizedImportedCosts.forEach((cost, index) => {
+          const internalId = cleanText(cost.internalId);
+
+          if (internalId && seenInternalIds.has(internalId)) {
+            validationFailures.push({
+              rowNumber: validRows[index].rowNumber,
+              reasons: ["Duplicate Internal ID"],
+            });
+            return;
+          }
+
+          if (internalId) {
+            seenInternalIds.add(internalId);
+          }
+
+          nextItems.push(cost);
+          importedCount += 1;
+        });
+
+        if (importedCount) {
+          onCostsChange(nextItems);
+        }
+
+        setImportFailures(validationFailures);
+        setCsvStatus(
+          `Imported ${importedCount} row${importedCount === 1 ? "" : "s"}. Skipped ${
+            validationFailures.length
+          } row${validationFailures.length === 1 ? "" : "s"}.`
+        );
+        return;
+      }
+
       const mergeResult = applyImportMode({
         existingItems: normalizedCosts,
-        importedItems: validCosts,
+        importedItems: normalizedImportedCosts,
         mode: importMode,
         getMatchKey: (existing, incoming) =>
-          (cleanText(existing.id) && cleanText(existing.id) === cleanText(incoming.id)) ||
           (cleanText(existing.internalId) &&
             cleanText(existing.internalId) === cleanText(incoming.internalId)) ||
           (cleanText(existing.itemName) === cleanText(incoming.itemName) &&
@@ -583,12 +682,16 @@ function CostLibraryPage({
       }
 
       onCostsChange(mergeResult.items);
-
-      const skippedCount = importedCosts.length - validCosts.length + mergeResult.summary.skipped;
+      setImportFailures(validationFailures);
       setCsvStatus(
-        `${mergeResult.summary.added} added, ${mergeResult.summary.replaced} replaced, ${skippedCount} skipped.`
+        `Imported ${mergeResult.summary.added} row${
+          mergeResult.summary.added === 1 ? "" : "s"
+        }, replaced ${mergeResult.summary.replaced}, skipped ${
+          validationFailures.length + mergeResult.summary.skipped
+        }.`
       );
     } catch (error) {
+      setImportFailures([]);
       setCsvStatus("Unable to import CSV. Please choose a valid CSV file.");
     }
   };
@@ -777,6 +880,21 @@ function CostLibraryPage({
 
             {csvStatus ? (
               <p className="assembly-library-status">{csvStatus}</p>
+            ) : null}
+
+            <p className="cost-library-import-help">
+              Required: Core Name, Cost Type, Delivery Type, Trade, Cost Code, Unit, Rate. Auto-generated if blank: Internal ID, Item Name. Optional: Family, Spec, Grade, Finish, Brand, Status, Notes, Source Link.
+            </p>
+
+            {importFailures.length ? (
+              <div className="summary-section room-template-compact-section assembly-library-validation">
+                <h3>Import issues</h3>
+                {importFailures.map((failure) => (
+                  <p key={`${failure.rowNumber}-${failure.reasons.join("-")}`}>
+                    Row {failure.rowNumber}: {failure.reasons.join("; ")}
+                  </p>
+                ))}
+              </div>
             ) : null}
 
             {selectedCostIds.length ? (

@@ -14,7 +14,7 @@ function buildFormulaContext(parameters = {}, derivedMetrics = {}) {
   };
 }
 
-function tokenizeFormula(expression) {
+export function tokenizeFormula(expression) {
   const tokens = [];
   let index = 0;
 
@@ -100,7 +100,7 @@ function evaluateBinaryOperation(operator, left, right) {
   }
 }
 
-function evaluateFormulaTokens(tokens, context = {}) {
+export function evaluateFormulaTokens(tokens, context = {}) {
   let index = 0;
 
   const parseExpression = () => {

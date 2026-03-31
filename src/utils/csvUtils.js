@@ -1,5 +1,9 @@
 import { normalizeAssemblies } from "./assemblies";
-import { normalizeManagedParameter, normalizeParameterKey } from "./parameters";
+import {
+  normalizeManagedParameter,
+  normalizeParameterKey,
+  normalizeParameterType,
+} from "./parameters";
 
 const assemblyCsvHeaders = [
   "Assembly Name",
@@ -39,9 +43,13 @@ const costCsvHeaders = [
 const parameterCsvHeaders = [
   "Parameter Name",
   "Parameter Key",
+  "Parameter Type",
   "Input Type",
   "Unit",
   "Default Value",
+  "Required",
+  "Sort Order",
+  "Formula",
   "Description",
   "Category",
   "Status",
@@ -214,9 +222,13 @@ export function convertParametersToCSV(parameters = []) {
       [
         parameter.label,
         parameter.key,
+        parameter.parameterType || "Input",
         parameter.inputType || "number",
         parameter.unit || "",
         parameter.defaultValue ?? "",
+        parameter.required ? "Yes" : "No",
+        parameter.sortOrder ?? 0,
+        parameter.formula || "",
         parameter.description || "",
         parameter.category || "",
         parameter.status || "Active",
@@ -259,6 +271,10 @@ export function parseParameterCsv(text) {
     const inputType = getImportedValue(row, ["Input Type", "Type"]).toLowerCase() === "text"
       ? "text"
       : "number";
+    const parameterType = normalizeParameterType(
+      getImportedValue(row, ["Parameter Type", "Type Class"]),
+      key
+    );
     const defaultValueRaw = getImportedValue(row, ["Default Value", "Default"]);
     const defaultValue =
       defaultValueRaw === ""
@@ -272,9 +288,15 @@ export function parseParameterCsv(text) {
         id: `parameter-import-${Date.now()}-${validRows.length}`,
         key,
         label,
+        parameterType,
         inputType,
         unit: getImportedValue(row, ["Unit"]),
         defaultValue: Number.isFinite(defaultValue) || defaultValue === "" ? defaultValue : "",
+        required: ["yes", "true", "1"].includes(
+          getImportedValue(row, ["Required"]).toLowerCase()
+        ),
+        sortOrder: Number(getImportedValue(row, ["Sort Order", "Order"]) || validRows.length + 1),
+        formula: getImportedValue(row, ["Formula"]),
         description: getImportedValue(row, ["Description"]),
         category: getImportedValue(row, ["Category"]),
         status: getImportedValue(row, ["Status"]) || "Active",

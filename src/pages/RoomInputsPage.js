@@ -18,6 +18,7 @@ import {
 import { calculateRoomMetrics } from "../utils/roomMetrics";
 import { getRoomTypeParameterDefinitions } from "../utils/roomTypeParameters";
 import { isHourUnit } from "../utils/units";
+import { evaluateDerivedParameters } from "../utils/parameterEvaluation";
 
 function sortActiveItems(items = []) {
   return [...items]
@@ -123,6 +124,13 @@ function RoomInputsPage({
     () => getRoomTypeParameterDefinitions(selectedRoomType || {}, parameters),
     [parameters, selectedRoomType]
   );
+  const visibleParameterDefinitions = useMemo(
+    () =>
+      parameterDefinitions.filter(
+        (parameterDefinition) => parameterDefinition.parameterType !== "System"
+      ),
+    [parameterDefinitions]
+  );
   const availableAssemblies = useMemo(
     () =>
       selectedTemplate
@@ -158,6 +166,13 @@ function RoomInputsPage({
   const templateMetrics = useMemo(
     () => (selectedTemplate ? calculateRoomMetrics(selectedTemplate) : null),
     [selectedTemplate]
+  );
+  const derivedParameterValues = useMemo(
+    () =>
+      selectedTemplate
+        ? evaluateDerivedParameters(parameterDefinitions, selectedTemplate).values
+        : {},
+    [parameterDefinitions, selectedTemplate]
   );
   const previewRows = useMemo(() => {
     if (!selectedTemplate) {
@@ -899,25 +914,34 @@ function RoomInputsPage({
             <div className="summary-section room-template-compact-section">
               <h3>Parameters</h3>
               <div className="form-grid room-template-fields-grid">
-                {parameterDefinitions.map((parameterDefinition) => (
+                {visibleParameterDefinitions.map((parameterDefinition) => (
                   <FormField
                     key={parameterDefinition.key}
                     label={getParameterLabel(parameterDefinition)}
                   >
                     <input
                       type={parameterDefinition.inputType}
+                      readOnly={parameterDefinition.parameterType === "Derived"}
                       min={parameterDefinition.inputType === "number" ? "0" : undefined}
                       step={parameterDefinition.inputType === "number" ? "0.01" : undefined}
-                      value={selectedTemplate[parameterDefinition.key] ?? ""}
-                      onChange={(event) =>
+                      value={
+                        parameterDefinition.parameterType === "Derived"
+                          ? derivedParameterValues[parameterDefinition.key] ?? ""
+                          : selectedTemplate[parameterDefinition.key] ?? ""
+                      }
+                      onChange={(event) => {
+                        if (parameterDefinition.parameterType === "Derived") {
+                          return;
+                        }
+
                         updateSelectedTemplate((template) => ({
                           ...template,
                           [parameterDefinition.key]:
                             parameterDefinition.inputType === "number"
                               ? toNumber(event.target.value)
                               : event.target.value,
-                        }))
-                      }
+                        }));
+                      }}
                     />
                   </FormField>
                 ))}

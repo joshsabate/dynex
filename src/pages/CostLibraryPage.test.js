@@ -71,7 +71,7 @@ test("imports cost csv rows using the new classification columns", async () => {
     [
       [
         "Core Name,Item Name,Cost Type,Delivery Type,Family,Trade,Cost Code,Spec,Grade,Finish,Brand,Unit,Rate,Status",
-        "Wall Tile,Wall Tile,MTL,Supply,Tiles,Tile,Finishes,600x600,Premium,Matt,ABC,SQM,30,Active",
+        "Wall Tile,,MTL,Supply,Tiles,Tile,Finishes,600x600,Premium,Matt,ABC,SQM,30,",
       ].join("\n"),
     ],
     "costs.csv",
@@ -83,12 +83,39 @@ test("imports cost csv rows using the new classification columns", async () => {
   await waitFor(() => expect(onCostsChange).toHaveBeenCalledTimes(1));
   expect(onCostsChange.mock.calls[0][0][0]).toMatchObject({
     itemName: "Wall Tile",
+    displayName: "Tiles Wall Tile 600x600 Premium ABC Matt",
     costType: "MTL",
     deliveryType: "Supply",
-    tradeId: "trade-tile",
-    costCodeId: "cost-code-finishes",
     unitId: "unit-sqm",
     rate: 30,
     status: "Active",
   });
+  expect(onCostsChange.mock.calls[0][0][0].internalId).toContain("cost-import-");
+});
+
+test("reports row-level validation failures and duplicate internal ids during append import", async () => {
+  const { onCostsChange } = renderPage();
+  const fileInput = screen.getByLabelText(/import cost csv/i);
+  const csvFile = new File(
+    [
+      [
+        "Internal ID,Core Name,Item Name,Cost Type,Delivery Type,Family,Trade,Cost Code,Spec,Grade,Finish,Brand,Unit,Rate,Status,Notes,Source Link",
+        "cost-1,New Tile,,MTL,Supply,Tiles,Tile,Finishes,600x600,Premium,Matt,ABC,SQM,25,Active,,",
+        ",Broken Tile,,BAD,Supply,Tiles,Tile,Finishes,600x600,Premium,Matt,ABC,SQM,10,Active,,",
+        ",,,MTL,Supply,Tiles,Tile,Finishes,600x600,Premium,Matt,ABC,SQM,10,Active,,",
+      ].join("\n"),
+    ],
+    "costs.csv",
+    { type: "text/csv" }
+  );
+
+  fireEvent.change(fileInput, { target: { files: [csvFile] } });
+
+  await waitFor(() =>
+    expect(screen.getByText(/Imported 0 rows\. Skipped 3 rows\./i)).toBeInTheDocument()
+  );
+  expect(onCostsChange).not.toHaveBeenCalled();
+  expect(screen.getByText(/Row 2: Duplicate Internal ID/i)).toBeInTheDocument();
+  expect(screen.getByText(/Row 3: Invalid Cost Type/i)).toBeInTheDocument();
+  expect(screen.getByText(/Row 4: Missing required field: Core Name/i)).toBeInTheDocument();
 });

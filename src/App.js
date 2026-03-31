@@ -13,7 +13,6 @@ import RoomTypeLibraryPage from "./pages/RoomTypeLibraryPage";
 import RoomInputsPage from "./pages/RoomInputsPage";
 import SummaryDashboardPage from "./pages/SummaryDashboardPage";
 import ElementLibraryPage from "./pages/ElementLibraryPage";
-import HomePage from "./pages/HomePage";
 import ItemFamilyLibraryPage from "./pages/ItemFamilyLibraryPage";
 import StageLibraryPage from "./pages/StageLibraryPage";
 import TradeLibraryPage from "./pages/TradeLibraryPage";
@@ -38,6 +37,7 @@ import {
 } from "./utils/estimateRows";
 import { normalizeAssemblies } from "./utils/assemblies";
 import { normalizeCosts } from "./utils/costs";
+import { mergeSeededParameters } from "./utils/parameters";
 
 const legacyLocalStorageKey = "estimator-app-project";
 const globalLibrariesStorageKey = "estimator-app-global-libraries";
@@ -47,7 +47,6 @@ const projectFileFormat = "estimator-app-project-file";
 const projectFileVersion = 1;
 const defaultProjectName = "Untitled Project";
 const defaultEstimateName = "Untitled Estimate";
-const showSidebarBrand = false;
 
 const pages = [
   { id: "estimate-builder", label: "Estimate Builder", icon: "◫", group: "Workflow" },
@@ -157,6 +156,9 @@ function getDefaultProjectData() {
     manualEstimateLines: [],
     generatedRowSectionAssignments: {},
     estimateRowOverrides: {},
+    parameterLibraryUiState: {
+      expandedCategories: {},
+    },
     lastSavedAt: "",
     lastBackupAt: "",
     lastFileName: "",
@@ -213,7 +215,9 @@ function loadGlobalLibraries() {
         ...defaultGlobalLibraries,
         ...savedLibraries,
         roomTypes: savedLibraries.roomTypes || defaultGlobalLibraries.roomTypes,
-        parameters: savedLibraries.parameters || defaultGlobalLibraries.parameters,
+        parameters: mergeSeededParameters(
+          savedLibraries.parameters || defaultGlobalLibraries.parameters
+        ),
         units: savedLibraries.units || defaultGlobalLibraries.units,
         costCodes: savedLibraries.costCodes || defaultGlobalLibraries.costCodes,
         stages: savedLibraries.stages || defaultGlobalLibraries.stages,
@@ -253,7 +257,7 @@ function loadGlobalLibraries() {
     {
       ...defaultGlobalLibraries,
       roomTypes: legacyProjectState.roomTypes || defaultGlobalLibraries.roomTypes,
-      parameters: defaultGlobalLibraries.parameters,
+      parameters: mergeSeededParameters(defaultGlobalLibraries.parameters),
       units: legacyProjectState.units || defaultGlobalLibraries.units,
       costCodes: legacyProjectState.costCodes || defaultGlobalLibraries.costCodes,
       stages: legacyProjectState.stages || defaultGlobalLibraries.stages,
@@ -551,6 +555,15 @@ function normalizeAppState(source = {}) {
     estimateRowOverrides: isRecord(source.estimateRowOverrides)
       ? source.estimateRowOverrides
       : defaultProjectData.estimateRowOverrides,
+    parameterLibraryUiState: isRecord(source.parameterLibraryUiState)
+      ? {
+          ...defaultProjectData.parameterLibraryUiState,
+          ...source.parameterLibraryUiState,
+          expandedCategories: isRecord(source.parameterLibraryUiState.expandedCategories)
+            ? source.parameterLibraryUiState.expandedCategories
+            : defaultProjectData.parameterLibraryUiState.expandedCategories,
+        }
+      : defaultProjectData.parameterLibraryUiState,
     lastSavedAt: source.lastSavedAt ?? defaultProjectData.lastSavedAt,
     lastBackupAt: source.lastBackupAt ?? defaultProjectData.lastBackupAt,
     lastFileName: source.lastFileName ?? defaultProjectData.lastFileName,
@@ -592,6 +605,7 @@ function splitAppStateForStorage(appState) {
       manualEstimateLines: appState.manualEstimateLines,
       generatedRowSectionAssignments: appState.generatedRowSectionAssignments,
       estimateRowOverrides: appState.estimateRowOverrides,
+      parameterLibraryUiState: appState.parameterLibraryUiState,
       lastSavedAt: appState.lastSavedAt,
       lastBackupAt: appState.lastBackupAt,
       lastFileName: appState.lastFileName,
@@ -677,6 +691,7 @@ function buildComparableAppState(appState) {
     manualEstimateLines: appState.manualEstimateLines,
     generatedRowSectionAssignments: appState.generatedRowSectionAssignments,
     estimateRowOverrides: appState.estimateRowOverrides,
+    parameterLibraryUiState: appState.parameterLibraryUiState,
   });
 }
 
@@ -721,7 +736,7 @@ function App() {
     () => buildComparableAppState(initialProjectState),
     [initialProjectState]
   );
-  const [activePage, setActivePage] = useState("home");
+  const [activePage, setActivePage] = useState("estimate-builder");
   const [roomTypes, setRoomTypes] = useState(initialProjectState.roomTypes);
   const [parameters, setParameters] = useState(initialProjectState.parameters);
   const [units, setUnits] = useState(initialProjectState.units);
@@ -748,6 +763,9 @@ function App() {
   const [generatedRowSectionAssignments, setGeneratedRowSectionAssignments] = useState(
     initialProjectState.generatedRowSectionAssignments
   );
+  const [parameterLibraryUiState, setParameterLibraryUiState] = useState(
+    initialProjectState.parameterLibraryUiState
+  );
   const [stages, setStages] = useState(initialProjectState.stages);
   const [trades, setTrades] = useState(initialProjectState.trades);
   const [elements, setElements] = useState(initialProjectState.elements);
@@ -763,6 +781,9 @@ function App() {
   const [savedSnapshot, setSavedSnapshot] = useState(initialSavedSnapshot);
   const previousComparableSnapshotRef = useRef(initialSavedSnapshot);
   const startupSourcesRef = useRef(initialLoadResult.startupSources);
+  const projectFileInputRef = useRef(null);
+  const projectMenuRef = useRef(null);
+  const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   const currentAppState = useMemo(
     () => ({
       localProjectId,
@@ -787,6 +808,7 @@ function App() {
       estimateSections,
       manualEstimateLines,
       generatedRowSectionAssignments,
+      parameterLibraryUiState,
       stages,
       trades,
       elements,
@@ -820,6 +842,7 @@ function App() {
       estimateSections,
       manualEstimateLines,
       generatedRowSectionAssignments,
+      parameterLibraryUiState,
       stages,
       trades,
       elements,
@@ -947,6 +970,23 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!isProjectMenuOpen || typeof document === "undefined") {
+      return undefined;
+    }
+
+    const handlePointerDown = (event) => {
+      if (projectMenuRef.current?.contains(event.target)) {
+        return;
+      }
+
+      setIsProjectMenuOpen(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [isProjectMenuOpen]);
+
+  useEffect(() => {
     if (comparableSnapshot === previousComparableSnapshotRef.current) {
       return;
     }
@@ -980,6 +1020,7 @@ function App() {
     setEstimateSections(normalizedAppState.estimateSections);
     setManualEstimateLines(normalizedAppState.manualEstimateLines);
     setGeneratedRowSectionAssignments(normalizedAppState.generatedRowSectionAssignments);
+    setParameterLibraryUiState(normalizedAppState.parameterLibraryUiState);
     setStages(normalizedAppState.stages);
     setTrades(normalizedAppState.trades);
     setElements(normalizedAppState.elements);
@@ -1144,25 +1185,25 @@ function App() {
     applyAppState(nextProjectState, "Started a new project.", { markAsSaved: true });
   };
 
+  const openProjectPicker = () => {
+    if (beginOpenProject()) {
+      projectFileInputRef.current?.click();
+    }
+    setIsProjectMenuOpen(false);
+  };
+
+  const runProjectMenuAction = (action) => {
+    setIsProjectMenuOpen(false);
+    action();
+  };
+
+  const projectMenuLabel = `${projectName || "Project"} (${revision || "Rev 0"})`;
+
   return (
-    <div className={activePage === "home" ? "home-background" : ""}>
+    <div>
       <div className="app-shell">
         <aside className="sidebar">
-        {showSidebarBrand ? (
-          <div className="sidebar-brand">
-            <button
-              type="button"
-              className="sidebar-brand-button"
-              onClick={() => setActivePage("home")}
-            >
-              <span className="sidebar-brand-mark">Dynex</span>
-              <span className="sidebar-brand-tagline">
-                dynamic estimating system
-              </span>
-            </button>
-          </div>
-        ) : null}
-
+        {false ? (
         <button
           type="button"
           className={[
@@ -1179,6 +1220,7 @@ function App() {
           </span>
           <span className="nav-button-label">Project Details</span>
         </button>
+        ) : null}
 
         <nav className="nav-list" aria-label="App sections">
           {Object.entries(pageGroups).map(([groupName, groupPages]) => (
@@ -1218,13 +1260,115 @@ function App() {
       </aside>
 
         <main className="content">
-        {activePage === "home" && (
-          <HomePage
-            onStartProject={() => setActivePage("project-details")}
-            onViewDemo={() => setActivePage("estimate-builder")}
-          />
-        )}
+        <header className="app-topbar">
+          <div className="app-topbar-identity" aria-label="dynex identity">
+            dynex
+          </div>
 
+          <div className="project-menu" ref={projectMenuRef}>
+            <button
+              type="button"
+              className="project-menu-trigger"
+              aria-label="Project menu"
+              aria-expanded={isProjectMenuOpen}
+              onClick={() => setIsProjectMenuOpen((current) => !current)}
+            >
+              <span className="project-menu-trigger-label">{projectMenuLabel}</span>
+              <span className="project-menu-trigger-caret" aria-hidden="true">
+                {isProjectMenuOpen ? "v" : ">"}
+              </span>
+            </button>
+
+            {isProjectMenuOpen ? (
+              <div className="project-menu-panel" role="menu" aria-label="Project actions">
+                <div className="project-menu-summary">
+                  <strong>{projectName || "Untitled Project"}</strong>
+                  <span>{revision || "Rev 0"}</span>
+                </div>
+
+                <button
+                  type="button"
+                  className="project-menu-item"
+                  role="menuitem"
+                  onClick={() => runProjectMenuAction(() => setActivePage("project-details"))}
+                >
+                  Project Details
+                </button>
+                <button
+                  type="button"
+                  className="project-menu-item"
+                  role="menuitem"
+                  onClick={() => runProjectMenuAction(resetProject)}
+                >
+                  New Project
+                </button>
+                <button
+                  type="button"
+                  className="project-menu-item"
+                  role="menuitem"
+                  onClick={openProjectPicker}
+                >
+                  Open Project
+                </button>
+                <button
+                  type="button"
+                  className="project-menu-item"
+                  role="menuitem"
+                  onClick={() => runProjectMenuAction(saveProjectToFile)}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  className="project-menu-item"
+                  role="menuitem"
+                  onClick={() => runProjectMenuAction(saveProjectAs)}
+                >
+                  Save As
+                </button>
+                <button
+                  type="button"
+                  className="project-menu-item"
+                  role="menuitem"
+                  onClick={() => runProjectMenuAction(saveAsRevision)}
+                >
+                  Save Revision
+                </button>
+                <button
+                  type="button"
+                  className="project-menu-item"
+                  role="menuitem"
+                  onClick={openProjectPicker}
+                >
+                  Import JSON
+                </button>
+                <button
+                  type="button"
+                  className="project-menu-item"
+                  role="menuitem"
+                  onClick={() => runProjectMenuAction(saveProjectToFile)}
+                >
+                  Export JSON
+                </button>
+              </div>
+            ) : null}
+
+            <input
+              ref={projectFileInputRef}
+              type="file"
+              accept=".json,application/json"
+              aria-label="Open Project File"
+              hidden
+              onChange={(event) => {
+                const [file] = Array.from(event.target.files || []);
+                openProjectFromFile(file || null);
+                event.target.value = "";
+              }}
+            />
+          </div>
+        </header>
+
+        <div className="content-body">
         {activePage === "project-details" && (
           <ProjectDetailsPage
             projectName={projectName}
@@ -1283,7 +1427,17 @@ function App() {
         )}
 
         {activePage === "parameters" && (
-          <ParameterLibraryPage parameters={parameters} onParametersChange={setParameters} />
+          <ParameterLibraryPage
+            parameters={parameters}
+            onParametersChange={setParameters}
+            expandedCategories={parameterLibraryUiState?.expandedCategories || {}}
+            onExpandedCategoriesChange={(expandedCategories) =>
+              setParameterLibraryUiState((current) => ({
+                ...(current || {}),
+                expandedCategories,
+              }))
+            }
+          />
         )}
 
         {activePage === "room-types" && (
@@ -1397,6 +1551,7 @@ function App() {
             onRowOverrideChange={handleEstimateRowChange}
           />
         )}
+        </div>
         </main>
       </div>
     </div>

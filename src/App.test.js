@@ -10,13 +10,17 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-test("renders primary navigation and default home page", () => {
+async function openProjectDetails() {
+  await userEvent.click(screen.getByRole("button", { name: /project menu/i }));
+  await userEvent.click(screen.getByRole("menuitem", { name: /project details/i }));
+}
+
+test("renders primary navigation and lands on estimate builder by default", () => {
   render(<App />);
-  expect(screen.getByRole("button", { name: /Dynex dynamic estimating system/i })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /project details/i })).toBeInTheDocument();
+  expect(screen.getByText(/^dynex$/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /project menu/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /room library/i })).toBeInTheDocument();
-  expect(screen.getByText(/build smarter estimates\./i)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /start project/i })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /estimate builder/i })).toHaveClass("active");
 });
 
 test("logs and surfaces startup library sources from local storage", async () => {
@@ -38,7 +42,7 @@ test("logs and surfaces startup library sources from local storage", async () =>
 
   render(<App />);
 
-  await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+  await openProjectDetails();
 
   expect(
     screen.getByText(
@@ -58,7 +62,7 @@ test("logs and surfaces startup library sources from local storage", async () =>
 test("auto-saves project changes to localStorage without manual save", async () => {
   render(<App />);
 
-  await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+  await openProjectDetails();
   await userEvent.clear(screen.getByLabelText(/project name/i));
   await userEvent.type(screen.getByLabelText(/project name/i), "Autosave Project");
 
@@ -67,10 +71,56 @@ test("auto-saves project changes to localStorage without manual save", async () 
   });
 });
 
+test("parameter library category expansion defaults to collapsed and persists per project", async () => {
+  render(<App />);
+
+  await userEvent.click(screen.getByRole("button", { name: /parameter library/i }));
+
+  expect(screen.getByRole("button", { name: /wet area/i })).toHaveAttribute(
+    "aria-expanded",
+    "false"
+  );
+  expect(screen.getByRole("button", { name: /waterproofing/i })).toHaveAttribute(
+    "aria-expanded",
+    "false"
+  );
+  expect(screen.queryByText(/waterproof wall area/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/upturn length/i)).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: /wet area/i }));
+  await userEvent.click(screen.getByRole("button", { name: /waterproofing/i }));
+
+  expect(screen.getByText(/waterproof wall area/i)).toBeInTheDocument();
+  expect(screen.getByText(/upturn length/i)).toBeInTheDocument();
+
+  expect(JSON.parse(window.localStorage.getItem("estimator-app-project-data"))).toMatchObject({
+    parameterLibraryUiState: {
+      expandedCategories: {
+        "Wet Area": true,
+        Waterproofing: true,
+      },
+    },
+  });
+
+  await openProjectDetails();
+  await userEvent.click(screen.getByRole("button", { name: /parameter library/i }));
+
+  expect(screen.getByRole("button", { name: /wet area/i })).toHaveAttribute(
+    "aria-expanded",
+    "true"
+  );
+  expect(screen.getByRole("button", { name: /waterproofing/i })).toHaveAttribute(
+    "aria-expanded",
+    "true"
+  );
+  expect(screen.getByText(/waterproof wall area/i)).toBeInTheDocument();
+  expect(screen.getByText(/upturn length/i)).toBeInTheDocument();
+});
+
 test("project details shows saved state and unsaved changes automatically", async () => {
   render(<App />);
 
-  await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+  await openProjectDetails();
   expect(screen.getByText(/^saved$/i)).toBeInTheDocument();
 
   await userEvent.clear(screen.getByLabelText(/project name/i));
@@ -104,7 +154,7 @@ test("save project exports the current app state to a json file", async () => {
   try {
     render(<App />);
 
-    await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+    await openProjectDetails();
     await userEvent.clear(screen.getByLabelText(/estimate name/i));
     await userEvent.type(screen.getByLabelText(/estimate name/i), "Preliminary Estimate");
     await userEvent.clear(screen.getByLabelText(/revision/i));
@@ -149,7 +199,7 @@ test("save as revision increments the revision and exports a new file", async ()
   try {
     render(<App />);
 
-    await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+    await openProjectDetails();
     await userEvent.clear(screen.getByLabelText(/revision/i));
     await userEvent.type(screen.getByLabelText(/revision/i), "Rev 0");
     await userEvent.click(screen.getByRole("button", { name: /save as revision/i }));
@@ -170,9 +220,9 @@ test("save as revision increments the revision and exports a new file", async ()
 test("open project restores app state from a saved json file", async () => {
   render(<App />);
 
-  await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+  await openProjectDetails();
 
-  const fileInput = screen.getByLabelText(/open project file/i);
+  const fileInput = screen.getAllByLabelText(/open project file/i)[0];
   const projectFile = new File(
     [
       JSON.stringify({
@@ -220,7 +270,7 @@ test("open project warns before discarding unsaved changes", async () => {
   try {
     render(<App />);
 
-    await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+    await openProjectDetails();
     await userEvent.clear(screen.getByLabelText(/project name/i));
     await userEvent.type(screen.getByLabelText(/project name/i), "Unsaved Draft");
     await userEvent.click(screen.getByRole("button", { name: /open project/i }));
@@ -238,9 +288,9 @@ test("open project warns before discarding unsaved changes", async () => {
 test("open project shows a friendly error for invalid json files", async () => {
   render(<App />);
 
-  await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+  await openProjectDetails();
 
-  const fileInput = screen.getByLabelText(/open project file/i);
+  const fileInput = screen.getAllByLabelText(/open project file/i)[0];
   const invalidFile = new File(["not valid json"], "broken-project.json", {
     type: "application/json",
   });
@@ -332,7 +382,7 @@ test("new project resets project data without clearing global libraries", async 
 
     render(<App />);
 
-    await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+    await openProjectDetails();
 
     expect(screen.getByLabelText(/project name/i)).toHaveValue("Saved Project");
     expect(screen.getByLabelText(/client name/i)).toHaveValue("Saved Client");
@@ -386,7 +436,7 @@ test("new project can be cancelled when unsaved changes exist", async () => {
   try {
     render(<App />);
 
-    await userEvent.click(screen.getByRole("button", { name: /project details/i }));
+    await openProjectDetails();
     await userEvent.clear(screen.getByLabelText(/project name/i));
     await userEvent.type(screen.getByLabelText(/project name/i), "Do Not Reset");
     await userEvent.click(screen.getByRole("button", { name: /new project/i }));

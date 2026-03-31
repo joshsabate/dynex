@@ -180,6 +180,27 @@ test("builds assembly names from structured identity fields and keeps notes coll
   expect(screen.getByLabelText(/assembly notes/i)).toBeInTheDocument();
 });
 
+test("allows saving an assembly header with no cost items", async () => {
+  const { onAssembliesChange } = renderPage({ assemblies: [] });
+
+  await userEvent.click(screen.getByRole("button", { name: /add assembly/i }));
+  await userEvent.type(screen.getByLabelText(/element/i), "Ceiling");
+  await userEvent.type(screen.getByLabelText(/scope/i), "Paint");
+  await userEvent.selectOptions(screen.getByLabelText(/assembly group/i), "Walls & Linings");
+  await userEvent.click(screen.getByRole("button", { name: /save assembly/i }));
+
+  await waitFor(() => expect(onAssembliesChange).toHaveBeenCalledTimes(1));
+
+  const nextAssemblies = onAssembliesChange.mock.calls[0][0];
+  expect(nextAssemblies).toHaveLength(1);
+  expect(nextAssemblies[0]).toMatchObject({
+    assemblyName: "Ceiling  Paint",
+    assemblyGroup: "Walls & Linings",
+    items: [],
+  });
+  expect(screen.queryByText(/at least one cost item is required\./i)).not.toBeInTheDocument();
+});
+
 test("supports add rename and delete in manage groups", async () => {
   const { onAssembliesChange } = renderPage({ assemblies });
 
@@ -325,8 +346,7 @@ test("inherits all linked cost library fields and shows unassigned labels for mi
 test("keeps override rate editable as a normal blank-allowed numeric input", async () => {
   renderPage({ assemblies });
 
-  await userEvent.click(screen.getByText(/wall\s+villaboard lining/i));
-  await userEvent.click(screen.getByRole("button", { name: /manage assembly items/i }));
+  await userEvent.click(screen.getByRole("button", { name: /manage items for wall\s+villaboard lining/i }));
 
   const editablePanel = screen
     .getByRole("heading", { name: /assembly use fields/i })
@@ -344,8 +364,7 @@ test("keeps override rate editable as a normal blank-allowed numeric input", asy
 test("builds quantity formulas from guided parameters and stores the formula string", async () => {
   renderPage({ assemblies });
 
-  await userEvent.click(screen.getByText(/wall\s+villaboard lining/i));
-  await userEvent.click(screen.getByRole("button", { name: /manage assembly items/i }));
+  await userEvent.click(screen.getByRole("button", { name: /manage items for wall\s+villaboard lining/i }));
   await userEvent.click(screen.getByRole("button", { name: /use guided builder/i }));
 
   await userEvent.selectOptions(screen.getByLabelText(/base parameter/i), "floorArea");
@@ -365,6 +384,22 @@ test("opens manage assembly items directly from the assembly row icon", async ()
 
   expect(screen.getByRole("heading", { name: /manage assembly items/i })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: /assembly use fields/i })).toBeInTheDocument();
+});
+
+test("removes low-value assembly columns and shows delivery type tags in the items modal", async () => {
+  renderPage({ assemblies });
+
+  expect(screen.queryByRole("columnheader", { name: /item mix/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("columnheader", { name: /source mix/i })).not.toBeInTheDocument();
+  expect(screen.getByText("Villaboard Sheets")).toHaveClass("assembly-library-name-secondary");
+
+  await userEvent.click(screen.getByRole("button", { name: /manage items for wall\s+villaboard lining/i }));
+
+  expect(screen.getByText("Supply")).toHaveClass("assembly-library-delivery-tag", "is-supply");
+  const editablePanel = screen
+    .getByRole("heading", { name: /assembly use fields/i })
+    .closest(".assembly-library-item-detail-editable");
+  expect(within(editablePanel).queryByLabelText(/notes/i)).not.toBeInTheDocument();
 });
 
 test("supports bulk edit across selected assembly items and keeps the selection", async () => {
@@ -414,8 +449,7 @@ test("supports bulk edit across selected assembly items and keeps the selection"
 
   renderPage({ assemblies: bulkAssemblies });
 
-  await userEvent.click(screen.getByText(/wall\s+villaboard lining/i));
-  await userEvent.click(screen.getByRole("button", { name: /manage assembly items/i }));
+  await userEvent.click(screen.getByRole("button", { name: /manage items for wall\s+villaboard lining/i }));
   await userEvent.click(screen.getByLabelText(/select all assembly items/i));
 
   expect(screen.getByText(/2 selected/i)).toBeInTheDocument();

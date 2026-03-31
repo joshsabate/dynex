@@ -188,15 +188,6 @@ function cloneAssemblyForEditor(assembly, roomTypes = []) {
   };
 }
 
-function getAssemblyNameParts(assembly) {
-  const derivedParts = deriveAssemblyNameParts(assembly.assemblyName);
-  return {
-    element: cleanText(assembly.assemblyElement || derivedParts.assemblyElement),
-    scope: cleanText(assembly.assemblyScope || derivedParts.assemblyScope),
-    spec: cleanText(assembly.assemblySpec || derivedParts.assemblySpec),
-  };
-}
-
 function getAssemblySourceMix(assembly) {
   const items = assembly.items || [];
   if (!items.length) {
@@ -212,9 +203,32 @@ function getAssemblySourceMix(assembly) {
   return "Mixed";
 }
 
-function getAssemblyItemMix(assembly) {
-  const mix = [...new Set((assembly.items || []).map((item) => cleanText(item.costType)).filter(Boolean))];
-  return mix.length ? mix : ["Unassigned"];
+function getDeliveryTypeTagClassName(deliveryType) {
+  switch (cleanText(deliveryType)) {
+    case "Supply":
+      return "is-supply";
+    case "Install":
+      return "is-install";
+    case "Supply & Install":
+      return "is-supply-install";
+    case "Labour":
+      return "is-labour";
+    default:
+      return "is-unassigned";
+  }
+}
+
+function getAssemblyCoreItemsSummary(assembly, costLookupById) {
+  const coreItems = [...new Set(
+    (assembly.items || [])
+      .map((item) => {
+        const linkedCost = costLookupById.get(cleanText(item.libraryItemId || item.costItemId));
+        return cleanText(linkedCost?.coreName || item.coreName || item.itemNameSnapshot || item.itemName);
+      })
+      .filter(Boolean)
+  )];
+
+  return coreItems.join(" · ");
 }
 
 function createCopyName(value, fallback) {
@@ -277,6 +291,10 @@ function AssemblyLibraryPage({
         costCodes,
       }),
     [assemblies, costCodes, normalizedCosts, trades, units]
+  );
+  const costLookupById = useMemo(
+    () => new Map(normalizedCosts.map((cost) => [cleanText(cost.id), cost])),
+    [normalizedCosts]
   );
   const quantityFormulaOptions = useMemo(
     () => getQuantityFormulaOptions(parameters),
@@ -1478,9 +1496,6 @@ function AssemblyLibraryPage({
     ) {
       errors.push("Assembly Group must come from the managed assembly group list.");
     }
-    if (!draft.items.length) {
-      errors.push("At least one cost item is required.");
-    }
     if (
       normalizedAssemblies.find(
         (assembly) => assembly.id === nextAssemblyId && assembly.id !== editorState.assemblyId
@@ -2038,8 +2053,6 @@ function AssemblyLibraryPage({
                     <col className="assembly-library-col-room" />
                     <col className="assembly-library-col-group" />
                     <col className="assembly-library-col-count" />
-                    <col className="assembly-library-col-item-mix" />
-                    <col className="assembly-library-col-source" />
                     <col className="assembly-library-col-actions" />
                   </colgroup>
                   <thead>
@@ -2056,8 +2069,6 @@ function AssemblyLibraryPage({
                       <th>Room Type</th>
                       <th>Assembly Group</th>
                       <th>Item Count</th>
-                      <th>Item Mix</th>
-                      <th>Source Mix</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -2065,8 +2076,7 @@ function AssemblyLibraryPage({
                     {filteredAssemblies.map((assembly) => {
                       const isActive = editorState.assemblyId === assembly.id;
                       const isSelected = selectedAssemblyIds.includes(assembly.id);
-                      const assemblyNameParts = getAssemblyNameParts(assembly);
-                      const itemMix = getAssemblyItemMix(assembly);
+                      const coreItemsSummary = getAssemblyCoreItemsSummary(assembly, costLookupById);
                       return (
                         <tr
                           key={assembly.id}
@@ -2090,27 +2100,11 @@ function AssemblyLibraryPage({
                                 {assembly.assemblyName}
                               </span>
                               <div className="assembly-library-name-main">
-                                {assemblyNameParts.element ? (
-                                  <span className="assembly-library-name-element">
-                                    {assemblyNameParts.element}
-                                  </span>
-                                ) : null}
-                                {assemblyNameParts.scope ? (
-                                  <span className="assembly-library-name-scope">
-                                    {assemblyNameParts.scope}
-                                  </span>
-                                ) : null}
-                                {!assemblyNameParts.element && !assemblyNameParts.scope ? (
-                                  <span className="assembly-library-name-scope">
-                                    {assembly.assemblyName}
-                                  </span>
-                                ) : null}
+                                {assembly.assemblyName || "Untitled Assembly"}
                               </div>
-                              {assemblyNameParts.spec ? (
-                                <div className="assembly-library-name-spec-row">
-                                  <span className="assembly-library-name-spec">
-                                    {assemblyNameParts.spec}
-                                  </span>
+                              {coreItemsSummary ? (
+                                <div className="assembly-library-name-secondary" title={coreItemsSummary}>
+                                  {coreItemsSummary}
                                 </div>
                               ) : null}
                             </div>
@@ -2118,20 +2112,6 @@ function AssemblyLibraryPage({
                           <td>{assembly.roomType || "Unassigned"}</td>
                           <td>{assembly.assemblyGroup || "Unassigned"}</td>
                           <td>{assembly.items.length}</td>
-                          <td>
-                            <div className="assembly-library-item-mix">
-                              {itemMix.map((mix) => (
-                                <span key={`${assembly.id}-${mix}`} className="assembly-library-mix-badge">
-                                  {mix}
-                                </span>
-                              ))}
-                            </div>
-                          </td>
-                          <td>
-                            <span className="assembly-library-source-mix-label">
-                              {getAssemblySourceMix(assembly)}
-                            </span>
-                          </td>
                           <td>
                             <div className="action-row assembly-library-row-icon-actions">
                               <button
@@ -2767,6 +2747,13 @@ function AssemblyLibraryPage({
                                 </div>
                                 <div className="assembly-library-manager-card-meta">
                                   <span>{item.costType || "Unassigned"}</span>
+                                  <span
+                                    className={`assembly-library-delivery-tag ${getDeliveryTypeTagClassName(
+                                      item.deliveryType
+                                    )}`}
+                                  >
+                                    {item.deliveryType || "Unassigned"}
+                                  </span>
                                   <span>{item.unit || "Unassigned"}</span>
                                   <span>{formatCurrencyLabel(item.baseRate)}</span>
                                   <span
@@ -3077,16 +3064,6 @@ function AssemblyLibraryPage({
                             }
                           />
                         </FormField>
-                        <FormField label="Notes">
-                          <textarea
-                            rows={3}
-                            value={activeItem.notes || ""}
-                            placeholder="Optional item notes"
-                            onChange={(event) =>
-                              updateItemField(activeItem.id, "notes", event.target.value)
-                            }
-                          />
-                        </FormField>
                       </div>
                     </div>
                   </>
@@ -3094,7 +3071,7 @@ function AssemblyLibraryPage({
                   <div className="assembly-library-item-detail assembly-library-item-detail-empty">
                     <h3>Selected Item</h3>
                     <p className="empty-state">
-                      Select an item to view inherited details and edit quantity, override rate, and notes.
+                      Select an item to view inherited details and edit quantity and override rate.
                     </p>
                   </div>
                 )}

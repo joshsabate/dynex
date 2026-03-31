@@ -116,7 +116,11 @@ export function normalizeRoomTemplate(template = {}, roomTypes = [], parameters 
       ...nextValues,
       [parameterDefinition.key]: coerceParameterValue(
         parameterDefinition,
-        parameterValues[parameterDefinition.key]
+        parameterDefinition.parameterType === "Derived"
+          ? parameterValues[parameterDefinition.key] === ""
+            ? 0
+            : parameterValues[parameterDefinition.key]
+          : parameterValues[parameterDefinition.key]
       ),
     }),
     {}
