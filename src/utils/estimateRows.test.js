@@ -263,6 +263,223 @@ test("recomputes row stage display from the resolved stageId instead of a stale 
   });
 });
 
+test("normalizes quantity, rate, and image gallery fields for manual builder rows", () => {
+  const rows = generateManualEstimateBuilderRows(
+    [
+      {
+        id: "manual-line-images",
+        itemName: "Feature tiling",
+        unitId: "unit-sqm",
+        unit: "sq m",
+        quantity: 12,
+        rate: 37.5,
+        stageId: "stage-preliminaries",
+        imageUrls: ["data:image/png;base64,aaa", "", "data:image/png;base64,bbb"],
+        primaryImageIndex: 1,
+      },
+    ],
+    {},
+    [],
+    [{ id: "stage-preliminaries", name: "Preliminaries", sortOrder: 1, isActive: true }],
+    [],
+    [],
+    units
+  );
+
+  expect(rows[0]).toMatchObject({
+    quantity: 12,
+    rate: 37.5,
+    unitRate: 37.5,
+    total: 450,
+    imageUrls: ["data:image/png;base64,aaa", "data:image/png;base64,bbb"],
+    primaryImageIndex: 1,
+    imageUrl: "data:image/png;base64,bbb",
+  });
+});
+
+test("allows row overrides to fully manage canvas image galleries", () => {
+  const rows = generateEstimateRows(rooms, assemblyRows, costRows, {
+    "room-1-assembly-bathroom-floor-assembly-row-1": {
+      imageUrls: [],
+      primaryImageIndex: 4,
+    },
+  });
+
+  expect(rows[0]).toMatchObject({
+    imageUrls: [],
+    primaryImageIndex: 0,
+    imageUrl: "",
+  });
+});
+
+test("normalizes takeoff calibration and entries for manual builder rows", () => {
+  const rows = generateManualEstimateBuilderRows(
+    [
+      {
+        id: "manual-line-takeoff",
+        itemName: "Feature tiling",
+        unitId: "unit-sqm",
+        unit: "sq m",
+        quantity: 12,
+        rate: 37.5,
+        stageId: "stage-preliminaries",
+        imageUrls: ["data:image/png;base64,aaa", "data:image/png;base64,bbb"],
+        primaryImageIndex: 0,
+        takeoffCalibrations: {
+          0: {
+            points: [{ x: 0.1, y: 0.2 }, { x: 0.7, y: 0.2 }],
+            realLength: 4,
+            realUnit: "m",
+            metersPerPixel: 0.02,
+          },
+        },
+        takeoffs: [
+          {
+            id: "takeoff-1",
+            imageIndex: 0,
+            tool: "polygon",
+            points: [
+              { x: 0.1, y: 0.2 },
+              { x: 0.7, y: 0.2 },
+              { x: 0.7, y: 0.8 },
+            ],
+            computedValue: 8.75,
+            unit: "sqm",
+            label: "Wall area",
+          },
+        ],
+      },
+    ],
+    {},
+    [],
+    [{ id: "stage-preliminaries", name: "Preliminaries", sortOrder: 1, isActive: true }],
+    [],
+    [],
+    units
+  );
+
+  expect(rows[0]).toMatchObject({
+    takeoffCalibrations: {
+      0: {
+        realLength: 4,
+        realUnit: "m",
+        metersPerPixel: 0.02,
+      },
+    },
+    takeoffs: [
+      {
+        id: "takeoff-1",
+        imageIndex: 0,
+        tool: "polygon",
+        computedValue: 8.75,
+        unit: "SQM",
+        label: "Wall area",
+      },
+    ],
+  });
+});
+
+test("allows row overrides to persist takeoff data for generated rows", () => {
+  const rows = generateEstimateRows(rooms, assemblyRows, costRows, {
+    "room-1-assembly-bathroom-floor-assembly-row-1": {
+      imageUrls: ["data:image/png;base64,override"],
+      takeoffCalibrations: {
+        0: {
+          points: [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 }],
+          realLength: 5,
+          realUnit: "m",
+          metersPerPixel: 0.01,
+        },
+      },
+      takeoffs: [
+        {
+          id: "takeoff-override",
+          imageIndex: 0,
+          tool: "line",
+          points: [{ x: 0.1, y: 0.1 }, { x: 0.6, y: 0.1 }],
+          computedValue: 2.5,
+          unit: "lm",
+          label: "Skirting",
+        },
+      ],
+    },
+  });
+
+  expect(rows[0]).toMatchObject({
+    takeoffCalibrations: {
+      0: {
+        realLength: 5,
+        realUnit: "m",
+        metersPerPixel: 0.01,
+      },
+    },
+    takeoffApplied: null,
+    takeoffs: [
+      {
+        id: "takeoff-override",
+        tool: "line",
+        computedValue: 2.5,
+        unit: "LM",
+        label: "Skirting",
+      },
+    ],
+  });
+});
+
+test("normalizes takeoff-applied metadata for generated rows", () => {
+  const rows = generateEstimateRows(rooms, assemblyRows, costRows, {
+    "room-1-assembly-bathroom-floor-assembly-row-1": {
+      imageUrls: ["data:image/png;base64,override"],
+      quantityOverride: 2.5,
+      takeoffApplied: {
+        takeoffId: "takeoff-override",
+        imageIndex: 0,
+        tool: "line",
+        computedValue: 2.5,
+        unit: "lm",
+        mode: "replace",
+        appliedQuantity: 2.5,
+        appliedAt: "2026-04-03T12:00:00.000Z",
+      },
+    },
+  });
+
+  expect(rows[0]).toMatchObject({
+    takeoffApplied: {
+      takeoffId: "takeoff-override",
+      imageIndex: 0,
+      tool: "line",
+      computedValue: 2.5,
+      unit: "LM",
+      mode: "replace",
+      appliedQuantity: 2.5,
+      appliedAt: "2026-04-03T12:00:00.000Z",
+    },
+  });
+});
+
+test("invalidates takeoff-applied metadata when effective quantity changes", () => {
+  const rows = generateEstimateRows(rooms, assemblyRows, costRows, {
+    "room-1-assembly-bathroom-floor-assembly-row-1": {
+      quantityOverride: 4,
+      imageUrls: ["data:image/png;base64,override"],
+      takeoffApplied: {
+        takeoffId: "takeoff-override",
+        imageIndex: 0,
+        tool: "line",
+        computedValue: 2.5,
+        unit: "lm",
+        mode: "replace",
+        appliedQuantity: 2.5,
+        appliedAt: "2026-04-03T12:00:00.000Z",
+      },
+    },
+  });
+
+  expect(rows[0].quantity).toBe(4);
+  expect(rows[0].takeoffApplied).toBeNull();
+});
+
 test("supports kitchen-specific quantity rules from room inputs", () => {
   const rows = generateEstimateRows(
     [

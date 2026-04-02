@@ -202,6 +202,12 @@ function getCardByName(name) {
   return screen.getAllByText(new RegExp(`^${name}$`, "i"))[0].closest(".estimate-canvas-card");
 }
 
+function getCardDetailsButtonByName(name) {
+  return within(getCardByName(name)).getByRole("button", {
+    name: new RegExp(`open details for ${name}`, "i"),
+  });
+}
+
 function getDragTarget(testId) {
   return screen.getByTestId(testId);
 }
@@ -285,6 +291,52 @@ test("canvas cards resolve images from row, assembly, then item sources", async 
 
   expect(manualCardImage).toHaveAttribute("src", "https://example.com/row.jpg");
   expect(generatedCardImage).toHaveAttribute("src", "https://example.com/assembly.jpg");
+});
+
+test("canvas detail edits quantity, unit, and rate and reflects them back into the card", async () => {
+  function WorkspaceHarness() {
+    const [manualLines, setManualLines] = useState([
+      {
+        id: "manual-line-1",
+        itemName: "Site fencing",
+        quantity: 1,
+        rate: 150,
+        unitId: "unit-ea",
+        unit: "EA",
+        stageId: "stage-prelims",
+        sectionId: "section-1",
+        tradeId: "trade-general",
+        costCodeId: "cost-code-prelims",
+        elementId: "element-site",
+        sortOrder: 10,
+      },
+    ]);
+
+    return (
+      <EstimateWorkspacePage
+        {...createBaseProps({
+          manualLines,
+          manualBuilderRows: [],
+          onManualLinesChange: setManualLines,
+        })}
+      />
+    );
+  }
+
+  render(<WorkspaceHarness />);
+
+  await openCanvasView();
+  await userEvent.click(getCardDetailsButtonByName("Site fencing"));
+
+  fireEvent.change(screen.getByLabelText(/quantity/i), { target: { value: "3" } });
+  fireEvent.change(screen.getByLabelText(/unit/i), { target: { value: "m²" } });
+  fireEvent.change(screen.getByLabelText(/rate/i), { target: { value: "225" } });
+
+  const card = getCardByName("Site fencing");
+
+  expect(within(card).getByText("3 m²")).toBeInTheDocument();
+  expect(within(card).getByText("$675.00")).toBeInTheDocument();
+  expect(screen.getAllByText("$675.00")[0]).toBeInTheDocument();
 });
 
 test("timeline view renders shared rows grouped by stage with scheduled and unscheduled items", async () => {
@@ -761,6 +813,226 @@ test("inserting into a middle vertical slot shifts lower cards down without chan
   );
 });
 
+test("dense columns keep explicit gap slots and accept drops after the last occupied track", async () => {
+  const onRowOverrideChange = jest.fn();
+
+  render(
+    <EstimateWorkspacePage
+      {...createBaseProps({
+        onRowOverrideChange,
+        manualBuilderRows: [
+          {
+            ...createBaseProps().manualBuilderRows[0],
+            canvasColumn: 0,
+            canvasTrack: 0,
+          },
+          {
+            ...createBaseProps().manualBuilderRows[1],
+            canvasColumn: 0,
+            canvasTrack: 3,
+          },
+          {
+            ...createBaseProps().manualBuilderRows[2],
+            canvasColumn: 1,
+            canvasTrack: 0,
+          },
+        ],
+      })}
+    />
+  );
+
+  await openCanvasView();
+
+  expect(screen.getByTestId("canvas-track-slot-stage-prelims-0-0")).toBeInTheDocument();
+  expect(screen.getByTestId("canvas-track-slot-stage-prelims-0-1")).toBeInTheDocument();
+  expect(screen.getByTestId("canvas-track-slot-stage-prelims-0-2")).toBeInTheDocument();
+  expect(screen.getByTestId("canvas-track-slot-stage-prelims-0-3")).toBeInTheDocument();
+  expect(screen.getByTestId("canvas-track-slot-stage-prelims-0-4")).toBeInTheDocument();
+  expect(screen.getByTestId("canvas-track-cell-stage-prelims-0-1")).toBeInTheDocument();
+  expect(screen.getByTestId("canvas-track-cell-stage-prelims-0-2")).toBeInTheDocument();
+
+  await dragCardToTarget(
+    getCardByName("Stripout setup"),
+    getDragTarget("canvas-track-slot-stage-prelims-0-4")
+  );
+
+  expect(onRowOverrideChange).toHaveBeenCalledWith(
+    "manual-row-1",
+    expect.objectContaining({
+      stageId: "stage-prelims",
+      canvasColumn: 0,
+      canvasTrack: 0,
+    })
+  );
+  expect(onRowOverrideChange).toHaveBeenCalledWith(
+    "manual-row-2",
+    expect.objectContaining({
+      stageId: "stage-prelims",
+      canvasColumn: 0,
+      canvasTrack: 3,
+    })
+  );
+  expect(onRowOverrideChange).toHaveBeenCalledWith(
+    "generated-row-1",
+    expect.objectContaining({
+      stageId: "stage-prelims",
+      canvasColumn: 0,
+      canvasTrack: 4,
+    })
+  );
+});
+
+test("canvas commits multi-row manual shifts to the exact hovered slot without stale overwrites", async () => {
+  function WorkspaceHarness() {
+    const [manualLines, setManualLines] = useState([
+      {
+        id: "manual-line-1",
+        itemName: "Site fencing",
+        displayNameOverride: "",
+        workType: "Supply",
+        itemFamily: "",
+        specification: "",
+        gradeOrQuality: "",
+        brand: "",
+        finishOrVariant: "",
+        unitId: "unit-ea",
+        unit: "EA",
+        quantity: 1,
+        rate: 1500,
+        stageId: "stage-prelims",
+        stage: "Preliminaries",
+        sectionId: "section-1",
+        costCodeId: "cost-code-prelims",
+        tradeId: "trade-general",
+        elementId: "element-site",
+        notes: "Fence the site boundary",
+        sourceLink: "",
+        sortOrder: 10,
+        canvasColumn: 0,
+        canvasTrack: 0,
+      },
+      {
+        id: "manual-line-2",
+        itemName: "Pump hire",
+        displayNameOverride: "",
+        workType: "Equipment",
+        itemFamily: "",
+        specification: "",
+        gradeOrQuality: "",
+        brand: "",
+        finishOrVariant: "",
+        unitId: "unit-ea",
+        unit: "EA",
+        quantity: 1,
+        rate: 700,
+        stageId: "stage-prelims",
+        stage: "Preliminaries",
+        sectionId: "section-1",
+        costCodeId: "cost-code-prelims",
+        tradeId: "trade-general",
+        elementId: "element-site",
+        notes: "",
+        sourceLink: "",
+        sortOrder: 20,
+        canvasColumn: 0,
+        canvasTrack: 2,
+      },
+      {
+        id: "manual-line-3",
+        itemName: "Reo install",
+        displayNameOverride: "",
+        workType: "Labour",
+        itemFamily: "",
+        specification: "",
+        gradeOrQuality: "",
+        brand: "",
+        finishOrVariant: "",
+        unitId: "unit-ea",
+        unit: "EA",
+        quantity: 1,
+        rate: 900,
+        stageId: "stage-demo",
+        stage: "Demolition",
+        sectionId: "section-1",
+        costCodeId: "cost-code-prelims",
+        tradeId: "trade-general",
+        elementId: "element-site",
+        notes: "",
+        sourceLink: "",
+        sortOrder: 30,
+        canvasColumn: 0,
+        canvasTrack: 0,
+      },
+    ]);
+
+    const manualBuilderRows = manualLines.map((line) => ({
+      id: line.id,
+      itemName: line.itemName,
+      displayName: line.itemName,
+      roomName: "Preliminaries",
+      sectionId: line.sectionId,
+      stageId: line.stageId,
+      stage: line.stage,
+      tradeId: line.tradeId,
+      trade: "General",
+      costCodeId: line.costCodeId,
+      costCode: "Preliminaries",
+      quantity: line.quantity,
+      unit: line.unit,
+      unitRate: line.rate,
+      total: line.quantity * line.rate,
+      include: true,
+      sortOrder: line.sortOrder,
+      source: "manual-builder",
+      workType: line.workType,
+      notes: line.notes,
+      canvasColumn: line.canvasColumn,
+      canvasTrack: line.canvasTrack,
+      canvasOrder: line.canvasColumn * 100 + line.canvasTrack,
+    }));
+
+    return (
+      <EstimateWorkspacePage
+        {...createBaseProps({
+          manualLines,
+          manualBuilderRows,
+          generatedRows: [],
+          onManualLinesChange: setManualLines,
+        })}
+      />
+    );
+  }
+
+  render(<WorkspaceHarness />);
+
+  await openCanvasView();
+  await dragCardToTarget(
+    getCardByName("Reo install"),
+    getDragTarget("canvas-track-slot-stage-prelims-0-1")
+  );
+
+  expect(
+    within(screen.getByTestId("canvas-track-cell-stage-prelims-0-0")).getByText(/site fencing/i)
+  ).toBeInTheDocument();
+  expect(
+    within(screen.getByTestId("canvas-track-cell-stage-prelims-0-1")).getByText(/reo install/i)
+  ).toBeInTheDocument();
+  expect(
+    within(screen.getByTestId("canvas-track-cell-stage-prelims-0-3")).getByText(/pump hire/i)
+  ).toBeInTheDocument();
+  expect(screen.queryByTestId("canvas-track-cell-stage-demo-0-0")).not.toHaveTextContent(/reo install/i);
+
+  await openBuilderView();
+  await expandMainWorksSection();
+
+  expect(screen.getByTestId("builder-row-manual-line-1")).toBeInTheDocument();
+  expect(screen.getByTestId("builder-row-manual-line-2")).toBeInTheDocument();
+  expect(screen.getByTestId("builder-row-manual-line-3")).toBeInTheDocument();
+  expect(within(screen.getByTestId("builder-row-manual-line-3")).getByLabelText(/stage for reo install/i)).toHaveValue(
+    "stage-prelims"
+  );
+});
+
 test("moving a card across stages in canvas updates builder immediately", async () => {
   function WorkspaceHarness() {
     const [manualLines, setManualLines] = useState([
@@ -1179,7 +1451,7 @@ test("canvas add menu can return the user to builder view", async () => {
   render(<EstimateWorkspacePage {...createBaseProps()} />);
 
   await openCanvasView();
-  await userEvent.click(screen.getByText("Add"));
+  await userEvent.click(screen.getByText("Add Card"));
 
   const menuPanel = document.querySelector(".estimate-workspace-add-menu-panel");
   await userEvent.click(within(menuPanel).getByRole("button", { name: /open builder view/i }));
@@ -1187,12 +1459,57 @@ test("canvas add menu can return the user to builder view", async () => {
   expect(screen.getByRole("button", { name: /add section/i })).toBeInTheDocument();
 });
 
+test("canvas can add one assembly library card as a shared project item without exploding child rows", async () => {
+  function WorkspaceHarness() {
+    const [sections, setSections] = useState(createBaseProps().sections);
+    const [manualLines, setManualLines] = useState([]);
+
+    return (
+      <EstimateWorkspacePage
+        {...createBaseProps({
+          sections,
+          manualLines,
+          manualBuilderRows: [],
+          generatedRows: [],
+          onSectionsChange: setSections,
+          onManualLinesChange: setManualLines,
+        })}
+      />
+    );
+  }
+
+  render(<WorkspaceHarness />);
+
+  await openCanvasView();
+  await userEvent.click(screen.getByText("Add Card"));
+
+  const menuPanel = document.querySelector(".estimate-workspace-add-menu-panel");
+  await userEvent.click(within(menuPanel).getByRole("button", { name: /from assembly library/i }));
+
+  const dialog = screen.getByRole("dialog", { name: /add assembly card/i });
+  expect(dialog).toBeInTheDocument();
+  expect(within(dialog).getByRole("button", { name: /stripout package/i })).toBeInTheDocument();
+  expect(within(dialog).getByLabelText(/stage/i)).toHaveValue("stage-demo");
+
+  await userEvent.click(within(dialog).getByRole("button", { name: /create assembly card/i }));
+
+  expect(screen.queryByRole("dialog", { name: /add assembly card/i })).not.toBeInTheDocument();
+  expect(screen.getByText("Stripout Package")).toBeInTheDocument();
+  expect(screen.queryByText("Stripout setup")).not.toBeInTheDocument();
+
+  await openBuilderView();
+  await expandMainWorksSection();
+
+  expect(screen.getByDisplayValue("Stripout Package")).toBeInTheDocument();
+  expect(screen.queryByText("Stripout setup")).not.toBeInTheDocument();
+});
+
 test("canvas debug mode shows lane and card metadata plus selected inspector details", async () => {
   render(<EstimateWorkspacePage {...createBaseProps()} />);
 
   await openCanvasView();
   await enableCanvasDebugMode();
-  await userEvent.click(getCardByName("Site fencing"));
+  await userEvent.click(getCardDetailsButtonByName("Site fencing"));
 
   expect(screen.getByTestId("canvas-debug-active-target")).toHaveTextContent(/idle/i);
   expect(screen.getByTestId("canvas-debug-lane-stage-prelims")).toHaveTextContent(
@@ -1263,3 +1580,7 @@ test("canvas debug mode shows the active target while dragging", async () => {
     delete document.elementFromPoint;
   }
 });
+
+
+
+

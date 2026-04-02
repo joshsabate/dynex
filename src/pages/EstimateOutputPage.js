@@ -387,6 +387,7 @@ function EstimateOutputPage({
                             onChange={(event) =>
                               onRowOverrideChange(row.id, {
                                 quantityOverride: event.target.value,
+                                takeoffApplied: null,
                               })
                             }
                           />

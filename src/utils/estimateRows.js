@@ -19,6 +19,214 @@ function toNumber(value) {
   return Number.isFinite(parsedValue) ? parsedValue : 0;
 }
 
+function normalizeImageUrls(imageUrls = []) {
+  if (!Array.isArray(imageUrls)) {
+    return [];
+  }
+
+  return [...new Set(imageUrls.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+function clampPrimaryImageIndex(primaryImageIndex, imageUrls = []) {
+  const normalizedImageUrls = normalizeImageUrls(imageUrls);
+
+  if (!normalizedImageUrls.length) {
+    return 0;
+  }
+
+  const parsedValue = Number(primaryImageIndex);
+
+  if (!Number.isInteger(parsedValue) || parsedValue < 0 || parsedValue >= normalizedImageUrls.length) {
+    return 0;
+  }
+
+  return parsedValue;
+}
+
+function buildImageState(baseRow = {}, rowOverride = {}) {
+  const overrideHasImageUrls = hasOverride(rowOverride, "imageUrls");
+  const fallbackImageUrls = normalizeImageUrls([
+    ...(Array.isArray(baseRow.imageUrls) ? baseRow.imageUrls : []),
+    baseRow.imageUrl,
+    baseRow.assemblyImageUrl,
+    baseRow.itemImageUrl,
+  ]);
+  const imageUrls = overrideHasImageUrls
+    ? normalizeImageUrls(rowOverride.imageUrls)
+    : fallbackImageUrls;
+  const rawPrimaryImageIndex = hasOverride(rowOverride, "primaryImageIndex")
+    ? rowOverride.primaryImageIndex
+    : baseRow.primaryImageIndex;
+  const primaryImageIndex = clampPrimaryImageIndex(rawPrimaryImageIndex, imageUrls);
+  const primaryImageUrl = imageUrls[primaryImageIndex] || "";
+
+  return {
+    imageUrls,
+    primaryImageIndex,
+    primaryImageUrl,
+  };
+}
+
+function clampUnitInterval(value) {
+  const parsedValue = Number(value);
+
+  if (!Number.isFinite(parsedValue)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(1, parsedValue));
+}
+
+function normalizeTakeoffPoint(point = {}) {
+  if (!point || typeof point !== "object") {
+    return null;
+  }
+
+  return {
+    x: clampUnitInterval(point.x),
+    y: clampUnitInterval(point.y),
+  };
+}
+
+function normalizeTakeoffCalibration(calibration = {}) {
+  if (!calibration || typeof calibration !== "object") {
+    return null;
+  }
+
+  const points = Array.isArray(calibration.points)
+    ? calibration.points.map((point) => normalizeTakeoffPoint(point)).filter(Boolean).slice(0, 2)
+    : [];
+  const realLength = roundValue(toNumber(calibration.realLength));
+  const metersPerPixel = Number(calibration.metersPerPixel);
+
+  if (points.length !== 2 || realLength <= 0 || !Number.isFinite(metersPerPixel) || metersPerPixel <= 0) {
+    return null;
+  }
+
+  return {
+    points,
+    realLength,
+    realUnit: String(calibration.realUnit || "m").trim().toLowerCase() || "m",
+    metersPerPixel,
+  };
+}
+
+function normalizeTakeoffCalibrations(calibrations = {}, imageUrls = []) {
+  if (!calibrations || typeof calibrations !== "object" || Array.isArray(calibrations)) {
+    return {};
+  }
+
+  return Object.entries(calibrations).reduce((accumulator, [imageIndexKey, calibration]) => {
+    const imageIndex = Number(imageIndexKey);
+
+    if (!Number.isInteger(imageIndex) || imageIndex < 0 || imageIndex >= imageUrls.length) {
+      return accumulator;
+    }
+
+    const normalizedCalibration = normalizeTakeoffCalibration(calibration);
+
+    if (!normalizedCalibration) {
+      return accumulator;
+    }
+
+    accumulator[String(imageIndex)] = normalizedCalibration;
+    return accumulator;
+  }, {});
+}
+
+function normalizeTakeoffEntry(entry = {}, imageUrls = []) {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  const normalizedTool = String(entry.tool || "").trim().toLowerCase();
+
+  if (!["line", "rectangle", "polygon", "count"].includes(normalizedTool)) {
+    return null;
+  }
+
+  const points = Array.isArray(entry.points)
+    ? entry.points.map((point) => normalizeTakeoffPoint(point)).filter(Boolean)
+    : [];
+  const computedValue = roundValue(toNumber(entry.computedValue));
+  const unitDefaults = {
+    line: "LM",
+    rectangle: "SQM",
+    polygon: "SQM",
+    count: "EA",
+  };
+  const requestedImageIndex = Number(entry.imageIndex);
+  const imageIndex =
+    Number.isInteger(requestedImageIndex) && requestedImageIndex >= 0 && requestedImageIndex < imageUrls.length
+      ? requestedImageIndex
+      : 0;
+
+  return {
+    id: String(entry.id || "").trim() || `takeoff-${normalizedTool}-${imageIndex}-${points.length}`,
+    imageIndex,
+    tool: normalizedTool,
+    points,
+    computedValue,
+    unit: String(entry.unit || unitDefaults[normalizedTool] || "").trim().toUpperCase(),
+    label: String(entry.label || "").trim(),
+  };
+}
+
+function normalizeTakeoffs(takeoffs = [], imageUrls = []) {
+  if (!Array.isArray(takeoffs)) {
+    return [];
+  }
+
+  return takeoffs
+    .map((entry) => normalizeTakeoffEntry(entry, imageUrls))
+    .filter(Boolean);
+}
+
+function normalizeTakeoffApplied(takeoffApplied = null, imageUrls = [], quantity = 0) {
+  if (!takeoffApplied || typeof takeoffApplied !== "object") {
+    return null;
+  }
+
+  const requestedImageIndex = Number(takeoffApplied.imageIndex);
+  const imageIndex =
+    Number.isInteger(requestedImageIndex) && requestedImageIndex >= 0 && requestedImageIndex < imageUrls.length
+      ? requestedImageIndex
+      : 0;
+
+  const computedValue = roundValue(toNumber(takeoffApplied.computedValue));
+  const appliedQuantity =
+    takeoffApplied.appliedQuantity === "" || takeoffApplied.appliedQuantity == null
+      ? undefined
+      : roundValue(toNumber(takeoffApplied.appliedQuantity));
+  const mode = String(takeoffApplied.mode || "replace").trim().toLowerCase();
+  const normalizedQuantity = roundValue(toNumber(quantity));
+  const trustedAppliedQuantity =
+    appliedQuantity != null
+      ? appliedQuantity
+      : mode === "replace"
+        ? computedValue
+        : undefined;
+
+  if (
+    trustedAppliedQuantity == null ||
+    !String(takeoffApplied.takeoffId || "").trim() ||
+    trustedAppliedQuantity !== normalizedQuantity
+  ) {
+    return null;
+  }
+
+  return {
+    takeoffId: String(takeoffApplied.takeoffId || "").trim(),
+    imageIndex,
+    tool: String(takeoffApplied.tool || "").trim().toLowerCase(),
+    computedValue,
+    unit: String(takeoffApplied.unit || "").trim().toUpperCase(),
+    mode,
+    appliedQuantity: trustedAppliedQuantity,
+    appliedAt: String(takeoffApplied.appliedAt || "").trim(),
+  };
+}
+
 function hasOverride(rowOverride, key) {
   return Object.prototype.hasOwnProperty.call(rowOverride || {}, key);
 }
@@ -175,10 +383,34 @@ function buildEstimateRow(baseRow, rowOverride, stages = []) {
   const itemImageUrl = hasOverride(rowOverride, "itemImageUrl")
     ? rowOverride.itemImageUrl
     : baseRow.itemImageUrl;
+  const { imageUrls, primaryImageIndex, primaryImageUrl } = buildImageState(
+    {
+      ...baseRow,
+      imageUrl,
+      assemblyImageUrl,
+      itemImageUrl,
+    },
+    rowOverride
+  );
+  const takeoffCalibrations = normalizeTakeoffCalibrations(
+    hasOverride(rowOverride, "takeoffCalibrations")
+      ? rowOverride.takeoffCalibrations
+      : baseRow.takeoffCalibrations,
+    imageUrls
+  );
+  const takeoffs = normalizeTakeoffs(
+    hasOverride(rowOverride, "takeoffs") ? rowOverride.takeoffs : baseRow.takeoffs,
+    imageUrls
+  );
   const include = includeOverride ?? baseRow.generatedInclude;
   const quantity = roundValue(quantityOverride ?? baseRow.generatedQuantity);
   const unitRate = roundValue(rateOverride ?? baseRow.generatedRate);
   const total = include ? roundValue(quantity * unitRate) : 0;
+  const takeoffApplied = normalizeTakeoffApplied(
+    hasOverride(rowOverride, "takeoffApplied") ? rowOverride.takeoffApplied : baseRow.takeoffApplied,
+    imageUrls,
+    quantity
+  );
   const itemPresentation = getStructuredItemPresentation({
     itemName,
     displayNameOverride,
@@ -222,9 +454,14 @@ function buildEstimateRow(baseRow, rowOverride, stages = []) {
     canvasStackOrder,
     plannedStartWeek,
     plannedDurationWeeks,
-    imageUrl: imageUrl || "",
+    imageUrl: primaryImageUrl || imageUrl || "",
     assemblyImageUrl: assemblyImageUrl || "",
     itemImageUrl: itemImageUrl || "",
+    imageUrls,
+    primaryImageIndex,
+    takeoffCalibrations,
+    takeoffs,
+    takeoffApplied,
     notes: hasOverride(rowOverride, "notes") ? rowOverride.notes : baseRow.notes || "",
     sourceLink: hasOverride(rowOverride, "sourceLink")
       ? rowOverride.sourceLink
@@ -236,6 +473,7 @@ function buildEstimateRow(baseRow, rowOverride, stages = []) {
     itemSortKey: itemPresentation.sortKey || String(itemName || "").toLowerCase(),
     include,
     quantity,
+    rate: unitRate,
     unitRate,
     total,
     missingRate: include && unitRate <= 0,
@@ -306,6 +544,8 @@ function buildTemplateLineRow({
       sortOrder: line.sortOrder ?? 0,
       source,
       imageUrl: line.imageUrl || "",
+      imageUrls: line.imageUrls || [],
+      primaryImageIndex: line.primaryImageIndex ?? 0,
       assemblyImageUrl: "",
       itemImageUrl: costRow?.imageUrl || "",
       sourceLink: line.sourceLink || costRow?.sourceLink || "",
@@ -367,6 +607,8 @@ function buildLaborRow({
       sortOrder: (item.sortOrder ?? 0) + 0.1,
       source: "generated",
       imageUrl: item.imageUrl || "",
+      imageUrls: item.imageUrls || [],
+      primaryImageIndex: item.primaryImageIndex ?? 0,
       assemblyImageUrl: assembly.imageUrl || "",
       itemImageUrl: laborCostRow?.imageUrl || "",
       sourceLink: item.sourceLink || laborCostRow?.sourceLink || "",
@@ -480,6 +722,8 @@ export function generateEstimateRows(
                     sortOrder: item.sortOrder ?? 0,
                     source: "generated",
                     imageUrl: item.imageUrl || "",
+                    imageUrls: item.imageUrls || [],
+                    primaryImageIndex: item.primaryImageIndex ?? 0,
                     assemblyImageUrl: assembly.imageUrl || "",
                     itemImageUrl: costRow?.imageUrl || "",
                     sourceLink: item.sourceLink || costRow?.sourceLink || "",
@@ -619,6 +863,11 @@ export function generateManualEstimateBuilderRows(
         plannedDurationWeeks: line.plannedDurationWeeks ?? "",
         source: "manual-builder",
         imageUrl: line.imageUrl || "",
+        imageUrls: line.imageUrls || [],
+        primaryImageIndex: line.primaryImageIndex ?? 0,
+        takeoffCalibrations: line.takeoffCalibrations || {},
+        takeoffs: line.takeoffs || [],
+        takeoffApplied: line.takeoffApplied || null,
         assemblyImageUrl: line.assemblyImageUrl || "",
         itemImageUrl: line.itemImageUrl || "",
         notes: line.notes || "",

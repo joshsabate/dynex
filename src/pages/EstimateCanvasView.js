@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { getAssemblyGroupId } from "../utils/assemblyGroups";
 import { logBuilderDebugRowUpdate, recordBuilderDebugRowUpdate, isBuilderDebugEnabled } from "../utils/builderDebug";
@@ -10,6 +10,22 @@ const pointerDragThreshold = 6;
 const canvasDebugStorageKey = "estimator-app-canvas-debug";
 const canvasTestModeStorageKey = "estimator-app-canvas-test-mode";
 const defaultTrackCount = 3;
+const uploadedImageMaxEdge = 1400;
+const uploadedImageQuality = 0.78;
+const uploadedImageSmallFileThreshold = 350 * 1024;
+const hoverPreviewOpenDelayMs = 80;
+const hoverPreviewCloseDelayMs = 140;
+const takeoffToolOptions = [
+  { id: "line", label: "Line", unit: "LM" },
+  { id: "rectangle", label: "Rectangle Area", unit: "SQM" },
+  { id: "polygon", label: "Polygon Area", unit: "SQM" },
+  { id: "count", label: "Count", unit: "EA" },
+];
+const takeoffScaleUnitOptions = [
+  { id: "m", label: "m", factor: 1 },
+  { id: "cm", label: "cm", factor: 0.01 },
+  { id: "mm", label: "mm", factor: 0.001 },
+];
 
 const cleanText = (value) => String(value || "").trim();
 const toTestIdSegment = (value) =>
@@ -29,6 +45,11 @@ const formatCurrency = (value) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+const formatMeasureValue = (value) =>
+  Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
 const getCardTypeLabel = (row) =>
   cleanText(row.workType) || (row.source === "manual-builder" ? "Manual" : "Estimate");
 const getCardIconLabel = (row) =>
@@ -38,17 +59,182 @@ const getCardIconLabel = (row) =>
     .map((part) => part.charAt(0).toUpperCase())
     .join("");
 const getCardMeta = (row) =>
-  [cleanText(row.trade), cleanText(row.costCode), cleanText(row.roomName)].filter(Boolean).join(" • ");
-const getRowImageUrl = (row, assemblyLookup = {}) => {
-  const assemblyImageUrl = cleanText(
-    row.assemblyImageUrl || assemblyLookup[row.assemblyId]?.imageUrl
-  );
-  const itemImageUrl = cleanText(row.itemImageUrl);
+  [cleanText(row.trade), cleanText(row.costCode), cleanText(row.roomName)].filter(Boolean).join(" â€¢ ");
+const getRowImageUrls = (row, assemblyLookup = {}) => {
+  if (Array.isArray(row?.imageUrls)) {
+    return row.imageUrls.map((value) => cleanText(value)).filter(Boolean);
+  }
 
-  return cleanText(row.imageUrl) || assemblyImageUrl || itemImageUrl || "";
+  const assemblyImageUrl = cleanText(
+    row?.assemblyImageUrl || assemblyLookup[row?.assemblyId]?.imageUrl
+  );
+  const itemImageUrl = cleanText(row?.itemImageUrl);
+
+  return [cleanText(row?.imageUrl), assemblyImageUrl, itemImageUrl].filter(Boolean);
+};
+const getRowImageUrl = (row, assemblyLookup = {}) => {
+  const imageUrls = getRowImageUrls(row, assemblyLookup);
+  const primaryImageIndex = Number(row?.primaryImageIndex);
+
+  if (!imageUrls.length) {
+    return "";
+  }
+
+  if (Number.isInteger(primaryImageIndex) && primaryImageIndex >= 0 && primaryImageIndex < imageUrls.length) {
+    return imageUrls[primaryImageIndex];
+  }
+
+  return imageUrls[0] || "";
 };
 const getCanvasCardMeta = (row) =>
-  [cleanText(row.costCode), cleanText(row.assemblyName || row.roomName)].filter(Boolean).join(" / ");
+  [cleanText(row.assemblyName || row.roomName), cleanText(row.trade)].filter(Boolean).join(" / ");
+const getCanvasCardQuantity = (row) => {
+  const quantityText = formatMeasureValue(row.quantity);
+  const unitText = cleanText(row.unit);
+  return [quantityText, unitText].filter(Boolean).join(" ");
+};
+const getHoverPreviewMetrics = (row) => {
+  const metrics = [
+    {
+      key: "takeoff",
+      label: "Takeoff",
+      value: getCanvasCardQuantity(row) || formatMeasureValue(row.quantity),
+    },
+  ];
+
+  const rateValue = row.rate ?? row.unitRate;
+
+  if (rateValue !== "" && rateValue != null) {
+    metrics.push({
+      key: "rate",
+      label: "Rate",
+      value: `$${formatCurrency(rateValue)}`,
+    });
+  }
+
+  metrics.push({
+    key: "total",
+    label: "Total",
+    value: `$${formatCurrency(row.total)}`,
+  });
+
+  return metrics;
+};
+const roundTakeoffValue = (value) => Math.round(Number(value || 0) * 100) / 100;
+const createTakeoffId = () =>
+  `takeoff-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const getTakeoffToolDefinition = (toolId) =>
+  takeoffToolOptions.find((tool) => tool.id === toolId) || takeoffToolOptions[0];
+const getTakeoffDefaultUnit = (toolId) => getTakeoffToolDefinition(toolId).unit;
+const toClampedPoint = (point = {}) => ({
+  x: Math.max(0, Math.min(1, Number(point.x) || 0)),
+  y: Math.max(0, Math.min(1, Number(point.y) || 0)),
+});
+const getDistancePixels = (pointA, pointB, dimensions) => {
+  if (!pointA || !pointB || !dimensions?.width || !dimensions?.height) {
+    return 0;
+  }
+
+  const deltaX = (pointB.x - pointA.x) * dimensions.width;
+  const deltaY = (pointB.y - pointA.y) * dimensions.height;
+
+  return Math.sqrt(deltaX ** 2 + deltaY ** 2);
+};
+const getRectangleAreaPixels = (pointA, pointB, dimensions) => {
+  if (!pointA || !pointB || !dimensions?.width || !dimensions?.height) {
+    return 0;
+  }
+
+  return (
+    Math.abs((pointB.x - pointA.x) * dimensions.width) *
+    Math.abs((pointB.y - pointA.y) * dimensions.height)
+  );
+};
+const getPolygonAreaPixels = (points = [], dimensions) => {
+  if (!Array.isArray(points) || points.length < 3 || !dimensions?.width || !dimensions?.height) {
+    return 0;
+  }
+
+  let doubleArea = 0;
+
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index];
+    const nextPoint = points[(index + 1) % points.length];
+    const currentX = point.x * dimensions.width;
+    const currentY = point.y * dimensions.height;
+    const nextX = nextPoint.x * dimensions.width;
+    const nextY = nextPoint.y * dimensions.height;
+
+    doubleArea += currentX * nextY - nextX * currentY;
+  }
+
+  return Math.abs(doubleArea / 2);
+};
+const getMetersPerPixelFromCalibration = (calibration) =>
+  Number(calibration?.metersPerPixel) > 0 ? Number(calibration.metersPerPixel) : 0;
+const getMetersFromScaleLength = (realLength, realUnit) => {
+  const parsedLength = Number(realLength);
+  const factor =
+    takeoffScaleUnitOptions.find((option) => option.id === String(realUnit || "").toLowerCase())?.factor || 1;
+
+  if (!Number.isFinite(parsedLength) || parsedLength <= 0) {
+    return 0;
+  }
+
+  return parsedLength * factor;
+};
+const getTakeoffMeasurementValue = (toolId, points = [], dimensions, calibration) => {
+  const normalizedPoints = Array.isArray(points) ? points : [];
+  const metersPerPixel = getMetersPerPixelFromCalibration(calibration);
+
+  if (toolId === "count") {
+    return roundTakeoffValue(normalizedPoints.length);
+  }
+
+  if (!metersPerPixel) {
+    return 0;
+  }
+
+  if (toolId === "line" && normalizedPoints.length >= 2) {
+    return roundTakeoffValue(getDistancePixels(normalizedPoints[0], normalizedPoints[1], dimensions) * metersPerPixel);
+  }
+
+  if (toolId === "rectangle" && normalizedPoints.length >= 2) {
+    return roundTakeoffValue(
+      getRectangleAreaPixels(normalizedPoints[0], normalizedPoints[1], dimensions) * metersPerPixel * metersPerPixel
+    );
+  }
+
+  if (toolId === "polygon" && normalizedPoints.length >= 3) {
+    return roundTakeoffValue(getPolygonAreaPixels(normalizedPoints, dimensions) * metersPerPixel * metersPerPixel);
+  }
+
+  return 0;
+};
+const formatTakeoffValue = (value) =>
+  Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+const getTakeoffLabel = (takeoff) =>
+  cleanText(takeoff?.label) || `${getTakeoffToolDefinition(takeoff?.tool).label} Takeoff`;
+const toSvgPointList = (points = []) =>
+  points.map((point) => `${point.x * 1000},${point.y * 1000}`).join(" ");
+const getTakeoffIndicatorLabel = (row) => {
+  const savedCount = Array.isArray(row?.takeoffs) ? row.takeoffs.length : 0;
+
+  if (row?.takeoffApplied?.takeoffId) {
+    return "Measured quantity";
+  }
+
+  if (savedCount > 0) {
+    return savedCount === 1 ? "1 takeoff saved" : `${savedCount} takeoffs saved`;
+  }
+
+  return "";
+};
+const getTakeoffIndicatorIcon = (row) => (row?.takeoffApplied?.takeoffId ? "✓" : "T");
+const getCanvasTypeBadgeLabel = (row) => cleanText(row.workType) || (row.assemblyId ? "Assembly" : "Item");
 const getCardStatus = (row) =>
   cleanText(row.status || row.workflowStatus || row.scheduleStatus || row.itemStatus);
 const getWorkTypeToneClass = (row) => {
@@ -64,6 +250,13 @@ const getWorkTypeToneClass = (row) => {
     return "is-work-supply";
   }
   return "is-work-generic";
+};
+const getCardSurfaceClass = (row) => {
+  if (cleanText(row.source) === "generated" || cleanText(row.assemblyId)) {
+    return "is-assembly-card";
+  }
+
+  return "is-item-card";
 };
 const tradeToneClasses = ["is-trade-tone-1", "is-trade-tone-2", "is-trade-tone-3", "is-trade-tone-4"];
 const getTradeToneClass = (row) => {
@@ -111,6 +304,135 @@ const getCardSearchText = (row) =>
   ]
     .map((value) => cleanText(value).toLowerCase())
     .join(" ");
+
+function readFilesAsDataUrls(files = []) {
+  return Promise.all(Array.from(files).map((file) => compressImageFile(file)));
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error(`Unable to read ${file?.name || "image"}`));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImageElement(file) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error(`Unable to load ${file?.name || "image"}`));
+    };
+    image.src = objectUrl;
+  });
+}
+
+function getSupportedLossyImageOutputType() {
+  if (typeof document === "undefined") {
+    return "image/jpeg";
+  }
+
+  const probeCanvas = document.createElement("canvas");
+  const webpDataUrl = probeCanvas.toDataURL("image/webp", 0.8);
+  return webpDataUrl.startsWith("data:image/webp") ? "image/webp" : "image/jpeg";
+}
+
+function imageHasTransparency(image, width, height) {
+  const alphaCanvas = document.createElement("canvas");
+
+  alphaCanvas.width = width;
+  alphaCanvas.height = height;
+
+  const alphaContext = alphaCanvas.getContext("2d");
+
+  if (!alphaContext) {
+    return false;
+  }
+
+  alphaContext.clearRect(0, 0, width, height);
+  alphaContext.drawImage(image, 0, 0, width, height);
+
+  try {
+    const { data } = alphaContext.getImageData(0, 0, width, height);
+
+    for (let index = 3; index < data.length; index += 16) {
+      if (data[index] < 255) {
+        return true;
+      }
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
+async function compressImageFile(file) {
+  const mimeType = String(file?.type || "").toLowerCase();
+
+  if (!file || !mimeType.startsWith("image/")) {
+    return readFileAsDataUrl(file);
+  }
+
+  if (mimeType === "image/svg+xml" || mimeType === "image/gif") {
+    return readFileAsDataUrl(file);
+  }
+
+  const image = await loadImageElement(file);
+  const longestEdge = Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height, 1);
+
+  if (longestEdge <= uploadedImageMaxEdge && Number(file.size || 0) <= uploadedImageSmallFileThreshold) {
+    return readFileAsDataUrl(file);
+  }
+
+  const scale = Math.min(1, uploadedImageMaxEdge / longestEdge);
+  const targetWidth = Math.max(1, Math.round((image.naturalWidth || image.width || 1) * scale));
+  const targetHeight = Math.max(1, Math.round((image.naturalHeight || image.height || 1) * scale));
+  const hasTransparency =
+    mimeType === "image/png" || mimeType === "image/webp"
+      ? imageHasTransparency(image, targetWidth, targetHeight)
+      : false;
+  const canvas = document.createElement("canvas");
+
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+
+  const outputType = hasTransparency ? "image/png" : getSupportedLossyImageOutputType();
+  const context = canvas.getContext("2d", { alpha: hasTransparency });
+
+  if (!context) {
+    return readFileAsDataUrl(file);
+  }
+
+  if (!hasTransparency) {
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, targetWidth, targetHeight);
+  } else {
+    context.clearRect(0, 0, targetWidth, targetHeight);
+  }
+  context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+  const compressedDataUrl =
+    outputType === "image/png"
+      ? canvas.toDataURL(outputType)
+      : canvas.toDataURL(outputType, uploadedImageQuality);
+
+  if (longestEdge <= uploadedImageMaxEdge) {
+    const originalDataUrl = await readFileAsDataUrl(file);
+    return compressedDataUrl.length < originalDataUrl.length ? compressedDataUrl : originalDataUrl;
+  }
+
+  return compressedDataUrl;
+}
 
 function shouldEnableFlag(paramName, storageKey) {
   if (typeof window === "undefined") {
@@ -338,11 +660,7 @@ function placeRowInColumn(columns, columnIndex, requestedTrack, row) {
   }
 
   const nextColumn = { ...nextColumns[safeIndex] };
-  let track = Math.max(0, Number(requestedTrack) || 0);
-
-  while (nextColumn[track] && nextColumn[track].id !== row.id) {
-    track += 1;
-  }
+  const track = Math.max(0, Number(requestedTrack) || 0);
 
   nextColumn[track] = row;
   nextColumns[safeIndex] = nextColumn;
@@ -374,6 +692,16 @@ function insertRowInTrack(columns, columnIndex, insertTrack, row) {
 
 function buildCanvasOrder(columnIndex, track) {
   return columnIndex * 100 + track;
+}
+
+function getRenderedTrackCount(column, minimumTrackCount = defaultTrackCount) {
+  const occupiedTracks = Object.keys(column || {})
+    .map((trackKey) => Number(trackKey))
+    .filter((track) => Number.isFinite(track))
+    .sort((left, right) => left - right);
+
+  const highestTrack = occupiedTracks.length ? occupiedTracks[occupiedTracks.length - 1] : -1;
+  return Math.max(minimumTrackCount, highestTrack + 1);
 }
 
 function getTargetLabel(target) {
@@ -448,6 +776,7 @@ function EstimateCanvasView({
   searchTerm = "",
   filters = {},
   onRowOverrideChange = () => {},
+  onRowsChange = null,
   onOpenBuilderView = () => {},
   topBarPortalTarget = null,
 }) {
@@ -456,12 +785,39 @@ function EstimateCanvasView({
     devModeEnabled ? shouldEnableFlag("canvasDebug", canvasDebugStorageKey) : false
   );
   const [selectedRowId, setSelectedRowId] = useState("");
+  const [selectedDrawerTab, setSelectedDrawerTab] = useState("details");
+  const [galleryPreviewUrl, setGalleryPreviewUrl] = useState("");
+  const [hoverPreview, setHoverPreview] = useState(null);
+  const [selectedTakeoffImageIndex, setSelectedTakeoffImageIndex] = useState(0);
+  const [takeoffTool, setTakeoffTool] = useState("line");
+  const [takeoffMode, setTakeoffMode] = useState("idle");
+  const [takeoffDraftPoints, setTakeoffDraftPoints] = useState([]);
+  const [takeoffPointerPoint, setTakeoffPointerPoint] = useState(null);
+  const [takeoffScaleLength, setTakeoffScaleLength] = useState("");
+  const [takeoffScaleUnit, setTakeoffScaleUnit] = useState("m");
+  const [takeoffImageMetrics, setTakeoffImageMetrics] = useState({});
+  const [selectedTakeoffId, setSelectedTakeoffId] = useState("");
+  const [editingTakeoffId, setEditingTakeoffId] = useState("");
+  const [takeoffLabelDraft, setTakeoffLabelDraft] = useState("");
+  const [takeoffFeedback, setTakeoffFeedback] = useState("");
+  const [confirmingDeleteTakeoffId, setConfirmingDeleteTakeoffId] = useState("");
   const [dragState, setDragState] = useState({
     rowId: "",
     pointerX: 0,
     pointerY: 0,
     activeTarget: null,
   });
+  const galleryFileInputRef = useRef(null);
+  const takeoffSurfaceRef = useRef(null);
+  const takeoffPointerStateRef = useRef({
+    pointerId: null,
+    originPoint: null,
+    dragging: false,
+  });
+  const hoverPreviewOpenTimerRef = useRef(null);
+  const hoverPreviewCloseTimerRef = useRef(null);
+  const takeoffFeedbackTimerRef = useRef(null);
+  const suppressOpenRef = useRef(false);
   const dragStateRef = useRef({
     pointerId: null,
     row: null,
@@ -483,6 +839,10 @@ function EstimateCanvasView({
   const fullBoard = useMemo(() => buildBoard(effectiveRows, stages), [effectiveRows, stages]);
   const selectedRow = effectiveRows.find((row) => row.id === selectedRowId) || null;
   const activeDragRow = effectiveRows.find((row) => row.id === dragState.rowId) || null;
+  const hoverPreviewRow =
+    hoverPreview && hoverPreview.rowId
+      ? effectiveRows.find((row) => row.id === hoverPreview.rowId) || null
+      : null;
   const assemblyLookup = useMemo(
     () =>
       Object.fromEntries(
@@ -512,6 +872,21 @@ function EstimateCanvasView({
     return undefined;
   }, [debugEnabled, devModeEnabled]);
 
+  useEffect(
+    () => () => {
+      if (hoverPreviewOpenTimerRef.current) {
+        window.clearTimeout(hoverPreviewOpenTimerRef.current);
+      }
+      if (hoverPreviewCloseTimerRef.current) {
+        window.clearTimeout(hoverPreviewCloseTimerRef.current);
+      }
+      if (takeoffFeedbackTimerRef.current) {
+        window.clearTimeout(takeoffFeedbackTimerRef.current);
+      }
+    },
+    []
+  );
+
   useEffect(() => {
     if (typeof document === "undefined") {
       return undefined;
@@ -527,6 +902,8 @@ function EstimateCanvasView({
 
   const persistStageColumns = useCallback(
     (stageId, columns) => {
+      const nextChanges = [];
+
       columns.forEach((column, columnIndex) => {
         if (!column) {
           return;
@@ -541,22 +918,728 @@ function EstimateCanvasView({
               canvasColumn: columnIndex,
               canvasTrack: Number(trackKey),
             };
-            emitCanvasRowDebugUpdate(nextRow);
-            if (row.stageId !== nextRow.stageId) {
-              console.log("Canvas move", row.id, nextRow.stageId);
-            }
-            onRowOverrideChange(row.id, {
+            const nextUpdates = {
               stageId: stageId === unassignedStageId ? "" : stageId,
               canvasColumn: columnIndex,
               canvasTrack: Number(trackKey),
               canvasOrder: buildCanvasOrder(columnIndex, Number(trackKey)),
               canvasStackParentId: "",
               canvasStackOrder: "",
+            };
+
+            emitCanvasRowDebugUpdate(nextRow);
+            if (row.stageId !== nextRow.stageId) {
+              console.log("Canvas move", row.id, nextRow.stageId);
+            }
+
+            nextChanges.push({
+              rowId: row.id,
+              updates: nextUpdates,
             });
           });
       });
+
+      if (typeof onRowsChange === "function") {
+        onRowsChange(nextChanges);
+        return;
+      }
+
+      nextChanges.forEach(({ rowId, updates }) => {
+        onRowOverrideChange(rowId, updates);
+      });
+    },
+    [onRowOverrideChange, onRowsChange]
+  );
+
+  const persistRowEdits = useCallback(
+    (row, updates = {}) => {
+      if (!row?.id || !updates || !Object.keys(updates).length) {
+        return;
+      }
+
+      if (row.source === "manual-builder") {
+        onRowOverrideChange(
+          row.id,
+          Object.prototype.hasOwnProperty.call(updates, "unit")
+            ? {
+                ...updates,
+                unitId: "",
+              }
+            : updates
+        );
+        return;
+      }
+
+      const nextUpdates = {};
+
+      if (Object.prototype.hasOwnProperty.call(updates, "quantity")) {
+        nextUpdates.quantityOverride = updates.quantity;
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, "rate")) {
+        nextUpdates.rateOverride = updates.rate;
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, "unit")) {
+        nextUpdates.unit = updates.unit;
+        nextUpdates.unitId = "";
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, "imageUrls")) {
+        nextUpdates.imageUrls = updates.imageUrls;
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, "primaryImageIndex")) {
+        nextUpdates.primaryImageIndex = updates.primaryImageIndex;
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, "imageUrl")) {
+        nextUpdates.imageUrl = updates.imageUrl;
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, "notes")) {
+        nextUpdates.notes = updates.notes;
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, "takeoffApplied")) {
+        nextUpdates.takeoffApplied = updates.takeoffApplied;
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, "takeoffs")) {
+        nextUpdates.takeoffs = updates.takeoffs;
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, "takeoffCalibrations")) {
+        nextUpdates.takeoffCalibrations = updates.takeoffCalibrations;
+      }
+
+      onRowOverrideChange(row.id, nextUpdates);
     },
     [onRowOverrideChange]
+  );
+
+  const updateSelectedRowField = useCallback(
+    (field, value) => {
+      if (!selectedRow) {
+        return;
+      }
+
+      if (field === "quantity" || field === "rate") {
+        persistRowEdits(selectedRow, {
+          [field]: value === "" ? "" : toNumberOrBlank(value),
+          ...(field === "quantity" ? { takeoffApplied: null } : {}),
+        });
+        return;
+      }
+
+      persistRowEdits(selectedRow, { [field]: value });
+    },
+    [persistRowEdits, selectedRow]
+  );
+
+  const updateSelectedRowImages = useCallback(
+    (nextImageUrls = [], nextPrimaryImageIndex = 0) => {
+      if (!selectedRow) {
+        return;
+      }
+
+      const normalizedImageUrls = nextImageUrls
+        .map((value) => cleanText(value))
+        .filter(Boolean);
+      const resolvedPrimaryImageIndex =
+        normalizedImageUrls.length &&
+        Number.isInteger(nextPrimaryImageIndex) &&
+        nextPrimaryImageIndex >= 0 &&
+        nextPrimaryImageIndex < normalizedImageUrls.length
+          ? nextPrimaryImageIndex
+          : 0;
+
+      persistRowEdits(selectedRow, {
+        imageUrls: normalizedImageUrls,
+        primaryImageIndex: resolvedPrimaryImageIndex,
+        imageUrl: normalizedImageUrls[resolvedPrimaryImageIndex] || "",
+      });
+    },
+    [persistRowEdits, selectedRow]
+  );
+
+  const handleGalleryInputChange = useCallback(
+    async (event) => {
+      if (!selectedRow) {
+        return;
+      }
+
+      const files = Array.from(event.target.files || []);
+
+      if (!files.length) {
+        return;
+      }
+
+      try {
+        const uploadedImageUrls = await readFilesAsDataUrls(files);
+        const nextImageUrls = [...getRowImageUrls(selectedRow, assemblyLookup), ...uploadedImageUrls].filter(Boolean);
+        const nextPrimaryImageIndex =
+          getRowImageUrls(selectedRow, assemblyLookup).length || 0;
+
+        updateSelectedRowImages(nextImageUrls, nextPrimaryImageIndex);
+      } finally {
+        event.target.value = "";
+      }
+    },
+    [assemblyLookup, selectedRow, updateSelectedRowImages]
+  );
+
+  const selectedRowImageUrls = selectedRow ? getRowImageUrls(selectedRow, assemblyLookup) : [];
+  const selectedRowPrimaryImageUrl = selectedRow ? getRowImageUrl(selectedRow, assemblyLookup) : "";
+  const selectedRowTakeoffs = Array.isArray(selectedRow?.takeoffs) ? selectedRow.takeoffs : [];
+  const selectedRowTakeoffCalibrations =
+    selectedRow?.takeoffCalibrations && typeof selectedRow.takeoffCalibrations === "object"
+      ? selectedRow.takeoffCalibrations
+      : {};
+  const selectedTakeoffCalibration = selectedRowTakeoffCalibrations[String(selectedTakeoffImageIndex)] || null;
+  const selectedTakeoffImageDimensions = takeoffImageMetrics[selectedTakeoffImageIndex] || null;
+  const selectedTakeoffImageUrl = selectedRowImageUrls[selectedTakeoffImageIndex] || "";
+
+  useEffect(() => {
+    setSelectedDrawerTab("details");
+    setSelectedTakeoffImageIndex(selectedRow?.primaryImageIndex || 0);
+    setTakeoffTool("line");
+    setTakeoffMode("idle");
+    setTakeoffDraftPoints([]);
+    setTakeoffPointerPoint(null);
+    setTakeoffScaleLength("");
+    setTakeoffScaleUnit("m");
+    setSelectedTakeoffId("");
+    setEditingTakeoffId("");
+    setTakeoffLabelDraft("");
+    setTakeoffFeedback("");
+    setConfirmingDeleteTakeoffId("");
+  }, [selectedRowId, selectedRow?.primaryImageIndex]);
+
+  useEffect(() => {
+    if (!selectedRowImageUrls.length) {
+      setSelectedTakeoffImageIndex(0);
+      return;
+    }
+
+    setSelectedTakeoffImageIndex((currentIndex) =>
+      currentIndex >= 0 && currentIndex < selectedRowImageUrls.length
+        ? currentIndex
+        : Math.min(selectedRow?.primaryImageIndex || 0, selectedRowImageUrls.length - 1)
+    );
+  }, [selectedRow?.primaryImageIndex, selectedRowImageUrls.length]);
+
+  useEffect(() => {
+    if (selectedTakeoffCalibration) {
+      setTakeoffScaleLength(
+        selectedTakeoffCalibration.realLength === "" || selectedTakeoffCalibration.realLength == null
+          ? ""
+          : String(selectedTakeoffCalibration.realLength)
+      );
+      setTakeoffScaleUnit(cleanText(selectedTakeoffCalibration.realUnit).toLowerCase() || "m");
+    } else {
+      setTakeoffScaleLength("");
+      setTakeoffScaleUnit("m");
+    }
+    setTakeoffMode("idle");
+    setTakeoffDraftPoints([]);
+    setTakeoffPointerPoint(null);
+  }, [selectedTakeoffCalibration, selectedTakeoffImageIndex]);
+
+  const getTakeoffPointFromEvent = useCallback((event) => {
+    const bounds = takeoffSurfaceRef.current?.getBoundingClientRect();
+
+    if (!bounds || !bounds.width || !bounds.height) {
+      return null;
+    }
+
+    return toClampedPoint({
+      x: (event.clientX - bounds.left) / bounds.width,
+      y: (event.clientY - bounds.top) / bounds.height,
+    });
+  }, []);
+
+  const resetTakeoffDraft = useCallback(() => {
+    takeoffPointerStateRef.current = {
+      pointerId: null,
+      originPoint: null,
+      dragging: false,
+    };
+    setTakeoffMode("idle");
+    setTakeoffDraftPoints([]);
+    setTakeoffPointerPoint(null);
+  }, []);
+
+  const showTakeoffFeedback = useCallback((message) => {
+    setTakeoffFeedback(message);
+
+    if (takeoffFeedbackTimerRef.current) {
+      window.clearTimeout(takeoffFeedbackTimerRef.current);
+    }
+
+    takeoffFeedbackTimerRef.current = window.setTimeout(() => {
+      setTakeoffFeedback("");
+    }, 2200);
+  }, []);
+
+  const persistSelectedRowTakeoffs = useCallback(
+    (updater) => {
+      if (!selectedRow) {
+        return;
+      }
+
+      const currentTakeoffs = Array.isArray(selectedRow.takeoffs) ? selectedRow.takeoffs : [];
+      const nextTakeoffs = typeof updater === "function" ? updater(currentTakeoffs) : updater;
+      persistRowEdits(selectedRow, { takeoffs: nextTakeoffs });
+    },
+    [persistRowEdits, selectedRow]
+  );
+
+  const persistSelectedRowCalibrations = useCallback(
+    (nextCalibrations) => {
+      if (!selectedRow) {
+        return;
+      }
+
+      persistRowEdits(selectedRow, { takeoffCalibrations: nextCalibrations });
+    },
+    [persistRowEdits, selectedRow]
+  );
+
+  const startCalibrationMode = useCallback(() => {
+    setTakeoffMode("calibrating");
+    setTakeoffDraftPoints([]);
+    setTakeoffPointerPoint(null);
+  }, []);
+
+  const selectedImageTakeoffs = useMemo(
+    () => selectedRowTakeoffs.filter((takeoff) => Number(takeoff.imageIndex) === selectedTakeoffImageIndex),
+    [selectedRowTakeoffs, selectedTakeoffImageIndex]
+  );
+  const sortedTakeoffs = useMemo(() => {
+    const currentImageIndex = selectedTakeoffImageIndex;
+
+    return [...selectedRowTakeoffs].sort((left, right) => {
+      const leftIsCurrent = Number(left.imageIndex) === currentImageIndex ? 0 : 1;
+      const rightIsCurrent = Number(right.imageIndex) === currentImageIndex ? 0 : 1;
+
+      if (leftIsCurrent !== rightIsCurrent) {
+        return leftIsCurrent - rightIsCurrent;
+      }
+
+      return String(getTakeoffLabel(left)).localeCompare(String(getTakeoffLabel(right)));
+    });
+  }, [selectedRowTakeoffs, selectedTakeoffImageIndex]);
+  const selectedTakeoffEntry =
+    sortedTakeoffs.find((takeoff) => takeoff.id === selectedTakeoffId) ||
+    sortedTakeoffs[0] ||
+    null;
+  const groupedTakeoffs = useMemo(
+    () =>
+      sortedTakeoffs.reduce((groups, takeoff) => {
+        const imageIndex = Number(takeoff.imageIndex) || 0;
+        const existingGroup = groups.find((group) => group.imageIndex === imageIndex);
+
+        if (existingGroup) {
+          existingGroup.takeoffs.push(takeoff);
+          return groups;
+        }
+
+        groups.push({
+          imageIndex,
+          takeoffs: [takeoff],
+        });
+
+        return groups;
+      }, []),
+    [sortedTakeoffs]
+  );
+
+  useEffect(() => {
+    if (!sortedTakeoffs.length) {
+      if (selectedTakeoffId) {
+        setSelectedTakeoffId("");
+      }
+      return;
+    }
+
+    if (!selectedTakeoffId || !sortedTakeoffs.some((takeoff) => takeoff.id === selectedTakeoffId)) {
+      setSelectedTakeoffId(sortedTakeoffs[0].id);
+    }
+  }, [selectedTakeoffId, sortedTakeoffs]);
+
+  const getTakeoffPointsForPreview = useCallback(() => {
+    if (takeoffMode === "calibrating") {
+      if (takeoffDraftPoints.length === 1 && takeoffPointerPoint) {
+        return [takeoffDraftPoints[0], takeoffPointerPoint];
+      }
+
+      return takeoffDraftPoints;
+    }
+
+    if (takeoffTool === "rectangle") {
+      if (takeoffDraftPoints.length === 1 && takeoffPointerPoint) {
+        return [takeoffDraftPoints[0], takeoffPointerPoint];
+      }
+
+      return takeoffDraftPoints;
+    }
+
+    if (takeoffTool === "line") {
+      if (takeoffDraftPoints.length === 1 && takeoffPointerPoint) {
+        return [takeoffDraftPoints[0], takeoffPointerPoint];
+      }
+
+      return takeoffDraftPoints;
+    }
+
+    if (takeoffTool === "polygon") {
+      if (takeoffDraftPoints.length && takeoffPointerPoint) {
+        return [...takeoffDraftPoints, takeoffPointerPoint];
+      }
+
+      return takeoffDraftPoints;
+    }
+
+    return takeoffDraftPoints;
+  }, [takeoffDraftPoints, takeoffMode, takeoffPointerPoint, takeoffTool]);
+
+  const takeoffPreviewPoints = getTakeoffPointsForPreview();
+  const liveTakeoffValue = useMemo(() => {
+    if (takeoffMode === "calibrating") {
+      if (
+        takeoffPreviewPoints.length < 2 ||
+        !selectedTakeoffImageDimensions ||
+        !Number(takeoffScaleLength) ||
+        Number(takeoffScaleLength) <= 0
+      ) {
+        return 0;
+      }
+
+      const distancePixels = getDistancePixels(
+        takeoffPreviewPoints[0],
+        takeoffPreviewPoints[1],
+        selectedTakeoffImageDimensions
+      );
+      const meters = getMetersFromScaleLength(takeoffScaleLength, takeoffScaleUnit);
+
+      if (!distancePixels || !meters) {
+        return 0;
+      }
+
+      return roundTakeoffValue(meters / distancePixels);
+    }
+
+    return getTakeoffMeasurementValue(
+      takeoffTool,
+      takeoffPreviewPoints,
+      selectedTakeoffImageDimensions,
+      selectedTakeoffCalibration
+    );
+  }, [
+    selectedTakeoffCalibration,
+    selectedTakeoffImageDimensions,
+    takeoffMode,
+    takeoffPreviewPoints,
+    takeoffScaleLength,
+    takeoffScaleUnit,
+    takeoffTool,
+  ]);
+
+  const completeCalibration = useCallback(() => {
+    if (
+      !selectedRow ||
+      takeoffDraftPoints.length !== 2 ||
+      !selectedTakeoffImageDimensions
+    ) {
+      return;
+    }
+
+    const distancePixels = getDistancePixels(
+      takeoffDraftPoints[0],
+      takeoffDraftPoints[1],
+      selectedTakeoffImageDimensions
+    );
+    const meters = getMetersFromScaleLength(takeoffScaleLength, takeoffScaleUnit);
+
+    if (!distancePixels || !meters) {
+      return;
+    }
+
+    persistSelectedRowCalibrations({
+      ...selectedRowTakeoffCalibrations,
+      [selectedTakeoffImageIndex]: {
+        points: takeoffDraftPoints,
+        realLength: roundTakeoffValue(Number(takeoffScaleLength)),
+        realUnit: takeoffScaleUnit,
+        metersPerPixel: meters / distancePixels,
+      },
+    });
+    resetTakeoffDraft();
+  }, [
+    persistSelectedRowCalibrations,
+    resetTakeoffDraft,
+    selectedRow,
+    selectedRowTakeoffCalibrations,
+    selectedTakeoffImageDimensions,
+    selectedTakeoffImageIndex,
+    takeoffDraftPoints,
+    takeoffScaleLength,
+    takeoffScaleUnit,
+  ]);
+
+  const finalizeTakeoff = useCallback(() => {
+    if (!selectedRow || !selectedTakeoffImageDimensions) {
+      return;
+    }
+
+    const requiredPointCount = takeoffTool === "count" ? 1 : takeoffTool === "polygon" ? 3 : 2;
+
+    if (takeoffDraftPoints.length < requiredPointCount) {
+      return;
+    }
+
+    const computedValue = getTakeoffMeasurementValue(
+      takeoffTool,
+      takeoffDraftPoints,
+      selectedTakeoffImageDimensions,
+      selectedTakeoffCalibration
+    );
+
+    if (takeoffTool !== "count" && !selectedTakeoffCalibration) {
+      return;
+    }
+
+    const nextTakeoff = {
+      id: createTakeoffId(),
+      imageIndex: selectedTakeoffImageIndex,
+      tool: takeoffTool,
+      points: takeoffDraftPoints,
+      computedValue,
+      unit: getTakeoffDefaultUnit(takeoffTool),
+      label: "",
+    };
+
+    persistSelectedRowTakeoffs((currentTakeoffs) => [...currentTakeoffs, nextTakeoff]);
+    setSelectedTakeoffId(nextTakeoff.id);
+    showTakeoffFeedback(`${getTakeoffToolDefinition(takeoffTool).label} saved`);
+    resetTakeoffDraft();
+  }, [
+    persistSelectedRowTakeoffs,
+    resetTakeoffDraft,
+    selectedRow,
+    selectedTakeoffCalibration,
+    selectedTakeoffImageDimensions,
+    selectedTakeoffImageIndex,
+    takeoffDraftPoints,
+    takeoffTool,
+    showTakeoffFeedback,
+  ]);
+
+  const undoTakeoffPoint = useCallback(() => {
+    setTakeoffDraftPoints((currentPoints) => currentPoints.slice(0, -1));
+  }, []);
+
+  const applyTakeoffToQuantity = useCallback(
+    (takeoff, mode = "replace") => {
+      if (!selectedRow || !takeoff) {
+        return;
+      }
+
+      const nextValue =
+        mode === "add"
+          ? roundTakeoffValue(Number(selectedRow.quantity || 0) + Number(takeoff.computedValue || 0))
+          : roundTakeoffValue(Number(takeoff.computedValue || 0));
+
+      persistRowEdits(selectedRow, {
+        quantity: nextValue,
+        takeoffApplied: {
+          takeoffId: takeoff.id,
+          imageIndex: Number(takeoff.imageIndex) || 0,
+          tool: takeoff.tool,
+          computedValue: Number(takeoff.computedValue || 0),
+          unit: takeoff.unit,
+          mode,
+          appliedQuantity: nextValue,
+          appliedAt: new Date().toISOString(),
+        },
+      });
+      setSelectedTakeoffId(takeoff.id);
+      showTakeoffFeedback(mode === "add" ? "Takeoff added to quantity" : "Quantity replaced from takeoff");
+    },
+    [persistRowEdits, selectedRow, showTakeoffFeedback]
+  );
+
+  const startTakeoffRename = useCallback((takeoff) => {
+    if (!takeoff) {
+      return;
+    }
+
+    setSelectedTakeoffId(takeoff.id);
+    setEditingTakeoffId(takeoff.id);
+    setTakeoffLabelDraft(takeoff.label || getTakeoffLabel(takeoff));
+    setConfirmingDeleteTakeoffId("");
+  }, []);
+
+  const saveTakeoffRename = useCallback(() => {
+    if (!editingTakeoffId) {
+      return;
+    }
+
+    persistSelectedRowTakeoffs((currentTakeoffs) =>
+      currentTakeoffs.map((entry) =>
+        entry.id === editingTakeoffId
+          ? {
+              ...entry,
+              label: cleanText(takeoffLabelDraft),
+            }
+          : entry
+      )
+    );
+    setEditingTakeoffId("");
+    setTakeoffLabelDraft("");
+    showTakeoffFeedback("Takeoff renamed");
+  }, [editingTakeoffId, persistSelectedRowTakeoffs, showTakeoffFeedback, takeoffLabelDraft]);
+
+  const deleteTakeoff = useCallback(
+    (takeoffId) => {
+      if (confirmingDeleteTakeoffId !== takeoffId) {
+        setConfirmingDeleteTakeoffId(takeoffId);
+        return;
+      }
+
+      persistSelectedRowTakeoffs((currentTakeoffs) =>
+        currentTakeoffs.filter((takeoff) => takeoff.id !== takeoffId)
+      );
+      if (selectedTakeoffId === takeoffId) {
+        setSelectedTakeoffId("");
+      }
+      if (editingTakeoffId === takeoffId) {
+        setEditingTakeoffId("");
+        setTakeoffLabelDraft("");
+      }
+      setConfirmingDeleteTakeoffId("");
+      showTakeoffFeedback("Takeoff deleted");
+    },
+    [
+      confirmingDeleteTakeoffId,
+      editingTakeoffId,
+      persistSelectedRowTakeoffs,
+      selectedTakeoffId,
+      showTakeoffFeedback,
+    ]
+  );
+
+  const handleTakeoffImageLoad = useCallback((event) => {
+    const { naturalWidth, naturalHeight } = event.currentTarget;
+
+    if (!naturalWidth || !naturalHeight) {
+      return;
+    }
+
+    setTakeoffImageMetrics((currentMetrics) => ({
+      ...currentMetrics,
+      [selectedTakeoffImageIndex]: {
+        width: naturalWidth,
+        height: naturalHeight,
+      },
+    }));
+  }, [selectedTakeoffImageIndex]);
+
+  const handleTakeoffStagePointerDown = useCallback(
+    (event) => {
+      if (!selectedTakeoffImageUrl) {
+        return;
+      }
+
+      const point = getTakeoffPointFromEvent(event);
+
+      if (!point) {
+        return;
+      }
+
+      if (takeoffMode === "calibrating") {
+        setTakeoffDraftPoints((currentPoints) =>
+          currentPoints.length >= 2 ? [point] : [...currentPoints, point]
+        );
+        return;
+      }
+
+      if (takeoffTool === "rectangle") {
+        takeoffPointerStateRef.current = {
+          pointerId: event.pointerId,
+          originPoint: point,
+          dragging: true,
+        };
+        setTakeoffDraftPoints([point]);
+        setTakeoffPointerPoint(point);
+        setTakeoffMode("drawing");
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+        return;
+      }
+
+      if (takeoffTool === "line") {
+        setTakeoffDraftPoints((currentPoints) =>
+          currentPoints.length >= 2 ? [point] : [...currentPoints, point]
+        );
+        if (takeoffDraftPoints.length === 1) {
+          setTakeoffMode("drawing");
+        }
+        return;
+      }
+
+      if (takeoffTool === "polygon" || takeoffTool === "count") {
+        setTakeoffDraftPoints((currentPoints) => [...currentPoints, point]);
+        setTakeoffMode("drawing");
+      }
+    },
+    [getTakeoffPointFromEvent, selectedTakeoffImageUrl, takeoffDraftPoints.length, takeoffMode, takeoffTool]
+  );
+
+  const handleTakeoffStagePointerMove = useCallback(
+    (event) => {
+      const point = getTakeoffPointFromEvent(event);
+
+      if (!point) {
+        return;
+      }
+
+      if (takeoffMode === "calibrating" && takeoffDraftPoints.length === 1) {
+        setTakeoffPointerPoint(point);
+        return;
+      }
+
+      if (takeoffTool === "line" && takeoffDraftPoints.length === 1) {
+        setTakeoffPointerPoint(point);
+        return;
+      }
+
+      if (takeoffTool === "polygon" && takeoffDraftPoints.length >= 1) {
+        setTakeoffPointerPoint(point);
+        return;
+      }
+
+      if (takeoffTool === "rectangle" && takeoffPointerStateRef.current.dragging) {
+        setTakeoffPointerPoint(point);
+      }
+    },
+    [getTakeoffPointFromEvent, takeoffDraftPoints.length, takeoffMode, takeoffTool]
+  );
+
+  const handleTakeoffStagePointerUp = useCallback(
+    (event) => {
+      if (takeoffTool !== "rectangle" || !takeoffPointerStateRef.current.dragging) {
+        return;
+      }
+
+      const point = getTakeoffPointFromEvent(event);
+
+      if (!point || !takeoffPointerStateRef.current.originPoint) {
+        resetTakeoffDraft();
+        return;
+      }
+
+      setTakeoffDraftPoints([takeoffPointerStateRef.current.originPoint, point]);
+      setTakeoffPointerPoint(null);
+      setTakeoffMode("drawing");
+      takeoffPointerStateRef.current = {
+        pointerId: null,
+        originPoint: null,
+        dragging: false,
+      };
+    },
+    [getTakeoffPointFromEvent, resetTakeoffDraft, takeoffTool]
   );
 
   const applyDrop = useCallback(
@@ -658,6 +1741,7 @@ function EstimateCanvasView({
       }
 
       dragStateRef.current.dragging = true;
+      suppressOpenRef.current = true;
       dragStateRef.current.pointerX = nextPointerX;
       dragStateRef.current.pointerY = nextPointerY;
       dragStateRef.current.activeTarget = resolveDropTarget(nextPointerX, nextPointerY);
@@ -671,7 +1755,11 @@ function EstimateCanvasView({
     };
 
     const handleDragEnd = (event) => {
-      if (dragStateRef.current.row && dragStateRef.current.dragging) {
+      const wasDragging = Boolean(
+        dragStateRef.current.row && dragStateRef.current.dragging
+      );
+
+      if (wasDragging) {
         const releaseTarget = resolveDropTarget(event.clientX, event.clientY);
         applyDrop(
           dragStateRef.current.row,
@@ -695,6 +1783,11 @@ function EstimateCanvasView({
         pointerY: 0,
         activeTarget: null,
       });
+      if (wasDragging) {
+        window.setTimeout(() => {
+          suppressOpenRef.current = false;
+        }, 0);
+      }
     };
 
     window.addEventListener("pointermove", handleDragMove);
@@ -710,13 +1803,16 @@ function EstimateCanvasView({
     };
   }, [applyDrop]);
 
-  const handleCardPressStart = useCallback(
-    (row, event) => {
+  const beginCardDrag = useCallback(
+    (row, event, { preventDefault = false } = {}) => {
       if (filteredMode || (event.button != null && event.button !== 0)) {
         return;
       }
 
-      event.preventDefault();
+      if (preventDefault) {
+        event.preventDefault();
+      }
+
       dragStateRef.current = {
         pointerId: event.pointerId,
         row,
@@ -727,10 +1823,83 @@ function EstimateCanvasView({
         dragging: false,
         activeTarget: null,
       };
-      setSelectedRowId(row.id);
     },
     [filteredMode]
   );
+
+  const handleCardPressStart = useCallback(
+    (row, event) => {
+      beginCardDrag(row, event, { preventDefault: true });
+    },
+    [beginCardDrag]
+  );
+
+  const handleCardDetailsOpen = useCallback((row, event) => {
+    event.stopPropagation();
+    if (suppressOpenRef.current) {
+      event.preventDefault();
+      return;
+    }
+
+    if (hoverPreviewOpenTimerRef.current) {
+      window.clearTimeout(hoverPreviewOpenTimerRef.current);
+    }
+    if (hoverPreviewCloseTimerRef.current) {
+      window.clearTimeout(hoverPreviewCloseTimerRef.current);
+    }
+    setHoverPreview(null);
+    setSelectedRowId(row.id);
+  }, []);
+
+  const scheduleHoverPreviewClose = useCallback(() => {
+    if (hoverPreviewOpenTimerRef.current) {
+      window.clearTimeout(hoverPreviewOpenTimerRef.current);
+    }
+    if (hoverPreviewCloseTimerRef.current) {
+      window.clearTimeout(hoverPreviewCloseTimerRef.current);
+    }
+
+    hoverPreviewCloseTimerRef.current = window.setTimeout(() => {
+      setHoverPreview(null);
+    }, hoverPreviewCloseDelayMs);
+  }, []);
+
+  const openHoverPreview = useCallback((row, event) => {
+    if (!row?.id) {
+      return;
+    }
+
+    if (hoverPreviewOpenTimerRef.current) {
+      window.clearTimeout(hoverPreviewOpenTimerRef.current);
+    }
+    if (hoverPreviewCloseTimerRef.current) {
+      window.clearTimeout(hoverPreviewCloseTimerRef.current);
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    hoverPreviewOpenTimerRef.current = window.setTimeout(() => {
+      setHoverPreview({
+        rowId: row.id,
+        rect: {
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom,
+          left: rect.left,
+          width: rect.width,
+          height: rect.height,
+        },
+      });
+    }, hoverPreviewOpenDelayMs);
+  }, []);
+
+  const keepHoverPreviewOpen = useCallback(() => {
+    if (hoverPreviewOpenTimerRef.current) {
+      window.clearTimeout(hoverPreviewOpenTimerRef.current);
+    }
+    if (hoverPreviewCloseTimerRef.current) {
+      window.clearTimeout(hoverPreviewCloseTimerRef.current);
+    }
+  }, []);
 
   const setExplicitActiveTarget = useCallback((target) => {
     if (!dragStateRef.current.row || !dragStateRef.current.dragging) {
@@ -744,6 +1913,18 @@ function EstimateCanvasView({
       activeTarget: target,
     }));
   }, []);
+
+  const canSaveCalibration =
+    takeoffMode === "calibrating" &&
+    takeoffDraftPoints.length === 2 &&
+    Number(takeoffScaleLength) > 0 &&
+    Boolean(selectedTakeoffImageDimensions);
+  const canCompleteTakeoff =
+    takeoffTool === "count"
+      ? takeoffDraftPoints.length >= 1
+      : takeoffTool === "polygon"
+        ? takeoffDraftPoints.length >= 3 && Boolean(selectedTakeoffCalibration)
+        : takeoffDraftPoints.length >= 2 && Boolean(selectedTakeoffCalibration);
 
   const renderInsertCell = (stageId, columnIndex, track) => {
     const isActive =
@@ -890,12 +2071,13 @@ function EstimateCanvasView({
         .join(" ")}
       data-testid={`canvas-track-cell-${toTestIdSegment(stageId)}-${columnIndex}-${track}`}
     >
-      <button
-        type="button"
+      <div
         data-testid={`canvas-card-${toTestIdSegment(row.id)}`}
         className={[
           "estimate-canvas-card",
           "canvas-card",
+          getWorkTypeToneClass(row),
+          getCardSurfaceClass(row),
           selectedRowId === row.id ? "is-selected" : "",
           dragState.rowId === row.id ? "is-dragging" : "",
           row.include === false ? "is-excluded" : "",
@@ -904,84 +2086,92 @@ function EstimateCanvasView({
           .join(" ")}
         onPointerDown={(event) => handleCardPressStart(row, event)}
         onMouseDown={(event) => handleCardPressStart(row, event)}
-        onClick={() => setSelectedRowId(row.id)}
-        draggable={false}
-        onDragStart={(event) => event.preventDefault()}
       >
-        <div className="canvas-card__image-shell">
-          {cardImageUrl ? (
-            <img
-              className="estimate-canvas-card-thumbnail estimate-canvas-card-image canvas-card__image"
-              src={cardImageUrl}
-              alt=""
-              loading="lazy"
-            />
-          ) : (
-            <span
-              className="estimate-canvas-card-thumbnail canvas-card__image canvas-card__image--fallback"
-              aria-hidden="true"
-            >
-              {getCardIconLabel(row)}
-            </span>
-          )}
-          {cardStatus ? (
-            <span
-              className={[
-                "canvas-card__status",
-                getStatusToneClass(cardStatus),
-              ]
-                .filter(Boolean)
-                .join(" ")}
-            >
-              <span className="canvas-card__status-dot" aria-hidden="true" />
-              {cardStatus}
-            </span>
-          ) : null}
-        </div>
+        <div className="canvas-card__layout">
+          <div className="canvas-card__image-shell">
+            <span className="canvas-card__edge-indicator" aria-hidden="true" />
+            {cardImageUrl ? (
+              <img
+                className="estimate-canvas-card-thumbnail estimate-canvas-card-image canvas-card__image"
+                src={cardImageUrl}
+                alt=""
+                loading="lazy"
+              />
+            ) : (
+              <span
+                className="estimate-canvas-card-thumbnail canvas-card__image canvas-card__image--fallback"
+                aria-hidden="true"
+              >
+                {getCardIconLabel(row)}
+              </span>
+            )}
+          </div>
 
-        <div className="canvas-card__body">
-          <div className="canvas-card__header">
-            <strong className="canvas-card__title">{row.displayName || row.itemName}</strong>
-            <span className="canvas-card__meta">{getCanvasCardMeta(row) || "Estimate item"}</span>
+          <div className="canvas-card__body">
+            <div className="canvas-card__header">
+              {cardStatus ? (
+                <div className="canvas-card__header-topline">
+                  <span
+                    className={[
+                      "canvas-card__status",
+                      getStatusToneClass(cardStatus),
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    <span className="canvas-card__status-dot" aria-hidden="true" />
+                    {cardStatus}
+                  </span>
+                </div>
+              ) : null}
+              <strong className="canvas-card__title">{row.displayName || row.itemName}</strong>
+              <span className="canvas-card__meta">{getCanvasCardMeta(row) || "Estimate item"}</span>
+            </div>
+
           </div>
 
           <div className="canvas-card__footer">
-            <div className="estimate-canvas-card-badges canvas-card__tags">
-              {cleanText(row.trade) ? (
+            <span className="canvas-card__footer-left">
+              {getTakeoffIndicatorLabel(row) ? (
                 <span
                   className={[
-                    "estimate-canvas-card-badge",
-                    "canvas-card__tag",
-                    "is-trade",
-                    getTradeToneClass(row),
+                    "canvas-card__takeoff-indicator",
+                    row.takeoffApplied?.takeoffId ? "is-applied" : "is-saved",
                   ]
                     .filter(Boolean)
                     .join(" ")}
+                  title={getTakeoffIndicatorLabel(row)}
+                  aria-label={getTakeoffIndicatorLabel(row)}
                 >
-                  {row.trade}
+                  <span aria-hidden="true">{getTakeoffIndicatorIcon(row)}</span>
                 </span>
               ) : null}
-              <span
-                className={[
-                  "estimate-canvas-card-badge",
-                  "canvas-card__tag",
-                  "is-work-type",
-                  getWorkTypeToneClass(row),
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-              >
-                {getCardTypeLabel(row)}
-              </span>
-              {!cardStatus && cleanText(row.stage) ? (
-                <span className="estimate-canvas-card-badge canvas-card__tag is-stage-tag">
-                  {row.stage}
-                </span>
-              ) : null}
-            </div>
+              <span className="canvas-card__quantity">{getCanvasCardQuantity(row)}</span>
+            </span>
             <strong className="canvas-card__value">{`$${formatCurrency(row.total)}`}</strong>
           </div>
         </div>
+
+        <button
+          type="button"
+          className="canvas-card__details-button"
+          aria-label={`Open details for ${row.displayName || row.itemName}`}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
+          onMouseDown={(event) => {
+            event.stopPropagation();
+          }}
+          onMouseEnter={(event) => openHoverPreview(row, event)}
+          onMouseLeave={scheduleHoverPreviewClose}
+          onFocus={(event) => openHoverPreview(row, event)}
+          onBlur={scheduleHoverPreviewClose}
+          onClick={(event) => handleCardDetailsOpen(row, event)}
+        >
+          <span className="canvas-card__details-icon" aria-hidden="true">
+            i
+          </span>
+        </button>
 
         {debugEnabled ? (
           <dl
@@ -1016,10 +2206,29 @@ function EstimateCanvasView({
             </div>
           </dl>
         ) : null}
-      </button>
+      </div>
     </div>
     );
   };
+
+  const renderTrackGapCell = (stageId, columnIndex, track) => (
+    <div
+      key={`gap-${stageId}-${columnIndex}-${track}`}
+      className={[
+        "estimate-canvas-grid-cell",
+        "is-empty",
+        "is-gap",
+        debugEnabled ? "is-debug-visible" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-testid={`canvas-track-cell-${toTestIdSegment(stageId)}-${columnIndex}-${track}`}
+    >
+      {debugEnabled ? (
+        <span className="estimate-canvas-grid-cell-empty">{`Gap ${track + 1}`}</span>
+      ) : null}
+    </div>
+  );
 
   useEffect(() => {
     if (!shouldLogCanvasDebug()) {
@@ -1120,22 +2329,6 @@ function EstimateCanvasView({
                     className="estimate-canvas-stage-row"
                     data-testid={`canvas-stage-${toTestIdSegment(stage.id)}`}
                   >
-                    <div className="estimate-canvas-stage-label">
-                      <span className="estimate-canvas-rail-code">{`S${stageIndex + 1}`}</span>
-                      <strong>{stage.name}</strong>
-                      {debugEnabled ? (
-                        <div
-                          className="estimate-canvas-debug-lane-meta"
-                          data-testid={`canvas-debug-lane-${toTestIdSegment(stage.id)}`}
-                        >
-                          <span>{`stage: ${stage.id}`}</span>
-                          <span>{`columns: ${columns.length}`}</span>
-                          <span>{`tracks: ${trackCount}`}</span>
-                          <span>{`cards: ${stageBoard.cardCount}`}</span>
-                        </div>
-                      ) : null}
-                    </div>
-
                     <div
                       className="estimate-canvas-lane"
                       style={{
@@ -1144,6 +2337,24 @@ function EstimateCanvasView({
                         "--canvas-stage-color": presentation.color,
                       }}
                     >
+                      <div className="estimate-canvas-lane-header-inline">
+                        <div className="estimate-canvas-stage-kicker">
+                          <span className="estimate-canvas-rail-code">{`S${stageIndex + 1}`}</span>
+                          <strong>{stage.name}</strong>
+                        </div>
+                        {debugEnabled ? (
+                          <div
+                            className="estimate-canvas-debug-lane-meta"
+                            data-testid={`canvas-debug-lane-${toTestIdSegment(stage.id)}`}
+                          >
+                            <span>{`stage: ${stage.id}`}</span>
+                            <span>{`columns: ${columns.length}`}</span>
+                            <span>{`tracks: ${trackCount}`}</span>
+                            <span>{`cards: ${stageBoard.cardCount}`}</span>
+                          </div>
+                        ) : null}
+                      </div>
+
                       <div className="estimate-canvas-lane-scroll">
                         <div className="estimate-canvas-grid">
                           <div
@@ -1157,12 +2368,7 @@ function EstimateCanvasView({
 
                           {columns.length ? (
                             columns.map((column, columnIndex) => {
-                              const trackEntries = Object.entries(column)
-                                .map(([trackKey, row]) => ({
-                                  track: Number(trackKey),
-                                  row,
-                                }))
-                                .sort((left, right) => left.track - right.track);
+                              const renderedTrackCount = getRenderedTrackCount(column, trackCount);
 
                               return (
                                 <Fragment key={`${stage.id}-column-${columnIndex}`}>
@@ -1170,25 +2376,32 @@ function EstimateCanvasView({
                                     className="estimate-canvas-grid-column"
                                     data-testid={`canvas-column-${toTestIdSegment(stage.id)}-${columnIndex}`}
                                   >
-                                    {trackEntries.length ? (
+                                    {Object.keys(column).length ? (
                                       <>
-                                        {renderTrackInsertSlot(
-                                          stage.id,
-                                          columnIndex,
-                                          0,
-                                          trackEntries[0].track
-                                        )}
-                                        {trackEntries.map((entry, entryIndex) => (
-                                          <Fragment key={`${stage.id}-${columnIndex}-${entry.track}`}>
-                                            {renderTrackCard(stage.id, columnIndex, entry.track, entry.row)}
+                                        {Array.from({ length: renderedTrackCount }, (_, trackIndex) => (
+                                          <Fragment key={`${stage.id}-${columnIndex}-${trackIndex}`}>
                                             {renderTrackInsertSlot(
                                               stage.id,
                                               columnIndex,
-                                              entryIndex + 1,
-                                              entry.track + 1
+                                              trackIndex,
+                                              trackIndex
                                             )}
+                                            {column[trackIndex]
+                                              ? renderTrackCard(
+                                                  stage.id,
+                                                  columnIndex,
+                                                  trackIndex,
+                                                  column[trackIndex]
+                                                )
+                                              : renderTrackGapCell(stage.id, columnIndex, trackIndex)}
                                           </Fragment>
                                         ))}
+                                        {renderTrackInsertSlot(
+                                          stage.id,
+                                          columnIndex,
+                                          renderedTrackCount,
+                                          renderedTrackCount
+                                        )}
                                       </>
                                     ) : (
                                       <>
@@ -1236,30 +2449,268 @@ function EstimateCanvasView({
               })}
             </div>
 
-            <aside className="estimate-canvas-detail-panel">
-              {selectedRow ? (
-                <>
-                  <div className="estimate-canvas-detail-hero">
-                    {getRowImageUrl(selectedRow, assemblyLookup) ? (
-                      <img
-                        className="estimate-canvas-detail-image estimate-canvas-detail-image-photo"
-                        src={getRowImageUrl(selectedRow, assemblyLookup)}
-                        alt=""
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="estimate-canvas-detail-image">{getCardIconLabel(selectedRow)}</div>
-                    )}
-                    <div className="estimate-canvas-detail-title">
-                      <h3>{selectedRow.displayName || selectedRow.itemName}</h3>
-                      <span>{getCanvasCardMeta(selectedRow) || "Estimate item"}</span>
-                    </div>
+
+        </div>
+
+        {selectedRow ? (
+          <>
+            <button
+              type="button"
+              className="estimate-canvas-detail-backdrop"
+              aria-label="Close card details"
+              onClick={() => setSelectedRowId("")}
+            />
+            <aside className="estimate-canvas-detail-drawer" data-testid="canvas-detail-drawer">
+              <div className="estimate-canvas-detail-drawer-header">
+                <span className="estimate-canvas-detail-kicker">Card details</span>
+                <button
+                  type="button"
+                  className="toolbar-icon-button estimate-canvas-detail-close"
+                  aria-label="Close card details"
+                  onClick={() => setSelectedRowId("")}
+                >
+                  <span aria-hidden="true">×</span>
+                </button>
+              </div>
+
+              <div className="estimate-canvas-detail-panel">
+                <div className="estimate-canvas-detail-media">
+                  {selectedRowPrimaryImageUrl ? (
+                    <img
+                      className="estimate-canvas-detail-image estimate-canvas-detail-image-photo"
+                      src={selectedRowPrimaryImageUrl}
+                      alt=""
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="estimate-canvas-detail-image">{getCardIconLabel(selectedRow)}</div>
+                  )}
+                  <div className="estimate-canvas-detail-media-actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => galleryFileInputRef.current?.click()}
+                    >
+                      Add Image
+                    </button>
+                    {selectedRowPrimaryImageUrl ? (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => setGalleryPreviewUrl(selectedRowPrimaryImageUrl)}
+                      >
+                        Preview
+                      </button>
+                    ) : null}
+                    <input
+                      ref={galleryFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      hidden
+                      onChange={handleGalleryInputChange}
+                    />
+                  </div>
+                </div>
+
+                <div className="estimate-canvas-detail-title">
+                  <div className="estimate-canvas-detail-title-topline">
+                    <span className={["canvas-card__type-badge", getWorkTypeToneClass(selectedRow)].filter(Boolean).join(" ")}>
+                      {getCanvasTypeBadgeLabel(selectedRow)}
+                    </span>
+                    {getCardStatus(selectedRow) ? (
+                      <span
+                        className={[
+                          "canvas-card__status",
+                          getStatusToneClass(getCardStatus(selectedRow)),
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
+                        <span className="canvas-card__status-dot" aria-hidden="true" />
+                        {getCardStatus(selectedRow)}
+                      </span>
+                    ) : null}
+                  </div>
+                  <h3>{selectedRow.displayName || selectedRow.itemName}</h3>
+                  <span>{getCanvasCardMeta(selectedRow) || "Estimate item"}</span>
+                </div>
+
+                <div className="estimate-canvas-detail-metrics">
+                  <div>
+                    <span>Quantity</span>
+                    <strong>{formatMeasureValue(selectedRow.quantity)}</strong>
+                  </div>
+                  <div>
+                    <span>Unit</span>
+                    <strong>{cleanText(selectedRow.unit) || "-"}</strong>
+                  </div>
+                  <div>
+                    <span>Rate</span>
+                    <strong>{`$${formatCurrency(selectedRow.rate ?? selectedRow.unitRate)}`}</strong>
+                  </div>
+                  <div>
+                    <span>Total</span>
+                    <strong>{`$${formatCurrency(selectedRow.total)}`}</strong>
+                  </div>
+                </div>
+
+                <div className="estimate-canvas-detail-tabs" role="tablist" aria-label="Card drawer sections">
+                  <button
+                    type="button"
+                    className={["estimate-canvas-detail-tab", selectedDrawerTab === "details" ? "is-active" : ""]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onClick={() => setSelectedDrawerTab("details")}
+                  >
+                    Details
+                  </button>
+                  <button
+                    type="button"
+                    className={["estimate-canvas-detail-tab", selectedDrawerTab === "takeoff" ? "is-active" : ""]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onClick={() => setSelectedDrawerTab("takeoff")}
+                  >
+                    Takeoff
+                  </button>
+                </div>
+
+                {selectedDrawerTab === "details" ? (
+                  <>
+                <div className="estimate-canvas-detail-actions">
+                  <button
+                    type="button"
+                    className="secondary-button estimate-canvas-open-builder"
+                    onClick={onOpenBuilderView}
+                  >
+                    Open In Builder
+                  </button>
+                </div>
+
+                <div className="estimate-canvas-detail-section">
+                  <div className="estimate-canvas-detail-section-header">
+                    <h4>Images</h4>
                   </div>
 
+                  {selectedRowImageUrls.length ? (
+                    <div className="estimate-canvas-gallery-grid">
+                      {selectedRowImageUrls.map((imageUrl, imageIndex) => (
+                        <div
+                          key={`${selectedRow.id}-image-${imageIndex}`}
+                          className={[
+                            "estimate-canvas-gallery-card",
+                            imageIndex === (selectedRow.primaryImageIndex || 0) ? "is-primary" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                        >
+                          <button
+                            type="button"
+                            className="estimate-canvas-gallery-thumb"
+                            onClick={() => setGalleryPreviewUrl(imageUrl)}
+                          >
+                            <img src={imageUrl} alt="" loading="lazy" />
+                          </button>
+                          <div className="estimate-canvas-gallery-card-meta">
+                            <span>{imageIndex === (selectedRow.primaryImageIndex || 0) ? "Primary" : `Image ${imageIndex + 1}`}</span>
+                            <div className="estimate-canvas-gallery-actions">
+                              {imageIndex === (selectedRow.primaryImageIndex || 0) ? null : (
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  onClick={() => updateSelectedRowImages(selectedRowImageUrls, imageIndex)}
+                                >
+                                  Make primary
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => {
+                                  const nextImageUrls = selectedRowImageUrls.filter((_, index) => index !== imageIndex);
+                                  const nextPrimaryImageIndex =
+                                    imageIndex < (selectedRow.primaryImageIndex || 0)
+                                      ? (selectedRow.primaryImageIndex || 0) - 1
+                                      : selectedRow.primaryImageIndex || 0;
+                                  updateSelectedRowImages(nextImageUrls, nextPrimaryImageIndex);
+                                  if (galleryPreviewUrl === imageUrl) {
+                                    setGalleryPreviewUrl("");
+                                  }
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="estimate-canvas-gallery-empty">
+                      <span>No images added yet. Upload one or more images to show them on this card.</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="estimate-canvas-detail-section">
+                  <div className="estimate-canvas-detail-section-header">
+                    <h4>Estimate Inputs</h4>
+                  </div>
+                  <div className="estimate-canvas-detail-form">
+                    <label className="field">
+                      <span>Quantity</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={selectedRow.quantity ?? ""}
+                        onChange={(event) => updateSelectedRowField("quantity", event.target.value)}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Unit</span>
+                      <input
+                        type="text"
+                        value={selectedRow.unit || ""}
+                        onChange={(event) => updateSelectedRowField("unit", event.target.value)}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Rate</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={selectedRow.rate ?? selectedRow.unitRate ?? ""}
+                        onChange={(event) => updateSelectedRowField("rate", event.target.value)}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="estimate-canvas-detail-section">
+                  <div className="estimate-canvas-detail-section-header">
+                    <h4>Details</h4>
+                  </div>
                   <dl className="estimate-canvas-detail-grid">
                     <div>
                       <dt>Stage</dt>
                       <dd>{getStageName(stages, getRowStageId(selectedRow), selectedRow.stage)}</dd>
+                    </div>
+                    <div>
+                      <dt>Trade</dt>
+                      <dd>{getTradeName(trades, selectedRow.tradeId, selectedRow.trade)}</dd>
+                    </div>
+                    <div>
+                      <dt>Cost Code</dt>
+                      <dd>{getCostCodeName(costCodes, selectedRow.costCodeId, selectedRow.costCode)}</dd>
+                    </div>
+                    <div>
+                      <dt>Column</dt>
+                      <dd>{board.rowPlacementMap[selectedRow.id]?.columnIndex ?? "-"}</dd>
+                    </div>
+                    <div>
+                      <dt>Track</dt>
+                      <dd>{board.rowPlacementMap[selectedRow.id]?.track ?? "-"}</dd>
                     </div>
                     {debugEnabled ? (
                       <div>
@@ -1273,96 +2724,519 @@ function EstimateCanvasView({
                         </dd>
                       </div>
                     ) : null}
-                    <div>
-                      <dt>Trade</dt>
-                      <dd>{getTradeName(trades, selectedRow.tradeId, selectedRow.trade)}</dd>
-                    </div>
-                    <div>
-                      <dt>Cost Code</dt>
-                      <dd>{getCostCodeName(costCodes, selectedRow.costCodeId, selectedRow.costCode)}</dd>
-                    </div>
-                    <div>
-                      <dt>Cost Summary</dt>
-                      <dd>{`$${formatCurrency(selectedRow.total)}`}</dd>
-                    </div>
-                    <div>
-                      <dt>Column</dt>
-                      <dd>{board.rowPlacementMap[selectedRow.id]?.columnIndex ?? "-"}</dd>
-                    </div>
-                    <div>
-                      <dt>Track</dt>
-                      <dd>{board.rowPlacementMap[selectedRow.id]?.track ?? "-"}</dd>
-                    </div>
                   </dl>
+                </div>
 
-                  <div className="estimate-canvas-detail-actions">
-                    <button
-                      type="button"
-                      className="secondary-button estimate-canvas-open-builder"
-                      onClick={onOpenBuilderView}
-                    >
-                      Open In Builder
-                    </button>
-                  </div>
+                <div className="estimate-canvas-detail-section">
+                  <h4>Included Items</h4>
+                  {selectedRow.assemblyId && assemblyLookup[selectedRow.assemblyId]?.items?.length ? (
+                    <ul>
+                      {assemblyLookup[selectedRow.assemblyId].items.slice(0, 6).map((item) => (
+                        <li key={item.id}>{item.itemName}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>No assembly breakdown attached to this card.</p>
+                  )}
+                </div>
 
-                  <div className="estimate-canvas-detail-section">
-                    <h4>Included Items</h4>
-                    {selectedRow.assemblyId && assemblyLookup[selectedRow.assemblyId]?.items?.length ? (
-                      <ul>
-                        {assemblyLookup[selectedRow.assemblyId].items.slice(0, 6).map((item) => (
-                          <li key={item.id}>{item.itemName}</li>
-                        ))}
-                      </ul>
+                <div className="estimate-canvas-detail-section">
+                  <h4>Notes</h4>
+                  <p>{cleanText(selectedRow.notes) || "No notes added."}</p>
+                </div>
+                  </>
+                ) : (
+                  <div className="estimate-canvas-detail-section estimate-canvas-takeoff-section">
+                    <div className="estimate-canvas-detail-section-header">
+                      <h4>Takeoff Mode</h4>
+                      <span className="estimate-canvas-takeoff-helper">
+                        Calibrate one image, measure, then apply the result to quantity.
+                      </span>
+                    </div>
+
+                    {selectedRowImageUrls.length ? (
+                      <>
+                        <div className="estimate-canvas-takeoff-image-selector" role="tablist" aria-label="Takeoff images">
+                          {selectedRowImageUrls.map((imageUrl, imageIndex) => (
+                            <button
+                              key={`${selectedRow.id}-takeoff-image-${imageIndex}`}
+                              type="button"
+                              className={[
+                                "estimate-canvas-takeoff-image-chip",
+                                imageIndex === selectedTakeoffImageIndex ? "is-active" : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
+                              onClick={() => setSelectedTakeoffImageIndex(imageIndex)}
+                            >
+                              <img src={imageUrl} alt="" loading="lazy" />
+                              <span>{imageIndex === (selectedRow.primaryImageIndex || 0) ? "Primary" : `Image ${imageIndex + 1}`}</span>
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="estimate-canvas-takeoff-toolbar">
+                          <div className="estimate-canvas-takeoff-tools">
+                            {takeoffToolOptions.map((tool) => (
+                              <button
+                                key={tool.id}
+                                type="button"
+                                className={[
+                                  "estimate-canvas-takeoff-tool",
+                                  takeoffTool === tool.id ? "is-active" : "",
+                                ]
+                                  .filter(Boolean)
+                                  .join(" ")}
+                                onClick={() => {
+                                  setTakeoffTool(tool.id);
+                                  resetTakeoffDraft();
+                                }}
+                              >
+                                <strong>{tool.label}</strong>
+                                <span>{tool.unit}</span>
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="estimate-canvas-takeoff-scale-card">
+                            <div className="estimate-canvas-takeoff-scale-header">
+                              <strong>Calibration</strong>
+                              <span className={selectedTakeoffCalibration ? "is-calibrated" : "is-uncalibrated"}>
+                                {selectedTakeoffCalibration
+                                  ? `Calibrated: ${formatTakeoffValue(selectedTakeoffCalibration.realLength)} ${selectedTakeoffCalibration.realUnit} reference`
+                                  : "Not calibrated"}
+                              </span>
+                            </div>
+                            <div className="estimate-canvas-takeoff-scale-controls">
+                              <label className="field">
+                                <span>Length</span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={takeoffScaleLength}
+                                  onChange={(event) => setTakeoffScaleLength(event.target.value)}
+                                />
+                              </label>
+                              <label className="field">
+                                <span>Unit</span>
+                                <select
+                                  value={takeoffScaleUnit}
+                                  onChange={(event) => setTakeoffScaleUnit(event.target.value)}
+                                >
+                                  {takeoffScaleUnitOptions.map((option) => (
+                                    <option key={option.id} value={option.id}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </div>
+                            <div className="estimate-canvas-takeoff-scale-actions">
+                              <button type="button" className="secondary-button" onClick={startCalibrationMode}>
+                                {selectedTakeoffCalibration ? "Recalibrate" : "Set Scale"}
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={completeCalibration}
+                                disabled={!canSaveCalibration}
+                              >
+                                Save Scale
+                              </button>
+                              {selectedTakeoffCalibration ? (
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  onClick={() => {
+                                    const nextCalibrations = { ...selectedRowTakeoffCalibrations };
+                                    delete nextCalibrations[String(selectedTakeoffImageIndex)];
+                                    persistSelectedRowCalibrations(nextCalibrations);
+                                    resetTakeoffDraft();
+                                  }}
+                                >
+                                  Clear
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="estimate-canvas-takeoff-stage-wrap">
+                          <div
+                            ref={takeoffSurfaceRef}
+                            className={[
+                              "estimate-canvas-takeoff-stage",
+                              takeoffMode === "calibrating" ? "is-calibrating" : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                            onPointerDown={handleTakeoffStagePointerDown}
+                            onPointerMove={handleTakeoffStagePointerMove}
+                            onPointerUp={handleTakeoffStagePointerUp}
+                            onDoubleClick={() => {
+                              if (takeoffTool === "polygon" && canCompleteTakeoff) {
+                                finalizeTakeoff();
+                              }
+                            }}
+                          >
+                            <img
+                              src={selectedTakeoffImageUrl}
+                              alt=""
+                              loading="lazy"
+                              onLoad={handleTakeoffImageLoad}
+                            />
+                            <svg
+                              className="estimate-canvas-takeoff-overlay"
+                              viewBox="0 0 1000 1000"
+                              preserveAspectRatio="none"
+                              aria-hidden="true"
+                            >
+                              {selectedImageTakeoffs.map((takeoff) => {
+                                if (takeoff.tool === "count") {
+                                  return (
+                                    <g key={takeoff.id} className="is-saved">
+                                      {takeoff.points.map((point, index) => (
+                                        <circle key={`${takeoff.id}-point-${index}`} cx={point.x * 1000} cy={point.y * 1000} r="10" />
+                                      ))}
+                                    </g>
+                                  );
+                                }
+
+                                if (takeoff.tool === "line") {
+                                  return (
+                                    <g key={takeoff.id} className="is-saved">
+                                      <line
+                                        x1={takeoff.points[0]?.x * 1000}
+                                        y1={takeoff.points[0]?.y * 1000}
+                                        x2={takeoff.points[1]?.x * 1000}
+                                        y2={takeoff.points[1]?.y * 1000}
+                                      />
+                                    </g>
+                                  );
+                                }
+
+                                if (takeoff.tool === "rectangle") {
+                                  const firstPoint = takeoff.points[0] || { x: 0, y: 0 };
+                                  const secondPoint = takeoff.points[1] || firstPoint;
+                                  return (
+                                    <g key={takeoff.id} className="is-saved">
+                                      <rect
+                                        x={Math.min(firstPoint.x, secondPoint.x) * 1000}
+                                        y={Math.min(firstPoint.y, secondPoint.y) * 1000}
+                                        width={Math.abs(secondPoint.x - firstPoint.x) * 1000}
+                                        height={Math.abs(secondPoint.y - firstPoint.y) * 1000}
+                                      />
+                                    </g>
+                                  );
+                                }
+
+                                return (
+                                  <g key={takeoff.id} className="is-saved">
+                                    <polygon points={toSvgPointList(takeoff.points)} />
+                                  </g>
+                                );
+                              })}
+
+                              {takeoffMode === "calibrating" && takeoffPreviewPoints.length ? (
+                                <g className="is-calibration">
+                                  {takeoffPreviewPoints.length >= 2 ? (
+                                    <line
+                                      x1={takeoffPreviewPoints[0].x * 1000}
+                                      y1={takeoffPreviewPoints[0].y * 1000}
+                                      x2={takeoffPreviewPoints[1].x * 1000}
+                                      y2={takeoffPreviewPoints[1].y * 1000}
+                                    />
+                                  ) : null}
+                                  {takeoffPreviewPoints.map((point, index) => (
+                                    <circle key={`calibration-point-${index}`} cx={point.x * 1000} cy={point.y * 1000} r="9" />
+                                  ))}
+                                </g>
+                              ) : null}
+
+                              {takeoffMode !== "calibrating" && takeoffPreviewPoints.length ? (
+                                <g className="is-draft">
+                                  {takeoffTool === "count"
+                                    ? takeoffPreviewPoints.map((point, index) => (
+                                        <circle key={`draft-point-${index}`} cx={point.x * 1000} cy={point.y * 1000} r="10" />
+                                      ))
+                                    : null}
+                                  {takeoffTool === "line" && takeoffPreviewPoints.length >= 2 ? (
+                                    <line
+                                      x1={takeoffPreviewPoints[0].x * 1000}
+                                      y1={takeoffPreviewPoints[0].y * 1000}
+                                      x2={takeoffPreviewPoints[1].x * 1000}
+                                      y2={takeoffPreviewPoints[1].y * 1000}
+                                    />
+                                  ) : null}
+                                  {takeoffTool === "rectangle" && takeoffPreviewPoints.length >= 2 ? (
+                                    <rect
+                                      x={Math.min(takeoffPreviewPoints[0].x, takeoffPreviewPoints[1].x) * 1000}
+                                      y={Math.min(takeoffPreviewPoints[0].y, takeoffPreviewPoints[1].y) * 1000}
+                                      width={Math.abs(takeoffPreviewPoints[1].x - takeoffPreviewPoints[0].x) * 1000}
+                                      height={Math.abs(takeoffPreviewPoints[1].y - takeoffPreviewPoints[0].y) * 1000}
+                                    />
+                                  ) : null}
+                                  {takeoffTool === "polygon" && takeoffPreviewPoints.length >= 2 ? (
+                                    <polyline points={toSvgPointList(takeoffPreviewPoints)} />
+                                  ) : null}
+                                </g>
+                              ) : null}
+                            </svg>
+                          </div>
+
+                          <div className="estimate-canvas-takeoff-stage-caption">
+                            {takeoffMode === "calibrating"
+                              ? "Click two points on the image, then save the scale."
+                              : takeoffTool === "rectangle"
+                                ? "Drag on the image to define the rectangle area."
+                                : takeoffTool === "polygon"
+                                  ? "Click around the shape, then finish the polygon."
+                                  : takeoffTool === "count"
+                                    ? "Click each item to count, then save the takeoff."
+                                    : "Click two points to create a line measurement."}
+                          </div>
+                        </div>
+
+                        <div className="estimate-canvas-takeoff-results">
+                          <div>
+                            <span>Current tool</span>
+                            <strong>{getTakeoffToolDefinition(takeoffTool).label}</strong>
+                          </div>
+                          <div className="is-live-result">
+                            <span>{takeoffMode === "calibrating" ? "Scale result" : "Live result"}</span>
+                            <strong>
+                              {takeoffMode === "calibrating"
+                                ? liveTakeoffValue > 0
+                                  ? `${liveTakeoffValue} m/px`
+                                  : "Set two points"
+                                : `${formatTakeoffValue(liveTakeoffValue)} ${getTakeoffDefaultUnit(takeoffTool)}`}
+                            </strong>
+                            <em>
+                              {takeoffMode === "calibrating"
+                                ? canSaveCalibration
+                                  ? "Ready to save calibration"
+                                  : "Click two reference points"
+                                : canCompleteTakeoff
+                                  ? "Ready to save"
+                                  : selectedTakeoffCalibration || takeoffTool === "count"
+                                    ? "Add more points to complete"
+                                    : "Calibrate this image first"}
+                            </em>
+                          </div>
+                          <div>
+                            <span>Qty source</span>
+                            <strong>
+                              {selectedTakeoffEntry?.id === selectedRow?.takeoffApplied?.takeoffId
+                                ? "Applied from takeoff"
+                                : selectedRow?.takeoffApplied?.takeoffId
+                                  ? "Measured quantity set"
+                                  : "Manual / estimate qty"}
+                            </strong>
+                          </div>
+                        </div>
+
+                        {takeoffFeedback ? (
+                          <div className="estimate-canvas-takeoff-feedback" role="status">
+                            {takeoffFeedback}
+                          </div>
+                        ) : null}
+
+                        <div className="estimate-canvas-takeoff-actions">
+                          <button type="button" className="secondary-button" onClick={undoTakeoffPoint} disabled={!takeoffDraftPoints.length}>
+                            Undo Last Point
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={resetTakeoffDraft}
+                            disabled={!takeoffDraftPoints.length && takeoffMode !== "calibrating"}
+                          >
+                            Clear Draft
+                          </button>
+                          <button
+                            type="button"
+                            className="primary-button"
+                            onClick={finalizeTakeoff}
+                            disabled={!canCompleteTakeoff}
+                          >
+                            Save Takeoff
+                          </button>
+                        </div>
+
+                        <div className="estimate-canvas-detail-section estimate-canvas-takeoff-list-section">
+                          <div className="estimate-canvas-detail-section-header">
+                            <h4>Saved Takeoffs</h4>
+                          </div>
+                          {selectedRowTakeoffs.length ? (
+                            <div className="estimate-canvas-takeoff-list">
+                              {groupedTakeoffs.map((group) => (
+                                <section
+                                  key={`takeoff-group-${group.imageIndex}`}
+                                  className={[
+                                    "estimate-canvas-takeoff-group",
+                                    group.imageIndex === selectedTakeoffImageIndex ? "is-current-image" : "",
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" ")}
+                                >
+                                  <div className="estimate-canvas-takeoff-group-header">
+                                    <strong>
+                                      {`Image ${group.imageIndex + 1}`}
+                                      {group.imageIndex === (selectedRow.primaryImageIndex || 0) ? " · Primary" : ""}
+                                    </strong>
+                                    <span>{`${group.takeoffs.length} saved`}</span>
+                                  </div>
+
+                                  <div className="estimate-canvas-takeoff-group-list">
+                                    {group.takeoffs.map((takeoff) => (
+                                      <div
+                                        key={takeoff.id}
+                                        className={[
+                                          "estimate-canvas-takeoff-entry",
+                                          Number(takeoff.imageIndex) === selectedTakeoffImageIndex ? "is-current-image" : "",
+                                          selectedTakeoffEntry?.id === takeoff.id ? "is-selected" : "",
+                                          selectedRow?.takeoffApplied?.takeoffId === takeoff.id ? "is-applied" : "",
+                                        ]
+                                          .filter(Boolean)
+                                          .join(" ")}
+                                        onClick={() => {
+                                          setSelectedTakeoffId(takeoff.id);
+                                          setConfirmingDeleteTakeoffId("");
+                                        }}
+                                      >
+                                        <div className="estimate-canvas-takeoff-entry-topline">
+                                          <span className="estimate-canvas-takeoff-entry-tool">
+                                            {getTakeoffToolDefinition(takeoff.tool).label}
+                                          </span>
+                                          {selectedRow?.takeoffApplied?.takeoffId === takeoff.id ? (
+                                            <span className="estimate-canvas-takeoff-entry-state">Applied</span>
+                                          ) : null}
+                                        </div>
+
+                                        <div className="estimate-canvas-takeoff-entry-copy">
+                                          {editingTakeoffId === takeoff.id ? (
+                                            <div className="estimate-canvas-takeoff-entry-edit">
+                                              <input
+                                                type="text"
+                                                value={takeoffLabelDraft}
+                                                onChange={(event) => setTakeoffLabelDraft(event.target.value)}
+                                                onClick={(event) => event.stopPropagation()}
+                                              />
+                                              <div className="estimate-canvas-takeoff-entry-edit-actions">
+                                                <button type="button" className="secondary-button" onClick={(event) => { event.stopPropagation(); saveTakeoffRename(); }}>
+                                                  Save
+                                                </button>
+                                                <button type="button" className="secondary-button" onClick={(event) => { event.stopPropagation(); setEditingTakeoffId(''); setTakeoffLabelDraft(''); }}>
+                                                  Cancel
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <>
+                                              <strong>{getTakeoffLabel(takeoff)}</strong>
+                                              <span>{`Measured on image ${Number(takeoff.imageIndex) + 1}`}</span>
+                                            </>
+                                          )}
+                                        </div>
+
+                                        <div className="estimate-canvas-takeoff-entry-result-row">
+                                          <div className="estimate-canvas-takeoff-entry-value">
+                                            {formatTakeoffValue(takeoff.computedValue)} {takeoff.unit}
+                                          </div>
+                                          <div className="estimate-canvas-takeoff-entry-actions estimate-canvas-takeoff-entry-actions--primary">
+                                            <button
+                                              type="button"
+                                              className={selectedRow?.takeoffApplied?.takeoffId === takeoff.id ? "primary-button" : "secondary-button"}
+                                              onClick={(event) => { event.stopPropagation(); applyTakeoffToQuantity(takeoff, "replace"); }}
+                                            >
+                                              Replace quantity
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className="secondary-button"
+                                              onClick={(event) => { event.stopPropagation(); applyTakeoffToQuantity(takeoff, "add"); }}
+                                            >
+                                              Add to quantity
+                                            </button>
+                                          </div>
+                                        </div>
+
+                                        <div className="estimate-canvas-takeoff-entry-actions estimate-canvas-takeoff-entry-actions--secondary">
+                                          <button type="button" className="secondary-button" onClick={(event) => { event.stopPropagation(); startTakeoffRename(takeoff); }}>
+                                            Edit name
+                                          </button>
+                                          {confirmingDeleteTakeoffId === takeoff.id ? (
+                                            <div className="estimate-canvas-takeoff-confirm">
+                                              <span>Delete this takeoff?</span>
+                                              <button type="button" className="secondary-button" onClick={(event) => { event.stopPropagation(); deleteTakeoff(takeoff.id); }}>
+                                                Confirm
+                                              </button>
+                                              <button type="button" className="secondary-button" onClick={(event) => { event.stopPropagation(); setConfirmingDeleteTakeoffId(''); }}>
+                                                Cancel
+                                              </button>
+                                            </div>
+                                          ) : (
+                                            <button type="button" className="secondary-button is-danger" onClick={(event) => { event.stopPropagation(); deleteTakeoff(takeoff.id); }}>
+                                              Delete
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </section>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="estimate-canvas-gallery-empty">
+                              <span>No saved takeoffs yet. Calibrate the image and save your first measurement.</span>
+                            </div>
+                          )}
+                        </div>
+                      </>
                     ) : (
-                      <p>No assembly breakdown attached to this card.</p>
+                      <div className="estimate-canvas-gallery-empty">
+                        <span>Add an image to this card before using Takeoff Mode.</span>
+                      </div>
                     )}
                   </div>
+                )}
 
-                  <div className="estimate-canvas-detail-section">
-                    <h4>Notes</h4>
-                    <p>{cleanText(selectedRow.notes) || "No notes added."}</p>
+                {debugEnabled ? (
+                  <div className="estimate-canvas-debug-inspector" data-testid="canvas-debug-inspector">
+                    <h4>Selected Card Debug</h4>
+                    <dl className="estimate-canvas-debug-inspector-grid">
+                      <div>
+                        <dt>ID</dt>
+                        <dd>{selectedRow.id}</dd>
+                      </div>
+                      <div>
+                        <dt>Stage</dt>
+                        <dd>{getRowStageId(selectedRow) || "-"}</dd>
+                      </div>
+                      <div>
+                        <dt>Column</dt>
+                        <dd>{board.rowPlacementMap[selectedRow.id]?.columnIndex ?? "-"}</dd>
+                      </div>
+                      <div>
+                        <dt>Track</dt>
+                        <dd>{board.rowPlacementMap[selectedRow.id]?.track ?? "-"}</dd>
+                      </div>
+                      <div>
+                        <dt>Legacy Stack Parent</dt>
+                        <dd>{selectedRow.canvasStackParentId || "-"}</dd>
+                      </div>
+                      <div>
+                        <dt>Legacy Stack Order</dt>
+                        <dd>{selectedRow.canvasStackOrder || "-"}</dd>
+                      </div>
+                    </dl>
                   </div>
-
-                  {debugEnabled ? (
-                    <div className="estimate-canvas-debug-inspector" data-testid="canvas-debug-inspector">
-                      <h4>Selected Card Debug</h4>
-                      <dl className="estimate-canvas-debug-inspector-grid">
-                        <div>
-                          <dt>ID</dt>
-                          <dd>{selectedRow.id}</dd>
-                        </div>
-                        <div>
-                          <dt>Stage</dt>
-                          <dd>{getRowStageId(selectedRow) || "-"}</dd>
-                        </div>
-                        <div>
-                          <dt>Column</dt>
-                          <dd>{board.rowPlacementMap[selectedRow.id]?.columnIndex ?? "-"}</dd>
-                        </div>
-                        <div>
-                          <dt>Track</dt>
-                          <dd>{board.rowPlacementMap[selectedRow.id]?.track ?? "-"}</dd>
-                        </div>
-                        <div>
-                          <dt>Legacy Stack Parent</dt>
-                          <dd>{selectedRow.canvasStackParentId || "-"}</dd>
-                        </div>
-                        <div>
-                          <dt>Legacy Stack Order</dt>
-                          <dd>{selectedRow.canvasStackOrder || "-"}</dd>
-                        </div>
-                      </dl>
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <div className="estimate-canvas-detail-empty">
-                  <h3>Select a card</h3>
-                  <p>Choose a card to inspect stage, trade, cost, and notes without leaving the board.</p>
-                </div>
-              )}
+                ) : null}
+              </div>
             </aside>
-        </div>
+          </>
+        ) : null}
 
         {activeDragRow ? (
           <div
@@ -1377,9 +3251,92 @@ function EstimateCanvasView({
             </div>
           </div>
         ) : null}
+        {galleryPreviewUrl ? (
+          <div className="estimate-canvas-image-preview" role="dialog" aria-modal="true">
+            <button
+              type="button"
+              className="estimate-canvas-image-preview-backdrop"
+              aria-label="Close image preview"
+              onClick={() => setGalleryPreviewUrl("")}
+            />
+            <div className="estimate-canvas-image-preview-card">
+              <button
+                type="button"
+                className="toolbar-icon-button estimate-canvas-image-preview-close"
+                aria-label="Close image preview"
+                onClick={() => setGalleryPreviewUrl("")}
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+              <img src={galleryPreviewUrl} alt="" />
+            </div>
+          </div>
+        ) : null}
+        {hoverPreviewRow && hoverPreview?.rect && typeof document !== "undefined"
+          ? createPortal(
+              <div
+                className="canvas-card__hover-preview"
+                style={{
+                  top: Math.max(12, hoverPreview.rect.top - 12),
+                  left: Math.min(
+                    Math.max(12, hoverPreview.rect.right + 12),
+                    Math.max(12, window.innerWidth - 292)
+                  ),
+                }}
+                onMouseEnter={keepHoverPreviewOpen}
+                onMouseLeave={scheduleHoverPreviewClose}
+              >
+                <div className="canvas-card__hover-preview-media">
+                  {getRowImageUrl(hoverPreviewRow, assemblyLookup) ? (
+                    <img
+                      src={getRowImageUrl(hoverPreviewRow, assemblyLookup)}
+                      alt=""
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="canvas-card__hover-preview-fallback">
+                      {getCardIconLabel(hoverPreviewRow)}
+                    </div>
+                  )}
+                </div>
+                <div className="canvas-card__hover-preview-copy">
+                  <strong>{hoverPreviewRow.displayName || hoverPreviewRow.itemName}</strong>
+                  <span>{getCanvasCardMeta(hoverPreviewRow) || "Estimate item"}</span>
+                  {getTakeoffIndicatorLabel(hoverPreviewRow) ? (
+                    <span className="canvas-card__hover-preview-source">{getTakeoffIndicatorLabel(hoverPreviewRow)}</span>
+                  ) : null}
+                </div>
+                <dl
+                  className={[
+                    "canvas-card__hover-preview-metrics",
+                    getHoverPreviewMetrics(hoverPreviewRow).length >= 3 ? "is-wide" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  {getHoverPreviewMetrics(hoverPreviewRow).map((metric) => (
+                    <div
+                      key={`${hoverPreviewRow.id}-${metric.key}`}
+                      className={metric.key === "total" ? "is-total" : ""}
+                    >
+                      <dt>{metric.label}</dt>
+                      <dd>{metric.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>,
+              document.body
+            )
+          : null}
       </div>
     </div>
   );
 }
 
 export default EstimateCanvasView;
+
+
+
+
+
+

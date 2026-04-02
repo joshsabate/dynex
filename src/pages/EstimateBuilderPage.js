@@ -845,6 +845,7 @@ function EstimateBuilderPage({
           const nextLine = {
             ...line,
             [key]: value === "" ? 0 : toNumber(value),
+            ...(key === "quantity" ? { takeoffApplied: null } : {}),
           };
           emitRowDebugUpdate(nextLine, "builder");
           return nextLine;
@@ -876,7 +877,7 @@ function EstimateBuilderPage({
 
     if (key === "quantity") {
       emitRowDebugUpdate({ ...row, quantity: value }, "builder");
-      onGeneratedRowOverrideChange(row.id, { quantityOverride: value });
+      onGeneratedRowOverrideChange(row.id, { quantityOverride: value, takeoffApplied: null });
       return;
     }
 
