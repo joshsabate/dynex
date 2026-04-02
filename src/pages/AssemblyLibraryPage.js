@@ -7,6 +7,7 @@ import {
   getStoredAssemblyGroupNames,
   isAssemblyGroupDefined,
   saveStoredAssemblyGroupNames,
+  unassignedAssemblyGroupName,
 } from "../utils/assemblyGroups";
 import { applyImportMode, convertAssembliesToCSV, parseCSV } from "../utils/csvUtils";
 import { getStructuredItemPresentation } from "../utils/itemNaming";
@@ -129,6 +130,7 @@ function createEmptyCostItemDraft(units = []) {
     unitId: unit.id,
     unit: unit.abbreviation,
     rate: "",
+    imageUrl: "",
     status: "Active",
     isActive: true,
     notes: "",
@@ -150,6 +152,7 @@ function createEmptyAssembly(roomTypes = []) {
     appliesToRoomType: roomType.name,
     assemblyGroup: "",
     assemblyCategory: "",
+    imageUrl: "",
     notes: "",
     items: [],
   };
@@ -686,6 +689,15 @@ function AssemblyLibraryPage({
     });
   };
 
+  const stopEditingManagedAssemblyGroup = () => {
+    setGroupManagerState((current) => ({
+      ...current,
+      editingGroupName: "",
+      editValue: "",
+      error: "",
+    }));
+  };
+
   const syncAssemblyGroupReferences = (previousGroupName, nextGroupName) => {
     const normalizedPreviousName = cleanText(previousGroupName);
     const normalizedNextName = cleanText(nextGroupName);
@@ -751,6 +763,9 @@ function AssemblyLibraryPage({
   };
 
   const startEditingManagedAssemblyGroup = (groupName) => {
+    if (groupName === unassignedAssemblyGroupName) {
+      return;
+    }
     setGroupManagerState((current) => ({
       ...current,
       editingGroupName: groupName,
@@ -760,6 +775,13 @@ function AssemblyLibraryPage({
   };
 
   const saveManagedAssemblyGroupRename = (groupName) => {
+    if (groupName === unassignedAssemblyGroupName) {
+      setGroupManagerState((current) => ({
+        ...current,
+        error: `"${unassignedAssemblyGroupName}" cannot be renamed.`,
+      }));
+      return;
+    }
     const nextGroupName = cleanText(groupManagerState.editValue);
     if (!nextGroupName) {
       setGroupManagerState((current) => ({
@@ -785,43 +807,49 @@ function AssemblyLibraryPage({
       )].sort((left, right) => left.localeCompare(right))
     );
     syncAssemblyGroupReferences(groupName, nextGroupName);
-    setGroupManagerState((current) => ({
-      ...current,
-      editingGroupName: "",
-      editValue: "",
-      error: "",
-    }));
+    stopEditingManagedAssemblyGroup();
   };
 
   const removeManagedAssemblyGroup = (groupName) => {
-    const isInUse = normalizedAssemblies.some((assembly) => assembly.assemblyGroup === groupName);
-    if (isInUse) {
+    if (groupName === unassignedAssemblyGroupName) {
       setGroupManagerState((current) => ({
         ...current,
-        error: `Cannot delete "${groupName}" while assemblies still use it.`,
+        error: `"${unassignedAssemblyGroupName}" cannot be deleted.`,
       }));
       return;
     }
-    if (!managedAssemblyGroups.includes(groupName)) {
-      setGroupManagerState((current) => ({
-        ...current,
-        error: `"${groupName}" is part of the default group list and cannot be deleted.`,
-      }));
+    const affectedAssemblies = normalizedAssemblies.filter(
+      (assembly) => assembly.assemblyGroup === groupName
+    );
+    const isInUse = affectedAssemblies.length > 0;
+    const message = isInUse
+      ? `This group is used by ${affectedAssemblies.length} assemblies. Those assemblies will be reassigned to ${unassignedAssemblyGroupName}.`
+      : `Delete "${groupName}"?`;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(message)
+    ) {
       return;
     }
 
     setManagedAssemblyGroups((current) => current.filter((entry) => entry !== groupName));
-    if (draft.assemblyGroup === groupName) {
-      updateAssemblyField("assemblyGroup", "");
+    if (isInUse) {
+      syncAssemblyGroupReferences(groupName, unassignedAssemblyGroupName);
+    } else {
+      setAssemblyGroupFilter((current) =>
+        current === groupName ? unassignedAssemblyGroupName : current
+      );
+      setDraft((current) =>
+        current.assemblyGroup === groupName
+          ? {
+              ...current,
+              assemblyGroup: unassignedAssemblyGroupName,
+              assemblyCategory: unassignedAssemblyGroupName,
+            }
+          : current
+      );
     }
-    setAssemblyGroupFilter((current) => (current === groupName ? "" : current));
-    setGroupManagerState((current) => ({
-      ...current,
-      editingGroupName:
-        current.editingGroupName === groupName ? "" : current.editingGroupName,
-      editValue: current.editingGroupName === groupName ? "" : current.editValue,
-      error: "",
-    }));
+    stopEditingManagedAssemblyGroup();
   };
 
   const updateAssemblyField = (key, value) =>
@@ -2096,6 +2124,14 @@ function AssemblyLibraryPage({
                           </td>
                           <td>
                             <div className="assembly-library-name-display">
+                              {assembly.imageUrl ? (
+                                <img
+                                  className="library-image-thumb"
+                                  src={assembly.imageUrl}
+                                  alt=""
+                                  loading="lazy"
+                                />
+                              ) : null}
                               <span className="assembly-library-name-fulltext">
                                 {assembly.assemblyName}
                               </span>
@@ -2284,7 +2320,21 @@ function AssemblyLibraryPage({
                       Selected: {selectedAssemblyGroupLabel}
                     </p>
                   </div>
+                  <FormField label="Image URL">
+                    <input
+                      value={draft.imageUrl || ""}
+                      onChange={(event) =>
+                        updateAssemblyField("imageUrl", event.target.value)
+                      }
+                      placeholder="https://example.com/assembly-image.jpg"
+                    />
+                  </FormField>
                 </div>
+                {draft.imageUrl ? (
+                  <div className="library-image-preview">
+                    <img src={draft.imageUrl} alt="" loading="lazy" />
+                  </div>
+                ) : null}
               </div>
 
               <div className="summary-section room-template-compact-section assembly-library-editor-section assembly-library-editor-section-notes">
@@ -2443,6 +2493,7 @@ function AssemblyLibraryPage({
                     (assembly) => assembly.assemblyGroup === groupName
                   );
                   const isEditing = groupManagerState.editingGroupName === groupName;
+                  const isProtectedGroup = groupName === unassignedAssemblyGroupName;
                   return (
                     <div key={groupName} className="assembly-library-group-row">
                       <div className="assembly-library-group-row-main">
@@ -2460,63 +2511,77 @@ function AssemblyLibraryPage({
                               }
                               placeholder="Assembly group name"
                             />
-                            <button
-                              type="button"
-                              className="primary-button"
-                              onClick={() => saveManagedAssemblyGroupRename(groupName)}
-                            >
-                              Save
-                            </button>
-                            <button
-                              type="button"
-                              className="secondary-button"
-                              onClick={() =>
-                                setGroupManagerState((current) => ({
-                                  ...current,
-                                  editingGroupName: "",
-                                  editValue: "",
-                                  error: "",
-                                }))
-                              }
-                            >
-                              Cancel
-                            </button>
                           </div>
                         ) : (
                           <>
                             <strong>{groupName}</strong>
                             <p>
-                              {isInUse
+                              {isProtectedGroup
+                                ? "Fallback group for deleted or unassigned assemblies"
+                                : isInUse
                                 ? "In use by existing assemblies"
                                 : "Available for new assemblies"}
                             </p>
                           </>
                         )}
                       </div>
-                      <div className="action-row assembly-library-group-row-actions">
-                        <span
-                          className={`assembly-library-source-badge ${
-                            isInUse ? "is-linked" : "is-custom"
-                          }`}
-                        >
-                          {isInUse ? "In Use" : "Managed"}
-                        </span>
-                        {!isEditing ? (
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={() => startEditingManagedAssemblyGroup(groupName)}
-                          >
-                            Rename
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="danger-button"
-                          onClick={() => removeManagedAssemblyGroup(groupName)}
-                        >
-                          Delete
-                        </button>
+                      <span
+                        className={`assembly-library-source-badge ${
+                          isProtectedGroup
+                            ? "is-protected"
+                            : isInUse
+                              ? "is-linked"
+                              : "is-custom"
+                        }`}
+                      >
+                        {isProtectedGroup ? "Protected" : isInUse ? "In Use" : "Managed"}
+                      </span>
+                      <div className="assembly-library-group-row-actions">
+                        {isEditing ? (
+                          <>
+                            <button
+                              type="button"
+                              className="secondary-button assembly-library-icon-button"
+                              aria-label={`Save ${groupName}`}
+                              title="Save"
+                              onClick={() => saveManagedAssemblyGroupRename(groupName)}
+                            >
+                              S
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button assembly-library-icon-button"
+                              aria-label={`Cancel rename for ${groupName}`}
+                              title="Cancel"
+                              onClick={stopEditingManagedAssemblyGroup}
+                            >
+                              X
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              className="secondary-button assembly-library-icon-button"
+                              aria-label={`Rename ${groupName}`}
+                              title="Rename"
+                              onClick={() => startEditingManagedAssemblyGroup(groupName)}
+                              disabled={isProtectedGroup}
+                            >
+                              R
+                            </button>
+                            <button
+                              type="button"
+                              className="danger-button assembly-library-icon-button"
+                              aria-label={`Delete ${groupName}`}
+                              title="Delete"
+                              onClick={() => removeManagedAssemblyGroup(groupName)}
+                              disabled={isProtectedGroup}
+                            >
+                              D
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   );
@@ -3143,7 +3208,22 @@ function AssemblyLibraryPage({
                       ))}
                     </select>
                   </FormField>
+
+                  <FormField label="Image URL">
+                    <input
+                      value={newCostItemState.draft.imageUrl || ""}
+                      onChange={(event) =>
+                        updateNewCostDraftField("imageUrl", event.target.value)
+                      }
+                      placeholder="https://example.com/item-image.jpg"
+                    />
+                  </FormField>
                 </div>
+                {newCostItemState.draft.imageUrl ? (
+                  <div className="library-image-preview">
+                    <img src={newCostItemState.draft.imageUrl} alt="" loading="lazy" />
+                  </div>
+                ) : null}
               </div>
 
               <div className="summary-section room-template-compact-section cost-library-editor-section cost-library-editor-section-classification">

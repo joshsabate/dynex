@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import DataTable from "../components/DataTable";
 import SectionCard from "../components/SectionCard";
-import { getStagePresentation } from "../utils/stages";
+import { getStageDisplayName, getStagePresentation, getStageSortOrder } from "../utils/stages";
 import { summarizeEstimateRows } from "../utils/estimateRows";
 
 function formatMoney(value) {
@@ -63,9 +63,20 @@ function getSectionName(sections, sectionId) {
   return sections.find((section) => section.id === sectionId)?.name || "";
 }
 
-function compareRows(left, right, sortBy) {
+function compareRows(left, right, sortBy, stages) {
   if (sortBy === "sortOrder") {
     return (left.sortOrder ?? 0) - (right.sortOrder ?? 0) || left.itemName.localeCompare(right.itemName);
+  }
+
+  if (sortBy === "stage") {
+    return (
+      getStageSortOrder(stages, left.stageId, left.stage) -
+        getStageSortOrder(stages, right.stageId, right.stage) ||
+      getStageDisplayName(stages, left.stageId, left.stage).localeCompare(
+        getStageDisplayName(stages, right.stageId, right.stage)
+      ) ||
+      (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
+    );
   }
 
   return String(left[sortBy] || "").localeCompare(String(right[sortBy] || "")) ||
@@ -131,7 +142,10 @@ function EstimateOutputPage({
     const groups = new Map();
 
     activeRows.forEach((row) => {
-      const groupValue = row[groupBy] || "Unassigned";
+      const groupValue =
+        groupBy === "stage"
+          ? getStageDisplayName(stages, row.stageId, row.stage)
+          : row[groupBy] || "Unassigned";
 
       if (!groups.has(groupValue)) {
         groups.set(groupValue, []);
@@ -143,11 +157,20 @@ function EstimateOutputPage({
     return Array.from(groups.entries())
       .map(([groupName, groupRows]) => ({
         groupName,
-        rows: [...groupRows].sort((left, right) => compareRows(left, right, sortBy)),
+        rows: [...groupRows].sort((left, right) => compareRows(left, right, sortBy, stages)),
         subtotal: groupRows.reduce((total, row) => total + row.total, 0),
+        sortOrder:
+          groupBy === "stage"
+            ? getStageSortOrder(stages, groupRows[0]?.stageId, groupRows[0]?.stage)
+            : Number.MAX_SAFE_INTEGER,
       }))
-      .sort((left, right) => left.groupName.localeCompare(right.groupName));
-  }, [activeRows, groupBy, sortBy]);
+      .sort(
+        (left, right) =>
+          Number(left.sortOrder ?? Number.MAX_SAFE_INTEGER) -
+            Number(right.sortOrder ?? Number.MAX_SAFE_INTEGER) ||
+          left.groupName.localeCompare(right.groupName)
+      );
+  }, [activeRows, groupBy, sortBy, stages]);
 
   const flatSortedRows = useMemo(
     () => groupedRows.flatMap((group) => group.rows),
@@ -189,7 +212,7 @@ function EstimateOutputPage({
         row.roomName,
         row.roomType,
         row.assemblyName,
-        row.stage,
+        getStageDisplayName(stages, row.stageId, row.stage),
         row.element,
         row.trade,
         row.itemName,
@@ -336,7 +359,7 @@ function EstimateOutputPage({
                         className: "estimate-output-col-stage",
                         render: (row) => (
                           <span className="stage-chip" style={getStagePresentation(stages, row.stageId, row.stage)}>
-                            {row.stage || "Unassigned"}
+                            {getStageDisplayName(stages, row.stageId, row.stage)}
                           </span>
                         ),
                       },

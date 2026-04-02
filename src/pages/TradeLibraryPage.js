@@ -118,7 +118,7 @@ function TradeLibraryPage({ trades, onTradesChange }) {
       title="Trade Library"
       description="Manage office estimating trades and their order. Assemblies reference this list instead of free-typed trade names."
     >
-      <div className="page-grid library-page">
+      <div className="page-grid library-page library-page-trades">
         <form className="library-form-card" onSubmit={addTrade}>
           <div className="library-form-actions library-form-actions-top">
             <button type="button" className="secondary-button" onClick={exportTradesAsCsv}>
@@ -145,13 +145,15 @@ function TradeLibraryPage({ trades, onTradesChange }) {
             />
           </div>
           <div className="library-form-grid">
-            <FormField label="Import mode">
-              <select value={importMode} onChange={(event) => setImportMode(event.target.value)}>
-                <option value="append">Append</option>
-                <option value="override">Override All</option>
-                <option value="replace">Replace Duplicates</option>
-              </select>
-            </FormField>
+            <div className="library-form-medium">
+              <FormField label="Import mode">
+                <select value={importMode} onChange={(event) => setImportMode(event.target.value)}>
+                  <option value="append">Append</option>
+                  <option value="override">Override All</option>
+                  <option value="replace">Replace Duplicates</option>
+                </select>
+              </FormField>
+            </div>
           </div>
           {csvStatus ? <p className="assembly-library-status">{csvStatus}</p> : null}
           <div className="library-form-grid">
@@ -175,33 +177,39 @@ function TradeLibraryPage({ trades, onTradesChange }) {
               </FormField>
             </div>
 
-            <FormField label="Status">
-              <input
-                value={form.status}
-                onChange={(event) => updateField("status", event.target.value)}
-                placeholder="Active"
-              />
-            </FormField>
+            <div className="library-form-medium">
+              <FormField label="Status">
+                <input
+                  value={form.status}
+                  onChange={(event) => updateField("status", event.target.value)}
+                  placeholder="Active"
+                />
+              </FormField>
+            </div>
 
-            <FormField label="Sort order">
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={form.sortOrder}
-                onChange={(event) => updateField("sortOrder", event.target.value)}
-              />
-            </FormField>
+            <div className="library-form-narrow">
+              <FormField label="Sort order">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.sortOrder}
+                  onChange={(event) => updateField("sortOrder", event.target.value)}
+                />
+              </FormField>
+            </div>
 
-            <FormField label="Active">
-              <select
-                value={String(form.isActive)}
-                onChange={(event) => updateField("isActive", event.target.value === "true")}
-              >
-                <option value="true">Yes</option>
-                <option value="false">No</option>
-              </select>
-            </FormField>
+            <div className="library-form-narrow">
+              <FormField label="Active">
+                <select
+                  value={String(form.isActive)}
+                  onChange={(event) => updateField("isActive", event.target.value === "true")}
+                >
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
+                </select>
+              </FormField>
+            </div>
           </div>
 
           <div className="action-row library-form-actions">

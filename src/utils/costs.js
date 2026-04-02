@@ -146,6 +146,7 @@ export function normalizeCostItem(source = {}, index, options = {}) {
     unitId,
     unit,
     rate: toNumberOrBlank(source.rate),
+    imageUrl: cleanText(source.imageUrl),
     status,
     isActive: status === "Active",
     notes: cleanText(source.notes),

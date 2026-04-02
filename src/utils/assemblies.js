@@ -174,6 +174,7 @@ function normalizeAssemblyItem(item = {}, itemIndex, assembly = {}, options = {}
     baseRate,
     unitCost: baseRate,
     rateOverride,
+    imageUrl: cleanText(linkedSource?.imageUrl || item.imageUrl),
     notes: cleanText(item.notes),
     isCustomItem,
   };
@@ -194,6 +195,7 @@ function normalizeNestedAssembly(assembly = {}, assemblyIndex, options = {}) {
     appliesToRoomType: roomType,
     assemblyGroup,
     assemblyCategory: assemblyGroup,
+    imageUrl: cleanText(assembly.imageUrl),
     items: Array.isArray(assembly.items)
       ? assembly.items.map((item, itemIndex) =>
           normalizeAssemblyItem(item, itemIndex, assembly, options)

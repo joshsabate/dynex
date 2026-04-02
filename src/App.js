@@ -3,7 +3,9 @@ import "./App.css";
 import AssemblyLibraryPage from "./pages/AssemblyLibraryPage";
 import CostLibraryPage from "./pages/CostLibraryPage";
 import CostCodeLibraryPage from "./pages/CostCodeLibraryPage";
-import EstimateBuilderPage from "./pages/EstimateBuilderPage";
+import EstimateWorkspacePage, {
+  EstimateWorkspaceViewSwitcher,
+} from "./pages/EstimateWorkspacePage";
 import EstimateOutputPage from "./pages/EstimateOutputPage";
 import LabourSummaryPage from "./pages/LabourSummaryPage";
 import MissingRatesPage from "./pages/MissingRatesPage";
@@ -38,6 +40,8 @@ import {
 import { normalizeAssemblies } from "./utils/assemblies";
 import { normalizeCosts } from "./utils/costs";
 import { mergeSeededParameters } from "./utils/parameters";
+import { getStageIntegrity, normalizeStageBoundRecord } from "./utils/stageIntegrity";
+import { normalizeStages } from "./utils/stages";
 
 const legacyLocalStorageKey = "estimator-app-project";
 const globalLibrariesStorageKey = "estimator-app-global-libraries";
@@ -470,6 +474,27 @@ function isRecord(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function normalizeStageOverrides(rowOverrides, stages) {
+  return Object.fromEntries(
+    Object.entries(rowOverrides || {}).map(([rowId, override]) => {
+      if (!isRecord(override) || !Object.prototype.hasOwnProperty.call(override, "stageId")) {
+        return [rowId, override];
+      }
+
+      const integrity = getStageIntegrity(override.stageId, stages, override.stage);
+      const { stage, ...rest } = override;
+
+      return [
+        rowId,
+        {
+          ...rest,
+          stageId: integrity.stageId,
+        },
+      ];
+    })
+  );
+}
+
 function normalizeAppState(source = {}) {
   const defaultGlobalLibraries = getDefaultGlobalLibraries();
   const defaultLibraryData = getDefaultLibraryData();
@@ -482,6 +507,9 @@ function normalizeAppState(source = {}) {
   const normalizedItemFamilies = Array.isArray(source.itemFamilies)
     ? source.itemFamilies
     : defaultGlobalLibraries.itemFamilies;
+  const normalizedStages = normalizeStages(
+    Array.isArray(source.stages) ? source.stages : defaultGlobalLibraries.stages
+  );
   const normalizedCosts = normalizeCosts(
     Array.isArray(source.costs) ? source.costs : defaultLibraryData.costs,
     {
@@ -508,7 +536,7 @@ function normalizeAppState(source = {}) {
       : defaultGlobalLibraries.parameters,
     units: normalizedUnits,
     costCodes: normalizedCostCodes,
-    stages: Array.isArray(source.stages) ? source.stages : defaultGlobalLibraries.stages,
+    stages: normalizedStages,
     trades: normalizedTrades,
     itemFamilies: normalizedItemFamilies,
     elements: Array.isArray(source.elements)
@@ -543,18 +571,27 @@ function normalizeAppState(source = {}) {
     projectRooms: Array.isArray(source.projectRooms)
       ? source.projectRooms
       : defaultProjectData.projectRooms,
-    estimateSections: Array.isArray(source.estimateSections)
+    estimateSections: (Array.isArray(source.estimateSections)
       ? source.estimateSections
-      : defaultProjectData.estimateSections,
-    manualEstimateLines: Array.isArray(source.manualEstimateLines)
+      : defaultProjectData.estimateSections
+    ).map((section) =>
+      normalizeStageBoundRecord(section, normalizedStages, { context: "estimate-section" })
+    ),
+    manualEstimateLines: (Array.isArray(source.manualEstimateLines)
       ? source.manualEstimateLines
-      : defaultProjectData.manualEstimateLines,
+      : defaultProjectData.manualEstimateLines
+    ).map((line) =>
+      normalizeStageBoundRecord(line, normalizedStages, { context: "manual-estimate-line" })
+    ),
     generatedRowSectionAssignments: isRecord(source.generatedRowSectionAssignments)
       ? source.generatedRowSectionAssignments
       : defaultProjectData.generatedRowSectionAssignments,
-    estimateRowOverrides: isRecord(source.estimateRowOverrides)
-      ? source.estimateRowOverrides
-      : defaultProjectData.estimateRowOverrides,
+    estimateRowOverrides: normalizeStageOverrides(
+      isRecord(source.estimateRowOverrides)
+        ? source.estimateRowOverrides
+        : defaultProjectData.estimateRowOverrides,
+      normalizedStages
+    ),
     parameterLibraryUiState: isRecord(source.parameterLibraryUiState)
       ? {
           ...defaultProjectData.parameterLibraryUiState,
@@ -627,6 +664,16 @@ function persistAppStateToLocalStorage(appState) {
   window.localStorage.setItem(libraryDataStorageKey, JSON.stringify(libraryData));
   window.localStorage.setItem(projectDataStorageKey, JSON.stringify(projectData));
   window.localStorage.removeItem(legacyLocalStorageKey);
+}
+
+function isCanvasDebugLoggingEnabled() {
+  if (typeof window === "undefined" || process.env.NODE_ENV !== "development") {
+    return false;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const value = String(params.get("canvasDebug") || "").trim().toLowerCase();
+  return value === "1" || value === "true" || value === "on";
 }
 
 function sanitizeFileNamePart(value) {
@@ -779,11 +826,13 @@ function App() {
   const [lastFileName, setLastFileName] = useState(initialProjectState.lastFileName);
   const [projectStatus, setProjectStatus] = useState(initialProjectStatus);
   const [savedSnapshot, setSavedSnapshot] = useState(initialSavedSnapshot);
+  const [estimateWorkspaceView, setEstimateWorkspaceView] = useState("builder");
   const previousComparableSnapshotRef = useRef(initialSavedSnapshot);
   const startupSourcesRef = useRef(initialLoadResult.startupSources);
   const projectFileInputRef = useRef(null);
   const projectMenuRef = useRef(null);
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
+  const [workspaceTopbarPortalTarget, setWorkspaceTopbarPortalTarget] = useState(null);
   const currentAppState = useMemo(
     () => ({
       localProjectId,
@@ -952,13 +1001,58 @@ function App() {
   }, [estimateRows]);
 
   const handleEstimateRowChange = (rowId, updates) => {
-    setEstimateRowOverrides((current) => ({
-      ...current,
-      [rowId]: {
-        ...(current[rowId] || {}),
-        ...updates,
-      },
-    }));
+    const normalizedUpdates =
+      Object.prototype.hasOwnProperty.call(updates || {}, "stageId")
+        ? {
+            ...Object.fromEntries(
+              Object.entries(updates || {}).filter(([key]) => key !== "stage")
+            ),
+            stageId: getStageIntegrity(updates.stageId, stages, updates.stage).stageId,
+          }
+        : updates;
+
+    setEstimateRowOverrides((current) => {
+      const nextEstimateRowOverrides = {
+        ...current,
+        [rowId]: {
+          ...(current[rowId] || {}),
+          ...normalizedUpdates,
+        },
+      };
+      console.log("Updated row", rowId, nextEstimateRowOverrides[rowId]?.stageId ?? "");
+
+      persistAppStateToLocalStorage({
+        ...currentAppState,
+        estimateRowOverrides: nextEstimateRowOverrides,
+      });
+
+      if (process.env.NODE_ENV !== "production" && isCanvasDebugLoggingEnabled()) {
+        console.info("[Canvas Grid] Persist row override", {
+          rowId,
+          stageId: nextEstimateRowOverrides[rowId]?.stageId ?? "",
+          canvasColumn: nextEstimateRowOverrides[rowId]?.canvasColumn ?? "",
+          canvasTrack: nextEstimateRowOverrides[rowId]?.canvasTrack ?? "",
+        });
+      }
+
+      return nextEstimateRowOverrides;
+    });
+  };
+
+  const handleEstimateSectionsChange = (nextSections) => {
+    setEstimateSections(
+      (nextSections || []).map((section) =>
+        normalizeStageBoundRecord(section, stages, { context: "estimate-section" })
+      )
+    );
+  };
+
+  const handleManualEstimateLinesChange = (nextLines) => {
+    setManualEstimateLines(
+      (nextLines || []).map((line) =>
+        normalizeStageBoundRecord(line, stages, { context: "manual-estimate-line" })
+      )
+    );
   };
 
   useEffect(() => {
@@ -1037,6 +1131,16 @@ function App() {
       setSavedSnapshot(nextSavedSnapshot);
     }
     setProjectStatus(statusMessage);
+  };
+
+  const handleStagesChange = (nextStages) => {
+    applyAppState(
+      {
+        ...currentAppState,
+        stages: nextStages,
+      },
+      "Stage library updated."
+    );
   };
 
   const confirmDiscardUnsavedChanges = (actionLabel) => {
@@ -1261,114 +1365,136 @@ function App() {
 
         <main className="content">
         <header className="app-topbar">
-          <div className="app-topbar-identity" aria-label="dynex identity">
-            dynex
-          </div>
-
-          <div className="project-menu" ref={projectMenuRef}>
-            <button
-              type="button"
-              className="project-menu-trigger"
-              aria-label="Project menu"
-              aria-expanded={isProjectMenuOpen}
-              onClick={() => setIsProjectMenuOpen((current) => !current)}
-            >
-              <span className="project-menu-trigger-label">{projectMenuLabel}</span>
-              <span className="project-menu-trigger-caret" aria-hidden="true">
-                {isProjectMenuOpen ? "v" : ">"}
-              </span>
-            </button>
-
-            {isProjectMenuOpen ? (
-              <div className="project-menu-panel" role="menu" aria-label="Project actions">
-                <div className="project-menu-summary">
-                  <strong>{projectName || "Untitled Project"}</strong>
-                  <span>{revision || "Rev 0"}</span>
-                </div>
-
-                <button
-                  type="button"
-                  className="project-menu-item"
-                  role="menuitem"
-                  onClick={() => runProjectMenuAction(() => setActivePage("project-details"))}
-                >
-                  Project Details
-                </button>
-                <button
-                  type="button"
-                  className="project-menu-item"
-                  role="menuitem"
-                  onClick={() => runProjectMenuAction(resetProject)}
-                >
-                  New Project
-                </button>
-                <button
-                  type="button"
-                  className="project-menu-item"
-                  role="menuitem"
-                  onClick={openProjectPicker}
-                >
-                  Open Project
-                </button>
-                <button
-                  type="button"
-                  className="project-menu-item"
-                  role="menuitem"
-                  onClick={() => runProjectMenuAction(saveProjectToFile)}
-                >
-                  Save
-                </button>
-                <button
-                  type="button"
-                  className="project-menu-item"
-                  role="menuitem"
-                  onClick={() => runProjectMenuAction(saveProjectAs)}
-                >
-                  Save As
-                </button>
-                <button
-                  type="button"
-                  className="project-menu-item"
-                  role="menuitem"
-                  onClick={() => runProjectMenuAction(saveAsRevision)}
-                >
-                  Save Revision
-                </button>
-                <button
-                  type="button"
-                  className="project-menu-item"
-                  role="menuitem"
-                  onClick={openProjectPicker}
-                >
-                  Import JSON
-                </button>
-                <button
-                  type="button"
-                  className="project-menu-item"
-                  role="menuitem"
-                  onClick={() => runProjectMenuAction(saveProjectToFile)}
-                >
-                  Export JSON
-                </button>
+          <div className="app-header">
+            <div className="app-header__left">
+              <div className="app-topbar-identity" aria-label="dynex identity">
+                dynex
               </div>
-            ) : null}
+              {activePage === "estimate-builder" ? (
+                <EstimateWorkspaceViewSwitcher
+                  activeView={estimateWorkspaceView}
+                  onViewChange={setEstimateWorkspaceView}
+                  className="app-header__workspace-switcher"
+                />
+              ) : null}
+            </div>
 
-            <input
-              ref={projectFileInputRef}
-              type="file"
-              accept=".json,application/json"
-              aria-label="Open Project File"
-              hidden
-              onChange={(event) => {
-                const [file] = Array.from(event.target.files || []);
-                openProjectFromFile(file || null);
-                event.target.value = "";
-              }}
-            />
+            <div className="app-header__center" ref={setWorkspaceTopbarPortalTarget} />
+
+            <div className="app-header__right">
+              <div className="project-menu" ref={projectMenuRef}>
+                <button
+                  type="button"
+                  className="project-menu-trigger"
+                  aria-label="Project menu"
+                  aria-expanded={isProjectMenuOpen}
+                  onClick={() => setIsProjectMenuOpen((current) => !current)}
+                >
+                  <span className="project-menu-trigger-label">{projectMenuLabel}</span>
+                  <span className="project-menu-trigger-caret" aria-hidden="true">
+                    {isProjectMenuOpen ? "v" : ">"}
+                  </span>
+                </button>
+
+                {isProjectMenuOpen ? (
+                  <div className="project-menu-panel" role="menu" aria-label="Project actions">
+                    <div className="project-menu-summary">
+                      <strong>{projectName || "Untitled Project"}</strong>
+                      <span>{revision || "Rev 0"}</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="project-menu-item"
+                      role="menuitem"
+                      onClick={() => runProjectMenuAction(() => setActivePage("project-details"))}
+                    >
+                      Project Details
+                    </button>
+                    <button
+                      type="button"
+                      className="project-menu-item"
+                      role="menuitem"
+                      onClick={() => runProjectMenuAction(resetProject)}
+                    >
+                      New Project
+                    </button>
+                    <button
+                      type="button"
+                      className="project-menu-item"
+                      role="menuitem"
+                      onClick={openProjectPicker}
+                    >
+                      Open Project
+                    </button>
+                    <button
+                      type="button"
+                      className="project-menu-item"
+                      role="menuitem"
+                      onClick={() => runProjectMenuAction(saveProjectToFile)}
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      className="project-menu-item"
+                      role="menuitem"
+                      onClick={() => runProjectMenuAction(saveProjectAs)}
+                    >
+                      Save As
+                    </button>
+                    <button
+                      type="button"
+                      className="project-menu-item"
+                      role="menuitem"
+                      onClick={() => runProjectMenuAction(saveAsRevision)}
+                    >
+                      Save Revision
+                    </button>
+                    <button
+                      type="button"
+                      className="project-menu-item"
+                      role="menuitem"
+                      onClick={openProjectPicker}
+                    >
+                      Import JSON
+                    </button>
+                    <button
+                      type="button"
+                      className="project-menu-item"
+                      role="menuitem"
+                      onClick={() => runProjectMenuAction(saveProjectToFile)}
+                    >
+                      Export JSON
+                    </button>
+                  </div>
+                ) : null}
+
+                <input
+                  ref={projectFileInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  aria-label="Open Project File"
+                  hidden
+                  onChange={(event) => {
+                    const [file] = Array.from(event.target.files || []);
+                    openProjectFromFile(file || null);
+                    event.target.value = "";
+                  }}
+                />
+              </div>
+            </div>
           </div>
         </header>
 
-        <div className="content-body">
+        <div
+          className={[
+            "content-body",
+            activePage === "estimate-builder" ? "content-body--workspace" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
         {activePage === "project-details" && (
           <ProjectDetailsPage
             projectName={projectName}
@@ -1408,7 +1534,7 @@ function App() {
         )}
 
         {activePage === "stages" && (
-          <StageLibraryPage stages={stages} onStagesChange={setStages} />
+          <StageLibraryPage stages={stages} onStagesChange={handleStagesChange} />
         )}
 
         {activePage === "trades" && (
@@ -1509,7 +1635,8 @@ function App() {
         )}
 
         {activePage === "estimate-builder" && (
-          <EstimateBuilderPage
+          <EstimateWorkspacePage
+            projectName={projectName}
             estimateName={estimateName}
             estimateRevision={revision}
             sections={estimateSections}
@@ -1525,18 +1652,22 @@ function App() {
             roomTemplates={roomTemplates}
             parameters={parameters}
             projectRooms={projectRooms}
-            onSectionsChange={setEstimateSections}
-            onManualLinesChange={setManualEstimateLines}
+            onSectionsChange={handleEstimateSectionsChange}
+            onManualLinesChange={handleManualEstimateLinesChange}
             onProjectRoomsChange={setProjectRooms}
             onEstimateNameChange={setEstimateName}
             onEstimateRevisionChange={(value) => {
               setRevision(value);
               setRevisionNumber(getRevisionNumber(value, revisionNumber));
             }}
-            onGeneratedRowOverrideChange={handleEstimateRowChange}
+            onRowOverrideChange={handleEstimateRowChange}
             generatedRows={estimateRows.filter((row) => row.source === "generated")}
+            manualBuilderRows={manualBuilderRows}
             generatedRowSectionAssignments={generatedRowSectionAssignments}
             onGeneratedRowSectionAssignmentsChange={setGeneratedRowSectionAssignments}
+            activeView={estimateWorkspaceView}
+            onActiveViewChange={setEstimateWorkspaceView}
+            topBarPortalTarget={workspaceTopbarPortalTarget}
           />
         )}
 

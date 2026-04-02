@@ -129,7 +129,7 @@ function CostCodeLibraryPage({ costCodes, onCostCodesChange }) {
       title="Cost Code Library"
       description="Manage cost codes and their order. Assemblies reference this list for structured estimating and reporting."
     >
-      <div className="page-grid library-page">
+      <div className="page-grid library-page library-page-cost-codes">
         <form className="library-form-card" onSubmit={addCostCode}>
           <div className="library-form-actions library-form-actions-top">
             <button type="button" className="secondary-button" onClick={exportCostCodesAsCsv}>
@@ -156,24 +156,28 @@ function CostCodeLibraryPage({ costCodes, onCostCodesChange }) {
             />
           </div>
           <div className="library-form-grid">
-            <FormField label="Import mode">
-              <select value={importMode} onChange={(event) => setImportMode(event.target.value)}>
-                <option value="append">Append</option>
-                <option value="override">Override All</option>
-                <option value="replace">Replace Duplicates</option>
-              </select>
-            </FormField>
+            <div className="library-form-medium">
+              <FormField label="Import mode">
+                <select value={importMode} onChange={(event) => setImportMode(event.target.value)}>
+                  <option value="append">Append</option>
+                  <option value="override">Override All</option>
+                  <option value="replace">Replace Duplicates</option>
+                </select>
+              </FormField>
+            </div>
           </div>
           {csvStatus ? <p className="assembly-library-status">{csvStatus}</p> : null}
 
           <div className="library-form-grid">
-            <FormField label="Cost code">
-              <input
-                value={form.code}
-                onChange={(event) => updateField("code", event.target.value)}
-                placeholder="S10"
-              />
-            </FormField>
+            <div className="library-form-medium">
+              <FormField label="Cost code">
+                <input
+                  value={form.code}
+                  onChange={(event) => updateField("code", event.target.value)}
+                  placeholder="S10"
+                />
+              </FormField>
+            </div>
 
             <div className="library-form-span-2">
               <FormField label="Cost code name">
@@ -185,21 +189,25 @@ function CostCodeLibraryPage({ costCodes, onCostCodesChange }) {
               </FormField>
             </div>
 
-            <FormField label="Stage">
-              <input
-                value={form.stage}
-                onChange={(event) => updateField("stage", event.target.value)}
-                placeholder="Optional"
-              />
-            </FormField>
+            <div className="library-form-medium">
+              <FormField label="Stage">
+                <input
+                  value={form.stage}
+                  onChange={(event) => updateField("stage", event.target.value)}
+                  placeholder="Optional"
+                />
+              </FormField>
+            </div>
 
-            <FormField label="Trade">
-              <input
-                value={form.trade}
-                onChange={(event) => updateField("trade", event.target.value)}
-                placeholder="Optional"
-              />
-            </FormField>
+            <div className="library-form-medium">
+              <FormField label="Trade">
+                <input
+                  value={form.trade}
+                  onChange={(event) => updateField("trade", event.target.value)}
+                  placeholder="Optional"
+                />
+              </FormField>
+            </div>
 
             <div className="library-form-span-2">
               <FormField label="Description">
@@ -211,33 +219,39 @@ function CostCodeLibraryPage({ costCodes, onCostCodesChange }) {
               </FormField>
             </div>
 
-            <FormField label="Status">
-              <input
-                value={form.status}
-                onChange={(event) => updateField("status", event.target.value)}
-                placeholder="Active"
-              />
-            </FormField>
+            <div className="library-form-medium">
+              <FormField label="Status">
+                <input
+                  value={form.status}
+                  onChange={(event) => updateField("status", event.target.value)}
+                  placeholder="Active"
+                />
+              </FormField>
+            </div>
 
-            <FormField label="Sort order">
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={form.sortOrder}
-                onChange={(event) => updateField("sortOrder", event.target.value)}
-              />
-            </FormField>
+            <div className="library-form-narrow">
+              <FormField label="Sort order">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.sortOrder}
+                  onChange={(event) => updateField("sortOrder", event.target.value)}
+                />
+              </FormField>
+            </div>
 
-            <FormField label="Active">
-              <select
-                value={String(form.isActive)}
-                onChange={(event) => updateField("isActive", event.target.value === "true")}
-              >
-                <option value="true">Yes</option>
-                <option value="false">No</option>
-              </select>
-            </FormField>
+            <div className="library-form-narrow">
+              <FormField label="Active">
+                <select
+                  value={String(form.isActive)}
+                  onChange={(event) => updateField("isActive", event.target.value === "true")}
+                >
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
+                </select>
+              </FormField>
+            </div>
           </div>
 
           <div className="action-row library-form-actions">
@@ -253,7 +267,7 @@ function CostCodeLibraryPage({ costCodes, onCostCodesChange }) {
               {
                 key: "code",
                 header: "Code",
-                className: "table-col-medium",
+                className: "table-col-code",
                 render: (row) => (
                   <input
                     value={row.code || ""}

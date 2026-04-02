@@ -8,6 +8,7 @@ import {
 } from "./assemblies";
 
 export const defaultAssemblyGroupNames = [
+  "Unassigned",
   "Finishes",
   "Waterproofing",
   "Joinery",
@@ -15,6 +16,8 @@ export const defaultAssemblyGroupNames = [
   "Services",
   "Walls & Linings",
 ];
+
+export const unassignedAssemblyGroupName = "Unassigned";
 
 export const assemblyGroupsStorageKey = "estimator.assemblyGroups";
 
@@ -30,18 +33,23 @@ function uniqueSortedGroupNames(values = []) {
 
 export function getStoredAssemblyGroupNames(storage) {
   if (!storage) {
-    return [];
+    return uniqueSortedGroupNames(defaultAssemblyGroupNames);
   }
 
   try {
     const savedValue = storage.getItem(assemblyGroupsStorageKey);
     if (!savedValue) {
-      return [];
+      return uniqueSortedGroupNames(defaultAssemblyGroupNames);
     }
 
-    return uniqueSortedGroupNames(JSON.parse(savedValue));
+    const parsedValue = JSON.parse(savedValue);
+    return uniqueSortedGroupNames([
+      ...defaultAssemblyGroupNames,
+      ...(Array.isArray(parsedValue) ? parsedValue : []),
+      unassignedAssemblyGroupName,
+    ]);
   } catch (error) {
-    return [];
+    return uniqueSortedGroupNames(defaultAssemblyGroupNames);
   }
 }
 
@@ -52,15 +60,15 @@ export function saveStoredAssemblyGroupNames(groupNames = [], storage) {
 
   storage.setItem(
     assemblyGroupsStorageKey,
-    JSON.stringify(uniqueSortedGroupNames(groupNames))
+    JSON.stringify(uniqueSortedGroupNames([...groupNames, unassignedAssemblyGroupName]))
   );
 }
 
 export function getAssemblyGroupNames(assemblies = [], customGroupNames = []) {
   return uniqueSortedGroupNames([
-    ...defaultAssemblyGroupNames,
     ...customGroupNames,
     ...normalizeAssemblies(assemblies).map((assembly) => getAssemblyGroupName(assembly)),
+    unassignedAssemblyGroupName,
   ]);
 }
 

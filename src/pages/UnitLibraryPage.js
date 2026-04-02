@@ -71,7 +71,7 @@ function UnitLibraryPage({ units, onUnitsChange }) {
       title="Unit Library"
       description="Manage estimating units and abbreviations so assemblies, costs, labour, and estimate output use the same unit set."
     >
-      <div className="page-grid library-page">
+      <div className="page-grid library-page library-page-units">
         <form className="library-form-card" onSubmit={addUnit}>
           <div className="library-form-grid">
             <div className="library-form-span-2">
@@ -84,33 +84,39 @@ function UnitLibraryPage({ units, onUnitsChange }) {
               </FormField>
             </div>
 
-            <FormField label="Abbreviation">
-              <input
-                value={form.abbreviation}
-                onChange={(event) => updateField("abbreviation", event.target.value)}
-                placeholder="SQM"
-              />
-            </FormField>
+            <div className="library-form-medium">
+              <FormField label="Abbreviation">
+                <input
+                  value={form.abbreviation}
+                  onChange={(event) => updateField("abbreviation", event.target.value)}
+                  placeholder="SQM"
+                />
+              </FormField>
+            </div>
 
-            <FormField label="Sort order">
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={form.sortOrder}
-                onChange={(event) => updateField("sortOrder", event.target.value)}
-              />
-            </FormField>
+            <div className="library-form-narrow">
+              <FormField label="Sort order">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.sortOrder}
+                  onChange={(event) => updateField("sortOrder", event.target.value)}
+                />
+              </FormField>
+            </div>
 
-            <FormField label="Active">
-              <select
-                value={String(form.isActive)}
-                onChange={(event) => updateField("isActive", event.target.value === "true")}
-              >
-                <option value="true">Yes</option>
-                <option value="false">No</option>
-              </select>
-            </FormField>
+            <div className="library-form-narrow">
+              <FormField label="Active">
+                <select
+                  value={String(form.isActive)}
+                  onChange={(event) => updateField("isActive", event.target.value === "true")}
+                >
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
+                </select>
+              </FormField>
+            </div>
           </div>
 
           <div className="action-row library-form-actions">

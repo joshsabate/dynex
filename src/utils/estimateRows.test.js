@@ -237,6 +237,32 @@ test("applies row overrides while keeping generated values", () => {
   });
 });
 
+test("recomputes row stage display from the resolved stageId instead of a stale stage label", () => {
+  const rows = generateManualEstimateBuilderRows(
+    [
+      {
+        id: "manual-line-1",
+        itemName: "Scaffold Hire",
+        quantity: 1,
+        rate: 100,
+        stageId: "stage-demolition",
+        stage: "Preliminaries",
+      },
+    ],
+    {},
+    [],
+    [
+      { id: "stage-preliminaries", name: "Preliminaries", sortOrder: 1, isActive: true },
+      { id: "stage-demolition", name: "Demolition", sortOrder: 2, isActive: true },
+    ]
+  );
+
+  expect(rows[0]).toMatchObject({
+    stageId: "stage-demolition",
+    stage: "Demolition",
+  });
+});
+
 test("supports kitchen-specific quantity rules from room inputs", () => {
   const rows = generateEstimateRows(
     [

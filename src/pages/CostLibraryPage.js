@@ -60,6 +60,7 @@ function createEmptyCostItem(units = []) {
     unitId: unit.id,
     unit: unit.abbreviation,
     rate: "",
+    imageUrl: "",
     status: "Active",
     isActive: true,
     notes: "",
@@ -970,6 +971,14 @@ function CostLibraryPage({
                           <td>{cost.itemName}</td>
                           <td>
                             <div className="cost-library-name-cell">
+                              {cost.imageUrl ? (
+                                <img
+                                  className="library-image-thumb"
+                                  src={cost.imageUrl}
+                                  alt=""
+                                  loading="lazy"
+                                />
+                              ) : null}
                               <span className="cost-library-name-primary">
                                 {itemPresentation.primaryLabel}
                               </span>
@@ -1081,7 +1090,22 @@ function CostLibraryPage({
                       ))}
                     </select>
                   </FormField>
+
+                  <FormField label="Image URL">
+                    <input
+                      value={draft.imageUrl || ""}
+                      onChange={(event) =>
+                        updateDraftField("imageUrl", event.target.value)
+                      }
+                      placeholder="https://example.com/item-image.jpg"
+                    />
+                  </FormField>
                 </div>
+                {draft.imageUrl ? (
+                  <div className="library-image-preview">
+                    <img src={draft.imageUrl} alt="" loading="lazy" />
+                  </div>
+                ) : null}
               </div>
 
               <div className="summary-section room-template-compact-section cost-library-editor-section cost-library-editor-section-classification">

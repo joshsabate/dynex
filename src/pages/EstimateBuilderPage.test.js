@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import EstimateBuilderPage from "./EstimateBuilderPage";
 
@@ -85,7 +86,10 @@ test("estimate builder adds project sections", async () => {
     <EstimateBuilderPage
       sections={[]}
       manualLines={[]}
-      stages={stages}
+      stages={[
+        ...stages,
+        { id: "stage-services", name: "Services", sortOrder: 2, isActive: true, color: "#7ea06f" },
+      ]}
       trades={trades}
       elements={elements}
       costCodes={costCodes}
@@ -127,7 +131,10 @@ test("estimate builder adds manual items from a section action", async () => {
         },
       ]}
       manualLines={[]}
-      stages={stages}
+      stages={[
+        ...stages,
+        { id: "stage-services", name: "Services", sortOrder: 2, isActive: true, color: "#7ea06f" },
+      ]}
       trades={trades}
       elements={elements}
       costCodes={costCodes}
@@ -296,7 +303,7 @@ test("estimate builder adds child sections from a section action", async () => {
     expect.objectContaining({
       name: "Fixtures",
       parentSectionId: "section-1",
-      stageId: "stage-finishes",
+      stageId: "",
       sortOrder: 1,
     }),
   ]);
@@ -407,6 +414,54 @@ test("estimate builder adds a cost library item directly into a section", async 
       rate: 250,
       stageId: "stage-finishes",
       notes: "Allow access setup",
+    }),
+  ]);
+});
+
+test("estimate builder defaults cost item stage to the first active stage when the section is unassigned", async () => {
+  const onManualLinesChange = jest.fn();
+
+  render(
+    <EstimateBuilderPage
+      sections={[
+        {
+          id: "section-1",
+          name: "Main Works",
+          parentSectionId: "",
+          stageId: "",
+          sortOrder: 1,
+        },
+      ]}
+      manualLines={[]}
+      stages={stages}
+      trades={trades}
+      elements={elements}
+      costCodes={costCodes}
+      units={units}
+      costs={costs}
+      assemblies={assemblies}
+      onSectionsChange={jest.fn()}
+      onManualLinesChange={onManualLinesChange}
+      generatedRows={[]}
+      generatedRowSectionAssignments={{}}
+      onGeneratedRowSectionAssignmentsChange={jest.fn()}
+    />
+  );
+
+  await expandMainWorksSection();
+  await userEvent.click(screen.getByRole("button", { name: /add cost item/i }));
+  const inlineForm = document.querySelector(".estimate-builder-inline-form");
+
+  await userEvent.selectOptions(
+    within(inlineForm).getByText("Cost item").closest(".field").querySelector("select"),
+    "cost-1"
+  );
+  await userEvent.click(within(inlineForm).getByRole("button", { name: /add selected cost item/i }));
+
+  expect(onManualLinesChange).toHaveBeenCalledWith([
+    expect.objectContaining({
+      itemName: "Scaffold Hire",
+      stageId: "stage-finishes",
     }),
   ]);
 });
@@ -695,7 +750,6 @@ test("estimate builder supports inline editing of generated estimate-instance ro
   await userEvent.selectOptions(screen.getByLabelText(/stage for tile installation/i), "stage-services");
   expect(onGeneratedRowOverrideChange).toHaveBeenCalledWith("generated-row-1", {
     stageId: "stage-services",
-    stage: "Services",
   });
 
   await userEvent.clear(screen.getByLabelText(/quantity for tile installation/i));
@@ -703,6 +757,70 @@ test("estimate builder supports inline editing of generated estimate-instance ro
   expect(onGeneratedRowOverrideChange).toHaveBeenLastCalledWith("generated-row-1", {
     quantityOverride: "12.5",
   });
+});
+
+test("estimate builder persists manual row stage changes to manual line state", async () => {
+  const onManualLinesChange = jest.fn();
+  const onGeneratedRowOverrideChange = jest.fn();
+  const builderStages = [
+    ...stages,
+    { id: "stage-services", name: "Services", sortOrder: 2, isActive: true, color: "#7ea06f" },
+  ];
+
+  render(
+    <EstimateBuilderPage
+      sections={[
+        {
+          id: "section-1",
+          name: "Main Works",
+          parentSectionId: "",
+          stageId: "stage-finishes",
+          sortOrder: 1,
+        },
+      ]}
+      manualLines={[
+        {
+          id: "manual-line-1",
+          itemName: "Scaffold Hire",
+          unitId: "unit-ea",
+          unit: "EA",
+          quantity: 1,
+          rate: 250,
+          stageId: "stage-finishes",
+          sectionId: "section-1",
+          costCodeId: "cost-code-finishes",
+          tradeId: "trade-general",
+          elementId: "element-floor",
+          notes: "",
+          sortOrder: 10,
+        },
+      ]}
+      stages={builderStages}
+      trades={trades}
+      elements={elements}
+      costCodes={costCodes}
+      units={units}
+      costs={costs}
+      assemblies={assemblies}
+      onSectionsChange={jest.fn()}
+      onManualLinesChange={onManualLinesChange}
+      onGeneratedRowOverrideChange={onGeneratedRowOverrideChange}
+      generatedRows={[]}
+      generatedRowSectionAssignments={{}}
+      onGeneratedRowSectionAssignmentsChange={jest.fn()}
+    />
+  );
+
+  await expandMainWorksSection();
+  await userEvent.selectOptions(screen.getByLabelText(/stage for scaffold hire/i), "stage-services");
+
+  expect(onManualLinesChange).toHaveBeenCalledWith([
+    expect.objectContaining({
+      id: "manual-line-1",
+      stageId: "stage-services",
+    }),
+  ]);
+  expect(onGeneratedRowOverrideChange).not.toHaveBeenCalled();
 });
 
 test("estimate builder supports inline editing of manual estimate-instance rows", async () => {
@@ -755,13 +873,13 @@ test("estimate builder supports inline editing of manual estimate-instance rows"
 
   await expandMainWorksSection();
 
-  await userEvent.clear(screen.getByLabelText(/sort order for scaffold hire/i));
-  await userEvent.type(screen.getByLabelText(/sort order for scaffold hire/i), "25");
+  await userEvent.clear(screen.getByLabelText(/quantity for scaffold hire/i));
+  await userEvent.type(screen.getByLabelText(/quantity for scaffold hire/i), "25");
 
   expect(onManualLinesChange).toHaveBeenLastCalledWith([
     expect.objectContaining({
       id: "manual-line-1",
-      sortOrder: 25,
+      quantity: 25,
     }),
   ]);
 });
@@ -818,6 +936,213 @@ test("estimate builder adds an assembly directly into a section as estimate rows
       rate: 100,
     }),
   ]);
+});
+
+test("estimate builder applies the selected stage to all inserted assembly rows", async () => {
+  const onManualLinesChange = jest.fn();
+
+  render(
+    <EstimateBuilderPage
+      sections={[
+        {
+          id: "section-1",
+          name: "Main Works",
+          parentSectionId: "",
+          stageId: "",
+          sortOrder: 1,
+        },
+      ]}
+      manualLines={[]}
+      stages={stages}
+      trades={trades}
+      elements={elements}
+      costCodes={costCodes}
+      units={units}
+      costs={costs}
+      assemblies={assemblies}
+      onSectionsChange={jest.fn()}
+      onManualLinesChange={onManualLinesChange}
+      generatedRows={[]}
+      generatedRowSectionAssignments={{}}
+      onGeneratedRowSectionAssignmentsChange={jest.fn()}
+    />
+  );
+
+  await expandMainWorksSection();
+  await userEvent.click(screen.getByRole("button", { name: /^add assembly$/i }));
+  const inlineForm = document.querySelector(".estimate-builder-inline-form");
+
+  await userEvent.selectOptions(
+    within(inlineForm).getByText("Assembly").closest(".field").querySelector("select"),
+    "assembly-bathroom-floor"
+  );
+  await userEvent.selectOptions(
+    within(inlineForm).getByText("Stage").closest(".field").querySelector("select"),
+    "stage-finishes"
+  );
+  await userEvent.click(within(inlineForm).getByRole("button", { name: /^add assembly$/i }));
+
+  expect(onManualLinesChange).toHaveBeenCalledWith([
+    expect.objectContaining({
+      itemName: "Tile Installation",
+      stageId: "stage-finishes",
+      sourceAssemblyId: "assembly-bathroom-floor",
+    }),
+  ]);
+});
+
+test("estimate builder maps nested normalized assembly items into populated manual rows", async () => {
+  const onManualLinesChange = jest.fn();
+
+  render(
+    <EstimateBuilderPage
+      sections={[
+        {
+          id: "section-1",
+          name: "Main Works",
+          parentSectionId: "",
+          stageId: "stage-finishes",
+          sortOrder: 1,
+        },
+      ]}
+      manualLines={[]}
+      stages={stages}
+      trades={trades}
+      elements={elements}
+      costCodes={costCodes}
+      units={units}
+      costs={costs}
+      assemblies={[
+        {
+          id: "assembly-bathroom-floor",
+          assemblyId: "assembly-bathroom-floor",
+          assemblyCategory: "Finishes",
+          assemblyGroup: "Finishes",
+          assemblyName: "Bathroom Floor Tile",
+          appliesToRoomTypeId: "room-type-bathroom",
+          appliesToRoomType: "Bathroom",
+          stageId: "stage-finishes",
+          stage: "Finishes",
+          elementId: "element-floor",
+          element: "Floor",
+          items: [
+            {
+              id: "assembly-item-1",
+              costItemId: "cost-assembly-1",
+              itemNameSnapshot: "Tile Installation",
+              unitId: "unit-ea",
+              unit: "EA",
+              qtyRule: "1",
+              workType: "Supply",
+              tradeId: "trade-general",
+              trade: "General",
+              costCodeId: "cost-code-finishes",
+              costCode: "Finishes",
+              specification: "300x300 ceramic",
+              sortOrder: 1,
+            },
+          ],
+        },
+      ]}
+      onSectionsChange={jest.fn()}
+      onManualLinesChange={onManualLinesChange}
+      generatedRows={[]}
+      generatedRowSectionAssignments={{}}
+      onGeneratedRowSectionAssignmentsChange={jest.fn()}
+    />
+  );
+
+  await expandMainWorksSection();
+  await userEvent.click(screen.getByRole("button", { name: /^add assembly$/i }));
+  const inlineForm = document.querySelector(".estimate-builder-inline-form");
+
+  await userEvent.selectOptions(
+    within(inlineForm).getByText("Assembly").closest(".field").querySelector("select"),
+    "assembly-bathroom-floor"
+  );
+  await userEvent.click(within(inlineForm).getByRole("button", { name: /^add assembly$/i }));
+
+  expect(onManualLinesChange).toHaveBeenCalledWith([
+    expect.objectContaining({
+      itemName: "Tile Installation",
+      unitId: "unit-ea",
+      unit: "EA",
+      tradeId: "trade-general",
+      costCodeId: "cost-code-finishes",
+      specification: "300x300 ceramic",
+      sourceAssemblyId: "assembly-bathroom-floor",
+      sourceAssemblyName: "Bathroom Floor Tile",
+      sourceAssemblyRowId: "assembly-item-1",
+      sourceCostItemId: "cost-assembly-1",
+      quantity: 1,
+      rate: 100,
+    }),
+  ]);
+});
+
+test("estimate builder debug mode shows row stage and canvas metadata", async () => {
+  window.localStorage.removeItem("estimator-app-builder-debug");
+  window.localStorage.removeItem("estimator-app-builder-row-updates");
+
+  render(
+    <EstimateBuilderPage
+      sections={[
+        {
+          id: "section-1",
+          name: "Main Works",
+          parentSectionId: "",
+          stageId: "stage-finishes",
+          sortOrder: 1,
+        },
+      ]}
+      manualLines={[
+        {
+          id: "manual-line-1",
+          itemName: "Scaffold Hire",
+          unitId: "unit-ea",
+          unit: "EA",
+          quantity: 1,
+          rate: 250,
+          stageId: "stage-finishes",
+          sectionId: "section-1",
+          costCodeId: "cost-code-finishes",
+          tradeId: "trade-general",
+          elementId: "element-floor",
+          notes: "",
+          canvasColumn: 2,
+          canvasTrack: 1,
+          sourceCostItemId: "cost-1",
+          sortOrder: 10,
+        },
+      ]}
+      stages={stages}
+      trades={trades}
+      elements={elements}
+      costCodes={costCodes}
+      units={units}
+      costs={costs}
+      assemblies={assemblies}
+      onSectionsChange={jest.fn()}
+      onManualLinesChange={jest.fn()}
+      generatedRows={[]}
+      generatedRowSectionAssignments={{}}
+      onGeneratedRowSectionAssignmentsChange={jest.fn()}
+    />
+  );
+
+  await expandMainWorksSection();
+  await userEvent.click(screen.getByTestId("builder-debug-toggle"));
+
+  const debugRow = screen.getByTestId("builder-debug-row-manual-line-1");
+  expect(debugRow).toHaveTextContent("id: manual-line-1");
+  expect(debugRow).toHaveTextContent("stageId: stage-finishes");
+  expect(debugRow).toHaveTextContent("stageName: Finishes");
+  expect(debugRow).toHaveTextContent("stageSortOrder: 1");
+  expect(debugRow).toHaveTextContent("stageIntegrity: VALID");
+  expect(debugRow).toHaveTextContent("canvasColumn: 2");
+  expect(debugRow).toHaveTextContent("canvasTrack: 1");
+  expect(debugRow).toHaveTextContent("sourceType: costItem");
+  expect(debugRow).toHaveTextContent("lastUpdatedFrom: -");
 });
 
 test("estimate builder moves manual rows up within a section", async () => {
@@ -888,6 +1213,379 @@ test("estimate builder moves manual rows up within a section", async () => {
     expect.objectContaining({ id: "manual-line-1", sortOrder: 20 }),
     expect.objectContaining({ id: "manual-line-2", sortOrder: 10 }),
   ]);
+});
+
+test("estimate builder expand and collapse controls include nested rooms, assemblies, and child sections", async () => {
+  render(
+    <EstimateBuilderPage
+      sections={[
+        {
+          id: "section-1",
+          name: "Main Works",
+          parentSectionId: "",
+          stageId: "stage-finishes",
+          sortOrder: 1,
+        },
+        {
+          id: "section-2",
+          name: "Child Works",
+          parentSectionId: "section-1",
+          stageId: "stage-finishes",
+          sortOrder: 2,
+        },
+      ]}
+      manualLines={[
+        {
+          id: "manual-line-assembly-1",
+          itemName: "Assembly Manual Item",
+          unitId: "unit-ea",
+          unit: "EA",
+          quantity: 1,
+          rate: 100,
+          stageId: "stage-finishes",
+          sectionId: "section-1",
+          costCodeId: "cost-code-finishes",
+          tradeId: "trade-general",
+          elementId: "element-floor",
+          notes: "",
+          sortOrder: 10,
+          sourceAssemblyId: "assembly-bathroom-floor",
+          sourceAssemblyName: "Bathroom Floor Tile",
+          sourceAssemblyRowId: "assembly-row-1",
+        },
+        {
+          id: "manual-line-child-1",
+          itemName: "Child Section Item",
+          unitId: "unit-ea",
+          unit: "EA",
+          quantity: 1,
+          rate: 80,
+          stageId: "stage-finishes",
+          sectionId: "section-2",
+          costCodeId: "cost-code-finishes",
+          tradeId: "trade-general",
+          elementId: "element-floor",
+          notes: "",
+          sortOrder: 10,
+        },
+      ]}
+      stages={stages}
+      trades={trades}
+      elements={elements}
+      costCodes={costCodes}
+      units={units}
+      assemblies={assemblies}
+      projectRooms={[
+        {
+          id: "project-room-1",
+          templateId: "room-template-1",
+          name: "Ensuite 01",
+          roomType: "Bathroom",
+          sectionId: "section-1",
+          assemblyIds: ["assembly-bathroom-floor"],
+          customItems: [],
+        },
+      ]}
+      onSectionsChange={jest.fn()}
+      onManualLinesChange={jest.fn()}
+      onProjectRoomsChange={jest.fn()}
+      generatedRows={[
+        {
+          id: "generated-row-1",
+          roomId: "project-room-1",
+          roomName: "Ensuite 01",
+          roomType: "Bathroom",
+          assemblyName: "Bathroom Floor Tile",
+          itemName: "Tile Installation",
+          stageId: "stage-finishes",
+          tradeId: "trade-general",
+          costCodeId: "cost-code-finishes",
+          quantity: 10,
+          unitId: "unit-ea",
+          unit: "EA",
+          unitRate: 100,
+          notes: "",
+          include: true,
+          sectionId: "section-1",
+          source: "generated",
+        },
+      ]}
+      generatedRowSectionAssignments={{}}
+      onGeneratedRowSectionAssignmentsChange={jest.fn()}
+    />
+  );
+
+  await expandMainWorksSection();
+  expect(screen.queryByText("Tile Installation")).not.toBeInTheDocument();
+  expect(screen.queryByText("Assembly Manual Item")).not.toBeInTheDocument();
+  expect(screen.queryByText("Child Section Item")).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getAllByRole("button", { name: /expand section/i })[0]);
+  expect(screen.getByText("Tile Installation")).toBeInTheDocument();
+  expect(screen.getByText("Assembly Manual Item")).toBeInTheDocument();
+  expect(screen.getByText("Child Section Item")).toBeInTheDocument();
+
+  await userEvent.click(screen.getAllByRole("button", { name: /collapse section/i })[0]);
+  expect(screen.queryByText("Tile Installation")).not.toBeInTheDocument();
+  expect(screen.queryByText("Assembly Manual Item")).not.toBeInTheDocument();
+  expect(screen.queryByText("Child Section Item")).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: /expand everything/i }));
+  expect(screen.getByText("Tile Installation")).toBeInTheDocument();
+  expect(screen.getByText("Assembly Manual Item")).toBeInTheDocument();
+  expect(screen.getByText("Child Section Item")).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: /collapse everything/i }));
+  expect(screen.queryByText("Tile Installation")).not.toBeInTheDocument();
+  expect(screen.queryByText("Assembly Manual Item")).not.toBeInTheDocument();
+  expect(screen.queryByText("Child Section Item")).not.toBeInTheDocument();
+});
+
+test("estimate builder removes an assembly group from the estimate section only", async () => {
+  const onManualLinesChange = jest.fn();
+
+  render(
+    <EstimateBuilderPage
+      sections={[
+        {
+          id: "section-1",
+          name: "Main Works",
+          parentSectionId: "",
+          stageId: "stage-finishes",
+          sortOrder: 1,
+        },
+      ]}
+      manualLines={[
+        {
+          id: "manual-line-assembly-1",
+          itemName: "Assembly Manual Item",
+          unitId: "unit-ea",
+          unit: "EA",
+          quantity: 1,
+          rate: 100,
+          stageId: "stage-finishes",
+          sectionId: "section-1",
+          costCodeId: "cost-code-finishes",
+          tradeId: "trade-general",
+          elementId: "element-floor",
+          notes: "",
+          sortOrder: 10,
+          sourceAssemblyId: "assembly-bathroom-floor",
+          sourceAssemblyName: "Bathroom Floor Tile",
+          sourceAssemblyRowId: "assembly-row-1",
+        },
+        {
+          id: "manual-line-assembly-2",
+          itemName: "Assembly Manual Item 2",
+          unitId: "unit-ea",
+          unit: "EA",
+          quantity: 1,
+          rate: 120,
+          stageId: "stage-finishes",
+          sectionId: "section-1",
+          costCodeId: "cost-code-finishes",
+          tradeId: "trade-general",
+          elementId: "element-floor",
+          notes: "",
+          sortOrder: 20,
+          sourceAssemblyId: "assembly-bathroom-floor",
+          sourceAssemblyName: "Bathroom Floor Tile",
+          sourceAssemblyRowId: "assembly-row-2",
+        },
+      ]}
+      stages={stages}
+      trades={trades}
+      elements={elements}
+      costCodes={costCodes}
+      units={units}
+      assemblies={assemblies}
+      onSectionsChange={jest.fn()}
+      onManualLinesChange={onManualLinesChange}
+      generatedRows={[]}
+      generatedRowSectionAssignments={{}}
+      onGeneratedRowSectionAssignmentsChange={jest.fn()}
+    />
+  );
+
+  await expandMainWorksSection();
+  await userEvent.click(screen.getByRole("button", { name: /bathroom floor tile/i }));
+  await userEvent.click(screen.getByRole("button", { name: /remove assembly/i }));
+
+  expect(onManualLinesChange).toHaveBeenCalledWith([]);
+});
+
+test("estimate builder shows section subtotal and can move top-level sections", async () => {
+  const onSectionsChange = jest.fn();
+
+  render(
+    <EstimateBuilderPage
+      sections={[
+        {
+          id: "section-1",
+          name: "Main Works",
+          parentSectionId: "",
+          stageId: "",
+          sortOrder: 10,
+        },
+        {
+          id: "section-2",
+          name: "Finishes",
+          parentSectionId: "",
+          stageId: "",
+          sortOrder: 20,
+        },
+      ]}
+      manualLines={[
+        {
+          id: "manual-line-1",
+          itemName: "Scaffold Hire",
+          unitId: "unit-ea",
+          unit: "EA",
+          quantity: 2,
+          rate: 125,
+          stageId: "stage-finishes",
+          sectionId: "section-1",
+          costCodeId: "cost-code-finishes",
+          tradeId: "trade-general",
+          elementId: "element-floor",
+          notes: "",
+          sortOrder: 10,
+        },
+      ]}
+      stages={stages}
+      trades={trades}
+      elements={elements}
+      costCodes={costCodes}
+      units={units}
+      assemblies={assemblies}
+      onSectionsChange={onSectionsChange}
+      onManualLinesChange={jest.fn()}
+      generatedRows={[]}
+      generatedRowSectionAssignments={{}}
+      onGeneratedRowSectionAssignmentsChange={jest.fn()}
+    />
+  );
+
+  expect(screen.getAllByText("$250.00").length).toBeGreaterThan(0);
+  await userEvent.click(screen.getAllByRole("button", { name: /move section down/i })[0]);
+
+  expect(onSectionsChange).toHaveBeenCalledWith([
+    expect.objectContaining({ id: "section-1", sortOrder: 20 }),
+    expect.objectContaining({ id: "section-2", sortOrder: 10 }),
+  ]);
+});
+
+test("estimate builder keeps a section tone when the section is reordered", async () => {
+  function BuilderHarness() {
+    const [sections, setSections] = useState([
+      {
+        id: "section-1",
+        name: "Main Works",
+        parentSectionId: "",
+        stageId: "",
+        sortOrder: 10,
+      },
+      {
+        id: "section-2",
+        name: "Finishes",
+        parentSectionId: "",
+        stageId: "",
+        sortOrder: 20,
+      },
+    ]);
+
+    return (
+      <EstimateBuilderPage
+        sections={sections}
+        manualLines={[]}
+        stages={stages}
+        trades={trades}
+        elements={elements}
+        costCodes={costCodes}
+        units={units}
+        assemblies={assemblies}
+        onSectionsChange={setSections}
+        onManualLinesChange={jest.fn()}
+        generatedRows={[]}
+        generatedRowSectionAssignments={{}}
+        onGeneratedRowSectionAssignmentsChange={jest.fn()}
+      />
+    );
+  }
+
+  render(<BuilderHarness />);
+
+  const mainWorksInput = screen.getByLabelText(/section name for main works/i);
+  const mainWorksSection = mainWorksInput.closest(".estimate-builder-section");
+  expect(mainWorksSection).toBeTruthy();
+  const originalToneClass = Array.from(mainWorksSection.classList).find((className) =>
+    className.startsWith("estimate-builder-section--tone-")
+  );
+
+  await userEvent.click(screen.getAllByRole("button", { name: /move section down/i })[0]);
+
+  const reorderedMainWorksSection = screen
+    .getByLabelText(/section name for main works/i)
+    .closest(".estimate-builder-section");
+  expect(reorderedMainWorksSection).toBeTruthy();
+  expect(reorderedMainWorksSection).toHaveClass(originalToneClass);
+});
+
+test("estimate builder applies markup and GST in the totals summary", async () => {
+  render(
+    <EstimateBuilderPage
+      sections={[
+        {
+          id: "section-1",
+          name: "Main Works",
+          parentSectionId: "",
+          stageId: "",
+          sortOrder: 10,
+        },
+      ]}
+      manualLines={[
+        {
+          id: "manual-line-1",
+          itemName: "Scaffold Hire",
+          unitId: "unit-ea",
+          unit: "EA",
+          quantity: 2,
+          rate: 125,
+          stageId: "stage-finishes",
+          sectionId: "section-1",
+          costCodeId: "cost-code-finishes",
+          tradeId: "trade-general",
+          elementId: "element-floor",
+          notes: "",
+          sortOrder: 10,
+        },
+      ]}
+      stages={stages}
+      trades={trades}
+      elements={elements}
+      costCodes={costCodes}
+      units={units}
+      assemblies={assemblies}
+      onSectionsChange={jest.fn()}
+      onManualLinesChange={jest.fn()}
+      generatedRows={[]}
+      generatedRowSectionAssignments={{}}
+      onGeneratedRowSectionAssignmentsChange={jest.fn()}
+    />
+  );
+
+  const summaryPanel = screen.getByLabelText(/estimate totals/i);
+  expect(within(summaryPanel).getByText("Subtotal")).toBeInTheDocument();
+  expect(within(summaryPanel).getByText("Subtotal + Markup")).toBeInTheDocument();
+  expect(within(summaryPanel).getByText("Subtotal + GST")).toBeInTheDocument();
+  expect(within(summaryPanel).getByText("Total")).toBeInTheDocument();
+
+  await userEvent.clear(screen.getByLabelText(/markup %/i));
+  await userEvent.type(screen.getByLabelText(/markup %/i), "10");
+
+  expect(within(summaryPanel).getByText("$250.00")).toBeInTheDocument();
+  expect(within(summaryPanel).getByText("$275.00")).toBeInTheDocument();
+  expect(within(summaryPanel).getAllByText("$302.50")).toHaveLength(2);
 });
 
 test("estimate builder uses one shared estimate header per section", async () => {
@@ -966,7 +1664,7 @@ test("estimate builder uses one shared estimate header per section", async () =>
 
   await expandMainWorksSection();
   await expandEnsuiteRoom();
-  expect(screen.getAllByRole("columnheader", { name: "Item" })).toHaveLength(1);
+  expect(screen.getAllByRole("columnheader", { name: "Core Item" })).toHaveLength(1);
   expect(screen.getAllByRole("columnheader", { name: "Stage" })).toHaveLength(1);
   expect(screen.getByText("Tile Installation")).toBeInTheDocument();
   expect(screen.getByText("Scaffold Hire")).toBeInTheDocument();

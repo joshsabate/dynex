@@ -64,7 +64,7 @@ function ElementLibraryPage({ elements, onElementsChange }) {
       title="Element Library"
       description="Manage office estimating elements and their order. Assemblies reference this list instead of free-typed element names."
     >
-      <div className="page-grid library-page">
+      <div className="page-grid library-page library-page-elements">
         <form className="library-form-card" onSubmit={addElement}>
           <div className="library-form-grid">
             <div className="library-form-span-2">
@@ -77,25 +77,29 @@ function ElementLibraryPage({ elements, onElementsChange }) {
               </FormField>
             </div>
 
-            <FormField label="Sort order">
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={form.sortOrder}
-                onChange={(event) => updateField("sortOrder", event.target.value)}
-              />
-            </FormField>
+            <div className="library-form-narrow">
+              <FormField label="Sort order">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.sortOrder}
+                  onChange={(event) => updateField("sortOrder", event.target.value)}
+                />
+              </FormField>
+            </div>
 
-            <FormField label="Active">
-              <select
-                value={String(form.isActive)}
-                onChange={(event) => updateField("isActive", event.target.value === "true")}
-              >
-                <option value="true">Yes</option>
-                <option value="false">No</option>
-              </select>
-            </FormField>
+            <div className="library-form-narrow">
+              <FormField label="Active">
+                <select
+                  value={String(form.isActive)}
+                  onChange={(event) => updateField("isActive", event.target.value === "true")}
+                >
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
+                </select>
+              </FormField>
+            </div>
           </div>
 
           <div className="action-row library-form-actions">

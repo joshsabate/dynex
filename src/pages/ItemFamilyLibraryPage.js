@@ -69,7 +69,7 @@ function ItemFamilyLibraryPage({ itemFamilies, onItemFamiliesChange }) {
       title="Item Family Library"
       description="Maintain the controlled item-family list used by Cost Library, Assembly Library, and Estimate Builder manual items."
     >
-      <div className="page-grid library-page">
+      <div className="page-grid library-page library-page-item-families">
         <form className="library-form-card" onSubmit={addItemFamily}>
           <div className="library-form-grid">
             <div className="library-form-span-2">
@@ -82,25 +82,29 @@ function ItemFamilyLibraryPage({ itemFamilies, onItemFamiliesChange }) {
               </FormField>
             </div>
 
-            <FormField label="Sort order">
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={form.sortOrder}
-                onChange={(event) => updateField("sortOrder", event.target.value)}
-              />
-            </FormField>
+            <div className="library-form-narrow">
+              <FormField label="Sort order">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.sortOrder}
+                  onChange={(event) => updateField("sortOrder", event.target.value)}
+                />
+              </FormField>
+            </div>
 
-            <FormField label="Active">
-              <select
-                value={String(form.isActive)}
-                onChange={(event) => updateField("isActive", event.target.value === "true")}
-              >
-                <option value="true">Yes</option>
-                <option value="false">No</option>
-              </select>
-            </FormField>
+            <div className="library-form-narrow">
+              <FormField label="Active">
+                <select
+                  value={String(form.isActive)}
+                  onChange={(event) => updateField("isActive", event.target.value === "true")}
+                >
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
+                </select>
+              </FormField>
+            </div>
           </div>
 
           <div className="action-row library-form-actions">

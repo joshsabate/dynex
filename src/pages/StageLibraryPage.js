@@ -3,6 +3,7 @@ import ColorSwatchPicker from "../components/ColorSwatchPicker";
 import DataTable from "../components/DataTable";
 import FormField from "../components/FormField";
 import SectionCard from "../components/SectionCard";
+import { buildCanonicalStageId, normalizeStages } from "../utils/stages";
 
 const defaultForm = {
   name: "",
@@ -25,9 +26,9 @@ function StageLibraryPage({ stages, onStagesChange }) {
     }
 
     onStagesChange([
-      ...stages,
+      ...normalizeStages(stages),
       {
-        id: `stage-${Date.now()}`,
+        id: buildCanonicalStageId(form.name),
         name: form.name,
         sortOrder: Number(form.sortOrder),
         isActive: Boolean(form.isActive),
@@ -43,10 +44,11 @@ function StageLibraryPage({ stages, onStagesChange }) {
 
   const updateStage = (stageId, key, value) => {
     onStagesChange(
-      stages.map((stage) =>
+      normalizeStages(stages).map((stage) =>
         stage.id === stageId
           ? {
               ...stage,
+              id: key === "name" ? buildCanonicalStageId(value) : stage.id,
               [key]: key === "sortOrder" ? Number(value) : value,
             }
           : stage
@@ -67,7 +69,7 @@ function StageLibraryPage({ stages, onStagesChange }) {
       title="Stage Library"
       description="Manage office estimating stages and their order. Assemblies reference this list instead of free-typed stage names."
     >
-      <div className="page-grid library-page">
+      <div className="page-grid library-page library-page-stages">
         <form className="library-form-card" onSubmit={addStage}>
           <div className="library-form-grid">
             <div className="library-form-span-2">
@@ -80,33 +82,39 @@ function StageLibraryPage({ stages, onStagesChange }) {
               </FormField>
             </div>
 
-            <FormField label="Sort order">
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={form.sortOrder}
-                onChange={(event) => updateField("sortOrder", event.target.value)}
-              />
-            </FormField>
+            <div className="library-form-narrow">
+              <FormField label="Sort order">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.sortOrder}
+                  onChange={(event) => updateField("sortOrder", event.target.value)}
+                />
+              </FormField>
+            </div>
 
-            <FormField label="Active">
-              <select
-                value={String(form.isActive)}
-                onChange={(event) => updateField("isActive", event.target.value === "true")}
-              >
-                <option value="true">Yes</option>
-                <option value="false">No</option>
-              </select>
-            </FormField>
+            <div className="library-form-narrow">
+              <FormField label="Active">
+                <select
+                  value={String(form.isActive)}
+                  onChange={(event) => updateField("isActive", event.target.value === "true")}
+                >
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
+                </select>
+              </FormField>
+            </div>
 
-            <FormField label="Color">
-              <ColorSwatchPicker
-                value={form.color}
-                onChange={(value) => updateField("color", value)}
-                ariaLabel="Select stage color"
-              />
-            </FormField>
+            <div className="library-form-medium">
+              <FormField label="Color">
+                <ColorSwatchPicker
+                  value={form.color}
+                  onChange={(value) => updateField("color", value)}
+                  ariaLabel="Select stage color"
+                />
+              </FormField>
+            </div>
           </div>
 
           <div className="action-row library-form-actions">

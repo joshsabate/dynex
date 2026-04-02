@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import CostLibraryPage from "./CostLibraryPage";
 import { convertCostsToCSV } from "../utils/csvUtils";
@@ -91,6 +91,32 @@ test("imports cost csv rows using the new classification columns", async () => {
     status: "Active",
   });
   expect(onCostsChange.mock.calls[0][0][0].internalId).toContain("cost-import-");
+});
+
+test("saves an optional image url on a cost item", async () => {
+  const { onCostsChange } = renderPage({ costs: [] });
+
+  await userEvent.click(screen.getByRole("button", { name: /add cost item/i }));
+  const editorForm = screen.getByRole("button", { name: /save cost item/i }).closest("form");
+
+  await userEvent.type(within(editorForm).getByLabelText(/core name/i), "Wall Tile");
+  await userEvent.selectOptions(within(editorForm).getByLabelText(/cost type/i), "MTL");
+  await userEvent.selectOptions(within(editorForm).getByLabelText(/delivery type/i), "Supply");
+  await userEvent.selectOptions(within(editorForm).getByLabelText(/^trade$/i), "trade-tile");
+  await userEvent.selectOptions(within(editorForm).getByLabelText(/cost code/i), "cost-code-finishes");
+  await userEvent.selectOptions(within(editorForm).getByLabelText(/^unit$/i), "unit-sqm");
+  await userEvent.type(within(editorForm).getByLabelText(/rate/i), "30");
+  await userEvent.type(
+    within(editorForm).getByLabelText(/image url/i),
+    "https://example.com/tile.jpg"
+  );
+  await userEvent.click(screen.getByRole("button", { name: /save cost item/i }));
+
+  await waitFor(() => expect(onCostsChange).toHaveBeenCalledTimes(1));
+  expect(onCostsChange.mock.calls[0][0][0]).toMatchObject({
+    itemName: "Wall Tile",
+    imageUrl: "https://example.com/tile.jpg",
+  });
 });
 
 test("reports row-level validation failures and duplicate internal ids during append import", async () => {

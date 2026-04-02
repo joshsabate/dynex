@@ -16,6 +16,13 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:canvas": "playwright test playwright/canvas-view.spec.js",
+    "test:e2e:canvas:headed": "playwright test --headed playwright/canvas-view.spec.js",
+    "test:e2e:canvas-grid": "playwright test playwright/canvas-grid.spec.js",
+    "test:e2e:canvas-grid:headed": "playwright test playwright/canvas-grid.spec.js --headed",
+    "test:e2e:canvas-grid:debug": "playwright test playwright/canvas-grid.spec.js --debug",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {
@@ -35,5 +42,8 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.0"
   }
 }

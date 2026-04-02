@@ -201,6 +201,35 @@ test("allows saving an assembly header with no cost items", async () => {
   expect(screen.queryByText(/at least one cost item is required\./i)).not.toBeInTheDocument();
 });
 
+test("saves an optional image url on an assembly", async () => {
+  const { onAssembliesChange } = renderPage({ assemblies: [] });
+
+  await userEvent.click(screen.getByRole("button", { name: /add assembly/i }));
+  const editorForm = screen.getByRole("button", { name: /save assembly/i }).closest("form");
+
+  await userEvent.type(within(editorForm).getByLabelText(/element/i), "Wall");
+  await userEvent.type(within(editorForm).getByLabelText(/scope/i), "Feature Wall");
+  await userEvent.selectOptions(
+    within(editorForm).getByLabelText(/room type/i),
+    "room-type-bathroom"
+  );
+  await userEvent.selectOptions(
+    within(editorForm).getByLabelText(/assembly group/i),
+    "Walls & Linings"
+  );
+  await userEvent.type(
+    within(editorForm).getByLabelText(/image url/i),
+    "https://example.com/assembly.jpg"
+  );
+  await userEvent.click(screen.getByRole("button", { name: /save assembly/i }));
+
+  await waitFor(() => expect(onAssembliesChange).toHaveBeenCalledTimes(1));
+  expect(onAssembliesChange.mock.calls[0][0][0]).toMatchObject({
+    assemblyName: "Wall  Feature Wall",
+    imageUrl: "https://example.com/assembly.jpg",
+  });
+});
+
 test("supports add rename and delete in manage groups", async () => {
   const { onAssembliesChange } = renderPage({ assemblies });
 
@@ -212,31 +241,61 @@ test("supports add rename and delete in manage groups", async () => {
   const ceilingsRow = screen
     .getByText("Ceilings", { selector: "strong" })
     .closest(".assembly-library-group-row");
-  await userEvent.click(within(ceilingsRow).getByRole("button", { name: /^rename$/i }));
+  await userEvent.click(within(ceilingsRow).getByRole("button", { name: /rename ceilings/i }));
   const editInput = within(ceilingsRow).getByDisplayValue("Ceilings");
   await userEvent.clear(editInput);
   await userEvent.type(editInput, "Feature Ceilings");
-  await userEvent.click(within(ceilingsRow).getByRole("button", { name: /^save$/i }));
+  await userEvent.click(within(ceilingsRow).getByRole("button", { name: /save ceilings/i }));
   expect(screen.getByText("Feature Ceilings", { selector: "strong" })).toBeInTheDocument();
 
+  jest.spyOn(window, "confirm").mockReturnValue(true);
   const featureCeilingsRow = screen
     .getByText("Feature Ceilings", { selector: "strong" })
     .closest(".assembly-library-group-row");
-  await userEvent.click(within(featureCeilingsRow).getByRole("button", { name: /^delete$/i }));
+  await userEvent.click(within(featureCeilingsRow).getByRole("button", { name: /delete feature ceilings/i }));
   expect(screen.queryByText("Feature Ceilings")).not.toBeInTheDocument();
 
   const wallsRow = screen
     .getByText("Walls & Linings", { selector: "strong" })
     .closest(".assembly-library-group-row");
-  await userEvent.click(within(wallsRow).getByRole("button", { name: /^rename$/i }));
+  await userEvent.click(within(wallsRow).getByRole("button", { name: /rename walls & linings/i }));
   const usedEditInput = within(wallsRow).getByDisplayValue("Walls & Linings");
   await userEvent.clear(usedEditInput);
   await userEvent.type(usedEditInput, "Wall Systems");
-  await userEvent.click(within(wallsRow).getByRole("button", { name: /^save$/i }));
+  await userEvent.click(within(wallsRow).getByRole("button", { name: /save walls & linings/i }));
 
   expect(screen.getByText("Wall Systems", { selector: "strong" })).toBeInTheDocument();
   expect(screen.getByText(/in use by existing assemblies/i)).toBeInTheDocument();
   expect(onAssembliesChange).toHaveBeenCalled();
+  window.confirm.mockRestore();
+});
+
+test("deletes in-use groups by reassigning affected assemblies to Unassigned", async () => {
+  const { onAssembliesChange } = renderPage({ assemblies });
+  jest.spyOn(window, "confirm").mockReturnValue(true);
+
+  await userEvent.click(screen.getByRole("button", { name: /add assembly/i }));
+  await userEvent.click(screen.getByRole("button", { name: /manage groups/i }));
+
+  const wallsRow = screen
+    .getByText("Walls & Linings", { selector: "strong" })
+    .closest(".assembly-library-group-row");
+  await userEvent.click(within(wallsRow).getByRole("button", { name: /delete walls & linings/i }));
+
+  expect(window.confirm).toHaveBeenCalledWith(
+    expect.stringMatching(/used by 1 assemblies\. those assemblies will be reassigned to unassigned\./i)
+  );
+  expect(onAssembliesChange).toHaveBeenCalled();
+  const nextAssemblies = onAssembliesChange.mock.calls.at(-1)[0];
+  expect(nextAssemblies[0]).toMatchObject({
+    assemblyGroup: "Unassigned",
+    assemblyCategory: "Unassigned",
+  });
+  expect(screen.getByText("Unassigned", { selector: "strong" })).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: /delete unassigned/i })
+  ).toBeDisabled();
+  window.confirm.mockRestore();
 });
 
 test("shows the selected assembly group value after selection", async () => {

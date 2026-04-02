@@ -2,6 +2,7 @@ import { buildInitialParameterLibrary } from "../utils/parameters";
 import { buildInitialRoomTypeParameterDefinitions } from "../utils/roomTypeParameters";
 import { normalizeAssemblies } from "../utils/assemblies";
 import { normalizeCosts } from "../utils/costs";
+import { canonicalStageLibrary } from "../utils/stages";
 
 export const roomTypes = [
   "Bedroom",
@@ -84,16 +85,7 @@ export const qtyRules = [
   "SplashbackLength",
 ];
 
-export const initialStages = [
-  { id: "stage-demolition", name: "Demolition", sortOrder: 1, isActive: true, color: "#d78476" },
-  { id: "stage-structural", name: "Structural", sortOrder: 2, isActive: true, color: "#7e9685" },
-  { id: "stage-rough-in", name: "Rough-In", sortOrder: 3, isActive: true, color: "#6f96bf" },
-  { id: "stage-waterproofing", name: "Waterproofing", sortOrder: 4, isActive: true, color: "#69a6b2" },
-  { id: "stage-finishes", name: "Finishes", sortOrder: 5, isActive: true, color: "#d7aa5a" },
-  { id: "stage-fixtures", name: "Fixtures", sortOrder: 6, isActive: true, color: "#aa87c4" },
-  { id: "stage-services", name: "Services", sortOrder: 7, isActive: true, color: "#7ea06f" },
-  { id: "stage-final", name: "Final", sortOrder: 8, isActive: true, color: "#a98a69" },
-];
+export const initialStages = canonicalStageLibrary;
 
 export const initialTrades = [
   { id: "trade-general", name: "General", sortOrder: 1, isActive: true },

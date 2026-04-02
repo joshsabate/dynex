@@ -3,6 +3,7 @@ import { getAssemblyGroupId } from "./assemblyGroups";
 import { getStructuredItemPresentation } from "./itemNaming";
 import { resolveQuantitySource } from "./quantitySources";
 import { getTemplateLabourItems, getTemplateManualItems } from "./roomTemplates";
+import { getStageIntegrity, logInvalidStageWarning } from "./stageIntegrity";
 import { getUnitAbbreviation, unitsMatch } from "./units";
 import {
   getAssemblyQuantity,
@@ -20,6 +21,25 @@ function toNumber(value) {
 
 function hasOverride(rowOverride, key) {
   return Object.prototype.hasOwnProperty.call(rowOverride || {}, key);
+}
+
+function getResolvedStageIntegrity(rowOverride, baseRow, stages) {
+  const nextStageId = hasOverride(rowOverride, "stageId") ? rowOverride.stageId : baseRow.stageId;
+  const fallbackStageName = hasOverride(rowOverride, "stage") ? rowOverride.stage : baseRow.stage;
+  const integrity = getStageIntegrity(nextStageId, stages, fallbackStageName);
+
+  if (!integrity.isValid) {
+    logInvalidStageWarning({
+      context: "estimate-row",
+      rowId: baseRow.id || "",
+      stageId: integrity.originalStageId,
+      fallbackStageName,
+      normalizedStageId: integrity.stageId,
+      reason: integrity.reason,
+    });
+  }
+
+  return integrity;
 }
 
 function getStageName(stages, stageId, fallbackStage) {
@@ -68,7 +88,7 @@ function findCostRow(costRows, costItemId, itemName, unitId, unit) {
   );
 }
 
-function buildEstimateRow(baseRow, rowOverride) {
+function buildEstimateRow(baseRow, rowOverride, stages = []) {
   const removed = rowOverride?.removed === true;
   const includeOverride =
     typeof rowOverride?.includeOverride === "boolean"
@@ -82,8 +102,9 @@ function buildEstimateRow(baseRow, rowOverride) {
     rowOverride?.rateOverride === "" || rowOverride?.rateOverride == null
       ? undefined
       : toNumber(rowOverride.rateOverride);
-  const stageId = hasOverride(rowOverride, "stageId") ? rowOverride.stageId : baseRow.stageId;
-  const stage = hasOverride(rowOverride, "stage") ? rowOverride.stage : baseRow.stage;
+  const stageIntegrity = getResolvedStageIntegrity(rowOverride, baseRow, stages);
+  const stageId = stageIntegrity.stageId;
+  const stage = getStageName(stages, stageId, stageIntegrity.stageName);
   const tradeId = hasOverride(rowOverride, "tradeId") ? rowOverride.tradeId : baseRow.tradeId;
   const trade = hasOverride(rowOverride, "trade") ? rowOverride.trade : baseRow.trade;
   const costCodeId = hasOverride(rowOverride, "costCodeId")
@@ -120,6 +141,40 @@ function buildEstimateRow(baseRow, rowOverride) {
     rowOverride?.sortOrder === "" || rowOverride?.sortOrder == null
       ? baseRow.sortOrder
       : toNumber(rowOverride.sortOrder);
+  const canvasColumn =
+    rowOverride?.canvasColumn === "" || rowOverride?.canvasColumn == null
+      ? (baseRow.canvasColumn ?? "")
+      : toNumber(rowOverride.canvasColumn);
+  const canvasTrack =
+    rowOverride?.canvasTrack === "" || rowOverride?.canvasTrack == null
+      ? (baseRow.canvasTrack ?? "")
+      : toNumber(rowOverride.canvasTrack);
+  const canvasOrder =
+    rowOverride?.canvasOrder === "" || rowOverride?.canvasOrder == null
+      ? (baseRow.canvasOrder ?? sortOrder)
+      : toNumber(rowOverride.canvasOrder);
+  const canvasStackParentId = hasOverride(rowOverride, "canvasStackParentId")
+    ? rowOverride.canvasStackParentId
+    : baseRow.canvasStackParentId || "";
+  const canvasStackOrder =
+    rowOverride?.canvasStackOrder === "" || rowOverride?.canvasStackOrder == null
+      ? (baseRow.canvasStackOrder ?? "")
+      : toNumber(rowOverride.canvasStackOrder);
+  const plannedStartWeek =
+    rowOverride?.plannedStartWeek === "" || rowOverride?.plannedStartWeek == null
+      ? (baseRow.plannedStartWeek ?? "")
+      : toNumber(rowOverride.plannedStartWeek);
+  const plannedDurationWeeks =
+    rowOverride?.plannedDurationWeeks === "" || rowOverride?.plannedDurationWeeks == null
+      ? (baseRow.plannedDurationWeeks ?? "")
+      : toNumber(rowOverride.plannedDurationWeeks);
+  const imageUrl = hasOverride(rowOverride, "imageUrl") ? rowOverride.imageUrl : baseRow.imageUrl;
+  const assemblyImageUrl = hasOverride(rowOverride, "assemblyImageUrl")
+    ? rowOverride.assemblyImageUrl
+    : baseRow.assemblyImageUrl;
+  const itemImageUrl = hasOverride(rowOverride, "itemImageUrl")
+    ? rowOverride.itemImageUrl
+    : baseRow.itemImageUrl;
   const include = includeOverride ?? baseRow.generatedInclude;
   const quantity = roundValue(quantityOverride ?? baseRow.generatedQuantity);
   const unitRate = roundValue(rateOverride ?? baseRow.generatedRate);
@@ -160,6 +215,16 @@ function buildEstimateRow(baseRow, rowOverride) {
     rateOverride,
     removed,
     sortOrder,
+    canvasColumn,
+    canvasTrack,
+    canvasOrder,
+    canvasStackParentId,
+    canvasStackOrder,
+    plannedStartWeek,
+    plannedDurationWeeks,
+    imageUrl: imageUrl || "",
+    assemblyImageUrl: assemblyImageUrl || "",
+    itemImageUrl: itemImageUrl || "",
     notes: hasOverride(rowOverride, "notes") ? rowOverride.notes : baseRow.notes || "",
     sourceLink: hasOverride(rowOverride, "sourceLink")
       ? rowOverride.sourceLink
@@ -240,9 +305,13 @@ function buildTemplateLineRow({
       laborHoursPerUnit: 0,
       sortOrder: line.sortOrder ?? 0,
       source,
+      imageUrl: line.imageUrl || "",
+      assemblyImageUrl: "",
+      itemImageUrl: costRow?.imageUrl || "",
       sourceLink: line.sourceLink || costRow?.sourceLink || "",
     },
-    rowOverrides[rowId]
+    rowOverrides[rowId],
+    stages
   );
 }
 
@@ -254,6 +323,7 @@ function buildLaborRow({
   laborCostRow,
   laborHours,
   rowOverrides,
+  stages,
   units,
 }) {
   const rowId = `${room.id}-${assemblyId}-${item.id}-labor`;
@@ -296,9 +366,13 @@ function buildLaborRow({
       laborHoursPerUnit: item.laborHoursPerUnit || 0,
       sortOrder: (item.sortOrder ?? 0) + 0.1,
       source: "generated",
+      imageUrl: item.imageUrl || "",
+      assemblyImageUrl: assembly.imageUrl || "",
+      itemImageUrl: laborCostRow?.imageUrl || "",
       sourceLink: item.sourceLink || laborCostRow?.sourceLink || "",
     },
-    rowOverrides[rowId]
+    rowOverrides[rowId],
+    stages
   );
 }
 
@@ -405,9 +479,13 @@ export function generateEstimateRows(
                     laborHoursPerUnit: item.laborHoursPerUnit || 0,
                     sortOrder: item.sortOrder ?? 0,
                     source: "generated",
+                    imageUrl: item.imageUrl || "",
+                    assemblyImageUrl: assembly.imageUrl || "",
+                    itemImageUrl: costRow?.imageUrl || "",
                     sourceLink: item.sourceLink || costRow?.sourceLink || "",
                   },
-                  rowOverrides[rowId]
+                  rowOverrides[rowId],
+                  stages
                 );
 
                 if (!laborHours || !item.laborCostItemName) {
@@ -430,6 +508,7 @@ export function generateEstimateRows(
                     laborCostRow,
                     laborHours,
                     rowOverrides,
+                    stages,
                     units,
                   }),
                 ];
@@ -531,14 +610,25 @@ export function generateManualEstimateBuilderRows(
         laborHours: 0,
         laborHoursPerUnit: 0,
         sortOrder: line.sortOrder ?? 0,
+        canvasColumn: line.canvasColumn ?? "",
+        canvasTrack: line.canvasTrack ?? "",
+        canvasOrder: line.canvasOrder ?? line.sortOrder ?? 0,
+        canvasStackParentId: line.canvasStackParentId || "",
+        canvasStackOrder: line.canvasStackOrder ?? "",
+        plannedStartWeek: line.plannedStartWeek ?? "",
+        plannedDurationWeeks: line.plannedDurationWeeks ?? "",
         source: "manual-builder",
+        imageUrl: line.imageUrl || "",
+        assemblyImageUrl: line.assemblyImageUrl || "",
+        itemImageUrl: line.itemImageUrl || "",
         notes: line.notes || "",
         sourceLink: line.sourceLink || "",
         sourceAssemblyId: line.sourceAssemblyId || "",
         sourceAssemblyRowId: line.sourceAssemblyRowId || "",
         sourceCostItemId: line.sourceCostItemId || "",
       },
-      rowOverrides[rowId]
+      rowOverrides[rowId],
+      stages
     );
   });
 }
