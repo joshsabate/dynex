@@ -585,7 +585,13 @@ export async function replaceLibraryItems(libraryKey, items) {
 
 export async function saveAssemblyWithItems(assembly) {
   if (!hasSupabaseCredentials || !supabase) {
-    return assembly;
+    const error = new Error("Supabase client is not configured for assembly save.");
+    console.error("[Dynex][AssemblyLibrary] Supabase unavailable for saveAssemblyWithItems", {
+      hasSupabaseCredentials,
+      hasClient: Boolean(supabase),
+      assemblyId: assembly?.id || "",
+    });
+    throw error;
   }
 
   const assemblyId = toText(assembly?.id);
@@ -598,28 +604,51 @@ export async function saveAssemblyWithItems(assembly) {
     mapAssemblyItemToSupabaseRow(item, assemblyId, index)
   );
 
+  console.info("[Dynex][AssemblyLibrary] assemblies upsert:start", {
+    assemblyId,
+    itemCount: childRows.length,
+  });
+
   const { error: assemblyError } = await supabase
     .from("assemblies")
     .upsert(assemblyRow, { onConflict: "id" });
   if (assemblyError) {
+    console.error("[Dynex][AssemblyLibrary] assemblies upsert:error", assemblyError);
     throw assemblyError;
   }
+  console.info("[Dynex][AssemblyLibrary] assemblies upsert:success", { assemblyId });
 
+  console.info("[Dynex][AssemblyLibrary] assembly_items delete:start", { assemblyId });
   const { error: deleteChildrenError } = await supabase
     .from("assembly_items")
     .delete()
     .eq("assembly_id", assemblyId);
   if (deleteChildrenError) {
+    console.error("[Dynex][AssemblyLibrary] assembly_items delete:error", deleteChildrenError);
     throw deleteChildrenError;
   }
+  console.info("[Dynex][AssemblyLibrary] assembly_items delete:success", { assemblyId });
 
   if (childRows.length) {
+    console.info("[Dynex][AssemblyLibrary] assembly_items insert:start", {
+      assemblyId,
+      rowCount: childRows.length,
+    });
     const { error: insertChildrenError } = await supabase
       .from("assembly_items")
       .insert(childRows);
     if (insertChildrenError) {
+      console.error("[Dynex][AssemblyLibrary] assembly_items insert:error", insertChildrenError);
       throw insertChildrenError;
     }
+    console.info("[Dynex][AssemblyLibrary] assembly_items insert:success", {
+      assemblyId,
+      rowCount: childRows.length,
+    });
+  } else {
+    console.info("[Dynex][AssemblyLibrary] assembly_items insert:skipped-empty", {
+      assemblyId,
+    });
   }
 
   return assembly;
@@ -627,7 +656,13 @@ export async function saveAssemblyWithItems(assembly) {
 
 export async function deleteAssemblyWithItems(assemblyId) {
   if (!hasSupabaseCredentials || !supabase) {
-    return;
+    const error = new Error("Supabase client is not configured for assembly delete.");
+    console.error("[Dynex][AssemblyLibrary] Supabase unavailable for deleteAssemblyWithItems", {
+      hasSupabaseCredentials,
+      hasClient: Boolean(supabase),
+      assemblyId: toText(assemblyId),
+    });
+    throw error;
   }
 
   const normalizedAssemblyId = toText(assemblyId);
@@ -654,7 +689,13 @@ export async function deleteAssemblyWithItems(assemblyId) {
 
 export async function replaceAssembliesWithItems(assemblies = []) {
   if (!hasSupabaseCredentials || !supabase) {
-    return assemblies;
+    const error = new Error("Supabase client is not configured for assembly resync.");
+    console.error("[Dynex][AssemblyLibrary] Supabase unavailable for replaceAssembliesWithItems", {
+      hasSupabaseCredentials,
+      hasClient: Boolean(supabase),
+      assemblyCount: (assemblies || []).length,
+    });
+    throw error;
   }
 
   const { data: existingRows, error: existingError } = await supabase

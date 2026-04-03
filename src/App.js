@@ -293,6 +293,7 @@ function loadGlobalLibraries() {
 function loadLibraryData() {
   const defaultLibraryData = getDefaultLibraryData();
   const savedLibraryData = readStoredJson(libraryDataStorageKey);
+  const supabaseAssemblyBootstrap = hasSupabaseCredentials ? [] : defaultLibraryData.assemblies;
 
   if (savedLibraryData) {
     return createLoadResult(
@@ -302,13 +303,15 @@ function loadLibraryData() {
         roomTemplates: savedLibraryData.roomTemplates || defaultLibraryData.roomTemplates,
         assemblyLineTemplates:
           savedLibraryData.assemblyLineTemplates || defaultLibraryData.assemblyLineTemplates,
-        assemblies: savedLibraryData.assemblies || defaultLibraryData.assemblies,
+        assemblies: hasSupabaseCredentials
+          ? supabaseAssemblyBootstrap
+          : savedLibraryData.assemblies || defaultLibraryData.assemblies,
         costs: savedLibraryData.costs || defaultLibraryData.costs,
       },
       {
         roomTemplates: "localStorage:library-data",
         assemblyLineTemplates: "localStorage:library-data",
-        assemblies: "localStorage:library-data",
+        assemblies: hasSupabaseCredentials ? "Supabase" : "localStorage:library-data",
         costs: "localStorage:library-data",
       }
     );
@@ -334,7 +337,9 @@ function loadLibraryData() {
         defaultLibraryData.roomTemplates,
       assemblyLineTemplates:
         legacyProjectState.assemblyLineTemplates || defaultLibraryData.assemblyLineTemplates,
-      assemblies: legacyProjectState.assemblies || defaultLibraryData.assemblies,
+      assemblies: hasSupabaseCredentials
+        ? supabaseAssemblyBootstrap
+        : legacyProjectState.assemblies || defaultLibraryData.assemblies,
       costs: legacyProjectState.costs || defaultLibraryData.costs,
     },
     {
@@ -345,7 +350,11 @@ function loadLibraryData() {
       assemblyLineTemplates: legacyProjectState.assemblyLineTemplates
         ? "localStorage:legacy-project"
         : "seed/default",
-      assemblies: legacyProjectState.assemblies ? "localStorage:legacy-project" : "seed/default",
+      assemblies: hasSupabaseCredentials
+        ? "Supabase"
+        : legacyProjectState.assemblies
+          ? "localStorage:legacy-project"
+          : "seed/default",
       costs: legacyProjectState.costs ? "localStorage:legacy-project" : "seed/default",
     }
   );
@@ -1214,6 +1223,11 @@ function App() {
         }
         if (Array.isArray(libraryState.assemblies)) {
           setAssemblies(libraryState.assemblies);
+          startupSourcesRef.current = {
+            ...startupSourcesRef.current,
+            assemblies: "Supabase",
+          };
+          console.info("[Dynex] Assembly source: Supabase");
         }
         if (Array.isArray(libraryState.costs)) {
           setCosts(libraryState.costs);

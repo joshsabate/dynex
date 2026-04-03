@@ -1770,7 +1770,7 @@ function AssemblyLibraryPage({
   };
 
   const handlePersistenceError = (actionLabel, error) => {
-    console.error(`Assembly Library ${actionLabel} Supabase error:`, error);
+    console.error(`[Dynex][AssemblyLibrary] ${actionLabel}:caught-error`, error);
     setCsvStatus(`Unable to ${actionLabel} in Supabase. Check console for details.`);
     if (typeof window !== "undefined" && typeof window.alert === "function") {
       window.alert(`Unable to ${actionLabel}. Supabase write failed.`);
@@ -1779,16 +1779,24 @@ function AssemblyLibraryPage({
 
   const persistAssemblyCollection = async (nextAssemblies, successMessage = "") => {
     if (!hasSupabaseCredentials) {
-      onAssembliesChange(nextAssemblies);
-      if (successMessage) {
-        setCsvStatus(successMessage);
-      }
-      return true;
+      const error = new Error("Supabase credentials are missing for assembly collection sync.");
+      console.error("[Dynex][AssemblyLibrary] sync assemblies:missing-supabase-config", {
+        hasSupabaseCredentials,
+        assemblyCount: nextAssemblies.length,
+      });
+      handlePersistenceError("sync assemblies", error);
+      return false;
     }
 
     setIsPersistingAssemblies(true);
     try {
+      console.info("[Dynex][AssemblyLibrary] sync assemblies:start", {
+        assemblyCount: nextAssemblies.length,
+      });
       await replaceAssembliesWithItems(nextAssemblies);
+      console.info("[Dynex][AssemblyLibrary] sync assemblies:success", {
+        assemblyCount: nextAssemblies.length,
+      });
       onAssembliesChange(nextAssemblies);
       if (successMessage) {
         setCsvStatus(successMessage);
@@ -1841,9 +1849,26 @@ function AssemblyLibraryPage({
           )
         : [...normalizedAssemblies, nextAssembly];
 
+    console.info("[Dynex][AssemblyLibrary] saveAssembly:entered", {
+      assemblyId: nextAssembly.id,
+      mode: editorState.mode,
+      itemCount: nextAssembly.items.length,
+      hasSupabaseCredentials,
+    });
+    if (!hasSupabaseCredentials) {
+      handlePersistenceError(
+        editorState.mode === "edit" ? "save assembly" : "create assembly",
+        new Error("Supabase credentials are missing for assembly save.")
+      );
+      return;
+    }
+
     setIsPersistingAssemblies(true);
     try {
       await saveAssemblyWithItems(nextAssembly);
+      console.info("[Dynex][AssemblyLibrary] saveAssembly:persistence-success", {
+        assemblyId: nextAssembly.id,
+      });
       onAssembliesChange(nextAssemblies);
       setCsvStatus(
         editorState.mode === "edit"
@@ -1874,9 +1899,20 @@ function AssemblyLibraryPage({
     }
 
     const nextAssemblies = normalizedAssemblies.filter((assembly) => assembly.id !== assemblyId);
+    if (!hasSupabaseCredentials) {
+      handlePersistenceError(
+        "delete assembly",
+        new Error("Supabase credentials are missing for assembly delete.")
+      );
+      return;
+    }
+
     setIsPersistingAssemblies(true);
     try {
       await deleteAssemblyWithItems(assemblyId);
+      console.info("[Dynex][AssemblyLibrary] deleteAssembly:persistence-success", {
+        assemblyId,
+      });
       onAssembliesChange(nextAssemblies);
       setCsvStatus("Deleted assembly.");
     } catch (error) {
