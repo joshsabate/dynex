@@ -41,7 +41,10 @@ import { normalizeAssemblies } from "./utils/assemblies";
 import { normalizeCosts } from "./utils/costs";
 import { mergeSeededParameters } from "./utils/parameters";
 import { getStageIntegrity, normalizeStageBoundRecord } from "./utils/stageIntegrity";
-import { normalizeStages } from "./utils/stages";
+import { buildCanonicalStageId, canonicalStageLibrary, normalizeStages } from "./utils/stages";
+import { fetchDynexLibraryState } from "./lib/librarySupabase";
+import { hasSupabaseCredentials } from "./lib/supabase";
+import useSupabaseCollectionSync from "./hooks/useSupabaseCollectionSync";
 
 const legacyLocalStorageKey = "estimator-app-project";
 const globalLibrariesStorageKey = "estimator-app-global-libraries";
@@ -607,6 +610,26 @@ function normalizeAppState(source = {}) {
   };
 }
 
+function getStoredStages(stages = []) {
+  const canonicalStagesById = new Map(canonicalStageLibrary.map((stage) => [stage.id, stage]));
+
+  return (stages || []).filter((stage) => {
+    const canonicalStage =
+      canonicalStagesById.get(stage.id) ||
+      canonicalStagesById.get(buildCanonicalStageId(stage.name));
+
+    if (!canonicalStage) {
+      return true;
+    }
+
+    return (
+      stage.name !== canonicalStage.name ||
+      Number(stage.sortOrder ?? 0) !== Number(canonicalStage.sortOrder ?? 0) ||
+      stage.isActive !== canonicalStage.isActive ||
+      String(stage.color || "") !== String(canonicalStage.color || "")
+    );
+  });
+}
 function splitAppStateForStorage(appState) {
   return {
     globalLibraries: {
@@ -614,7 +637,7 @@ function splitAppStateForStorage(appState) {
       parameters: appState.parameters,
       units: appState.units,
       costCodes: appState.costCodes,
-      stages: appState.stages,
+      stages: getStoredStages(appState.stages),
       trades: appState.trades,
       itemFamilies: appState.itemFamilies,
       elements: appState.elements,
@@ -660,8 +683,14 @@ function persistAppStateToLocalStorage(appState) {
     lastBackupAt: new Date().toISOString(),
   });
 
-  window.localStorage.setItem(globalLibrariesStorageKey, JSON.stringify(globalLibraries));
-  window.localStorage.setItem(libraryDataStorageKey, JSON.stringify(libraryData));
+  if (!hasSupabaseCredentials) {
+    window.localStorage.setItem(globalLibrariesStorageKey, JSON.stringify(globalLibraries));
+    window.localStorage.setItem(libraryDataStorageKey, JSON.stringify(libraryData));
+  } else {
+    window.localStorage.removeItem(globalLibrariesStorageKey);
+    window.localStorage.removeItem(libraryDataStorageKey);
+  }
+
   window.localStorage.setItem(projectDataStorageKey, JSON.stringify(projectData));
   window.localStorage.removeItem(legacyLocalStorageKey);
 }
@@ -825,6 +854,7 @@ function App() {
   const [lastBackupAt, setLastBackupAt] = useState(initialProjectState.lastBackupAt);
   const [lastFileName, setLastFileName] = useState(initialProjectState.lastFileName);
   const [projectStatus, setProjectStatus] = useState(initialProjectStatus);
+  const [supabaseLibrariesReady, setSupabaseLibrariesReady] = useState(!hasSupabaseCredentials);
   const [savedSnapshot, setSavedSnapshot] = useState(initialSavedSnapshot);
   const [estimateWorkspaceView, setEstimateWorkspaceView] = useState("builder");
   const previousComparableSnapshotRef = useRef(initialSavedSnapshot);
@@ -903,6 +933,64 @@ function App() {
       lastFileName,
     ]
   );
+  const isSupabaseLibrarySyncEnabled = hasSupabaseCredentials && supabaseLibrariesReady;
+
+  useSupabaseCollectionSync({
+    items: roomTypes,
+    libraryKey: "roomTypes",
+    enabled: isSupabaseLibrarySyncEnabled,
+  });
+  useSupabaseCollectionSync({
+    items: parameters,
+    libraryKey: "parameters",
+    enabled: isSupabaseLibrarySyncEnabled,
+  });
+  useSupabaseCollectionSync({
+    items: units,
+    libraryKey: "units",
+    enabled: isSupabaseLibrarySyncEnabled,
+  });
+  useSupabaseCollectionSync({
+    items: costCodes,
+    libraryKey: "costCodes",
+    enabled: isSupabaseLibrarySyncEnabled,
+  });
+  useSupabaseCollectionSync({
+    items: stages,
+    libraryKey: "stages",
+    enabled: isSupabaseLibrarySyncEnabled,
+  });
+  useSupabaseCollectionSync({
+    items: trades,
+    libraryKey: "trades",
+    enabled: isSupabaseLibrarySyncEnabled,
+  });
+  useSupabaseCollectionSync({
+    items: itemFamilies,
+    libraryKey: "itemFamilies",
+    enabled: isSupabaseLibrarySyncEnabled,
+  });
+  useSupabaseCollectionSync({
+    items: elements,
+    libraryKey: "elements",
+    enabled: isSupabaseLibrarySyncEnabled,
+  });
+  useSupabaseCollectionSync({
+    items: roomTemplates,
+    libraryKey: "roomTemplates",
+    enabled: isSupabaseLibrarySyncEnabled,
+  });
+  useSupabaseCollectionSync({
+    items: assemblies,
+    libraryKey: "assemblies",
+    enabled: isSupabaseLibrarySyncEnabled,
+  });
+  useSupabaseCollectionSync({
+    items: costs,
+    libraryKey: "costs",
+    enabled: isSupabaseLibrarySyncEnabled,
+  });
+
   const comparableSnapshot = useMemo(
     () => buildComparableAppState(currentAppState),
     [currentAppState]
@@ -1054,6 +1142,71 @@ function App() {
       )
     );
   };
+
+  useEffect(() => {
+    if (!hasSupabaseCredentials) {
+      setSupabaseLibrariesReady(true);
+      return undefined;
+    }
+
+    let isMounted = true;
+
+    async function hydrateLibrariesFromSupabase() {
+      try {
+        const libraryState = await fetchDynexLibraryState();
+
+        if (!isMounted || !libraryState) {
+          return;
+        }
+
+        if (Array.isArray(libraryState.roomTypes)) {
+          setRoomTypes(libraryState.roomTypes);
+        }
+        if (Array.isArray(libraryState.parameters)) {
+          setParameters(libraryState.parameters);
+        }
+        if (Array.isArray(libraryState.units)) {
+          setUnits(libraryState.units);
+        }
+        if (Array.isArray(libraryState.costCodes)) {
+          setCostCodes(libraryState.costCodes);
+        }
+        if (Array.isArray(libraryState.stages)) {
+          setStages(libraryState.stages);
+        }
+        if (Array.isArray(libraryState.trades)) {
+          setTrades(libraryState.trades);
+        }
+        if (Array.isArray(libraryState.itemFamilies)) {
+          setItemFamilies(libraryState.itemFamilies);
+        }
+        if (Array.isArray(libraryState.elements)) {
+          setElements(libraryState.elements);
+        }
+        if (Array.isArray(libraryState.roomTemplates)) {
+          setRoomTemplates(libraryState.roomTemplates);
+        }
+        if (Array.isArray(libraryState.assemblies)) {
+          setAssemblies(libraryState.assemblies);
+        }
+        if (Array.isArray(libraryState.costs)) {
+          setCosts(libraryState.costs);
+        }
+      } catch (error) {
+        console.error("Failed to hydrate libraries from Supabase:", error);
+      } finally {
+        if (isMounted) {
+          setSupabaseLibrariesReady(true);
+        }
+      }
+    }
+
+    hydrateLibrariesFromSupabase();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     persistAppStateToLocalStorage(currentAppState);
@@ -1690,3 +1843,4 @@ function App() {
 }
 
 export default App;
+

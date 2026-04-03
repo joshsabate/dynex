@@ -113,6 +113,15 @@ function mapSupabaseRowToCostItem(row) {
 async function saveCostToSupabase(cost) {
   const payload = mapCostItemToSupabaseRow(cost);
 
+  if (!supabase) {
+    const fallbackId = cost.id || cost.internalId || `cost-${Date.now()}`;
+    return {
+      ...cost,
+      id: fallbackId,
+      internalId: cost.internalId || fallbackId,
+    };
+  }
+
   const { data, error } = await supabase
     .from("cost_items")
     .upsert(payload)
@@ -127,6 +136,10 @@ async function saveCostToSupabase(cost) {
 }
 
 async function fetchCostItemsFromSupabase() {
+  if (!supabase) {
+    return [];
+  }
+
   const { data, error } = await supabase
     .from("cost_items")
     .select("*")
@@ -1485,3 +1498,4 @@ const saveCost = async (event) => {
 }
 
 export default CostLibraryPage;
+

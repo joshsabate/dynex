@@ -46,8 +46,9 @@ export function getStageById(stages = []) {
 
 export function normalizeStages(stages = []) {
   const sourceStages = Array.isArray(stages) ? stages : [];
+  const canonicalStageIds = new Set(canonicalStageLibrary.map((stage) => stage.id));
 
-  return canonicalStageLibrary.map((canonicalStage) => {
+  const normalizedCanonicalStages = canonicalStageLibrary.map((canonicalStage) => {
     const matchingStage =
       sourceStages.find((stage) => buildCanonicalStageId(stage.name) === canonicalStage.id) ||
       sourceStages.find((stage) => stage.id === canonicalStage.id) ||
@@ -59,6 +60,26 @@ export function normalizeStages(stages = []) {
       color: normalizeHexColor(matchingStage?.color || canonicalStage.color),
     };
   });
+
+  const customStages = sourceStages
+    .filter((stage) => !canonicalStageIds.has(buildCanonicalStageId(stage.name || stage.id)))
+    .map((stage, index) => ({
+      id: stage.id || buildCanonicalStageId(stage.name),
+      name: String(stage.name || "Custom Stage").trim() || "Custom Stage",
+      sortOrder:
+        Number.isFinite(Number(stage.sortOrder))
+          ? Number(stage.sortOrder)
+          : canonicalStageLibrary.length + index + 1,
+      isActive: stage.isActive !== false,
+      color: normalizeHexColor(stage.color || fallbackStageColor),
+    }))
+    .sort(
+      (left, right) =>
+        Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0) ||
+        String(left.name || "").localeCompare(String(right.name || ""))
+    );
+
+  return [...normalizedCanonicalStages, ...customStages];
 }
 
 export function getStageDisplayName(stages, stageId, fallbackStageName = "") {
@@ -133,3 +154,4 @@ export function getStagePresentation(stages, stageId, fallbackStageName = "") {
     color: toTextColor(color),
   };
 }
+
