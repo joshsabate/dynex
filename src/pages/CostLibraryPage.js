@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
+import { supabase } from "../lib/supabase";
 import FormField from "../components/FormField";
 import SectionCard from "../components/SectionCard";
 import { applyImportMode, convertCostsToCSV, parseCSV } from "../utils/csvUtils";
@@ -32,6 +33,111 @@ function sortActiveItems(items = []) {
 
 function cleanText(value) {
   return String(value || "").trim();
+}
+
+function mapCostItemToSupabaseRow(cost) {
+  return {
+    id: cost.id || undefined,
+    internal_id: cost.internalId || null,
+    item_name: cost.itemName || "",
+    core_name: cost.coreName || "",
+    item_type: cost.costType || "",
+    work_type: cost.deliveryType || "",
+    item_family: cost.itemFamily || cost.family || "",
+    trade_id: cost.tradeId || null,
+    trade: cost.trade || "",
+    cost_code_id: cost.costCodeId || null,
+    cost_code: cost.costCode || "",
+    specification: cost.specification || cost.spec || "",
+    grade_or_quality: cost.gradeOrQuality || cost.grade || "",
+    finish_or_variant: cost.finishOrVariant || cost.finish || "",
+    brand: cost.brand || "",
+    unit_id: cost.unitId || null,
+    unit: cost.unit || "",
+    unit_cost:
+      cost.rate === "" || cost.rate === null || cost.rate === undefined
+        ? 0
+        : Number(cost.rate),
+    image_url: cost.imageUrl || "",
+    is_active: cost.isActive !== false,
+    internal_note: cost.notes || "",
+    source_link: cost.sourceLink || "",
+    labour_hours_per_unit:
+      cost.labourHoursPerUnit === "" ||
+      cost.labourHoursPerUnit === null ||
+      cost.labourHoursPerUnit === undefined
+        ? null
+        : Number(cost.labourHoursPerUnit),
+    is_taxable: cost.isTaxable ?? true,
+    is_optional: cost.isOptional ?? false,
+    sort_order: cost.sortOrder ?? 0,
+  };
+}
+
+function mapSupabaseRowToCostItem(row) {
+  return {
+    id: row.id ?? "",
+    internalId: row.internal_id ?? "",
+    itemName: row.item_name ?? "",
+    coreName: row.core_name ?? "",
+    costType: row.item_type ?? "",
+    deliveryType: row.work_type ?? "",
+    itemFamily: row.item_family ?? "",
+    family: row.item_family ?? "",
+    tradeId: row.trade_id ?? "",
+    trade: row.trade ?? "",
+    costCodeId: row.cost_code_id ?? "",
+    costCode: row.cost_code ?? "",
+    specification: row.specification ?? "",
+    spec: row.specification ?? "",
+    gradeOrQuality: row.grade_or_quality ?? "",
+    grade: row.grade_or_quality ?? "",
+    finishOrVariant: row.finish_or_variant ?? "",
+    finish: row.finish_or_variant ?? "",
+    brand: row.brand ?? "",
+    unitId: row.unit_id ?? "",
+    unit: row.unit ?? "",
+    rate: row.unit_cost ?? "",
+    imageUrl: row.image_url ?? "",
+    status: row.is_active === false ? "Inactive" : "Active",
+    isActive: row.is_active !== false,
+    notes: row.internal_note ?? "",
+    sourceLink: row.source_link ?? "",
+    labourHoursPerUnit: row.labour_hours_per_unit ?? "",
+    isTaxable: row.is_taxable ?? true,
+    isOptional: row.is_optional ?? false,
+    sortOrder: row.sort_order ?? 0,
+  };
+}
+
+async function saveCostToSupabase(cost) {
+  const payload = mapCostItemToSupabaseRow(cost);
+
+  const { data, error } = await supabase
+    .from("cost_items")
+    .upsert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return mapSupabaseRowToCostItem(data);
+}
+
+async function fetchCostItemsFromSupabase() {
+  const { data, error } = await supabase
+    .from("cost_items")
+    .select("*")
+    .order("sort_order", { ascending: true });
+
+  if (error) {
+    console.error("Supabase load error:", error);
+    return [];
+  }
+
+  return (data ?? []).map(mapSupabaseRowToCostItem);
 }
 
 function createEmptyCostItem(units = []) {
@@ -169,6 +275,18 @@ function CostLibraryPage({
     () => normalizeCosts(costs, { units, trades, costCodes, itemFamilies }),
     [costCodes, costs, itemFamilies, trades, units]
   );
+
+useEffect(() => {
+  async function loadFromSupabase() {
+    const items = await fetchCostItemsFromSupabase();
+
+    if (items.length > 0) {
+      onCostsChange(items);
+    }
+  }
+
+  loadFromSupabase();
+}, [onCostsChange]);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTradeId, setActiveTradeId] = useState("all");
@@ -380,41 +498,65 @@ function CostLibraryPage({
     return errors;
   };
 
-  const saveCost = (event) => {
-    event.preventDefault();
+const saveCost = async (event) => {
+  event.preventDefault();
 
-    const errors = validateDraft();
-    setValidationErrors(errors);
-    if (errors.length) {
-      return;
-    }
+  const errors = validateDraft();
+  setValidationErrors(errors);
+  if (errors.length) {
+    return;
+  }
 
-    ensureFamiliesExist([draft.itemFamily]);
+  const nextCost = {
+    ...draft,
+    id:
+      editorState.mode === "edit" && editorState.costId
+        ? editorState.costId
+        : draft.id,
+    itemName: cleanText(draft.itemName),
+    coreName: cleanText(draft.coreName),
+    costType: cleanText(draft.costType),
+    deliveryType: cleanText(draft.deliveryType),
+    itemFamily: cleanText(draft.itemFamily || draft.family),
+    family: cleanText(draft.family || draft.itemFamily),
+    tradeId: cleanText(draft.tradeId),
+    trade: cleanText(draft.trade),
+    costCodeId: cleanText(draft.costCodeId),
+    costCode: cleanText(draft.costCode),
+    specification: cleanText(draft.specification || draft.spec),
+    spec: cleanText(draft.spec || draft.specification),
+    gradeOrQuality: cleanText(draft.gradeOrQuality || draft.grade),
+    grade: cleanText(draft.grade || draft.gradeOrQuality),
+    finishOrVariant: cleanText(draft.finishOrVariant || draft.finish),
+    finish: cleanText(draft.finish || draft.finishOrVariant),
+    brand: cleanText(draft.brand),
+    unitId: cleanText(draft.unitId),
+    unit: cleanText(draft.unit),
+    rate: draft.rate,
+    imageUrl: cleanText(draft.imageUrl),
+    status: draft.isActive === false ? "Inactive" : "Active",
+    isActive: draft.isActive !== false,
+    notes: cleanText(draft.notes),
+    sourceLink: cleanText(draft.sourceLink),
+  };
 
-    const nextId = draft.id || `cost-${Date.now()}`;
-    const nextCost = normalizeCosts(
-      [
-        {
-          ...draft,
-          id: nextId,
-          internalId:
-            cleanText(draft.internalId) || cleanText(draft.id) || nextId,
-          rate: Number(draft.rate),
-        },
-      ],
-      { units, trades, costCodes, itemFamilies }
-    )[0];
+  try {
+    const savedCost = await saveCostToSupabase(nextCost);
 
     onCostsChange(
       editorState.mode === "edit"
         ? normalizedCosts.map((cost) =>
-            cost.id === editorState.costId ? nextCost : cost
+            cost.id === editorState.costId ? savedCost : cost
           )
-        : [...normalizedCosts, nextCost]
+        : [...normalizedCosts, savedCost]
     );
 
     closeEditor();
-  };
+  } catch (error) {
+    console.error("Failed to save cost to Supabase:", error);
+    window.alert("Failed to save cost item to cloud database.");
+  }
+};
 
   const deleteCost = (costId) => {
     if (typeof window !== "undefined") {
