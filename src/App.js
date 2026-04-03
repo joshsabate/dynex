@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import AssemblyLibraryPage from "./pages/AssemblyLibraryPage";
+import AssemblyLineLibraryPage from "./pages/AssemblyLineLibraryPage";
 import CostLibraryPage from "./pages/CostLibraryPage";
 import CostCodeLibraryPage from "./pages/CostCodeLibraryPage";
 import EstimateWorkspacePage, {
@@ -21,6 +22,7 @@ import TradeLibraryPage from "./pages/TradeLibraryPage";
 import UnitLibraryPage from "./pages/UnitLibraryPage";
 import {
   initialAssemblies,
+  initialAssemblyLineTemplates,
   initialCostCodes,
   initialCosts,
   initialElements,
@@ -71,6 +73,7 @@ const pages = [
   { id: "item-families", label: "Item Family Library", icon: "@", group: "Core Libraries" },
   { id: "room-types", label: "Room Type Library", icon: "⌂", group: "Room Setup" },
   { id: "rooms", label: "Room Library", icon: "▤", group: "Room Setup" },
+  { id: "assembly-lines", label: "Assembly Line Library", icon: "─", group: "Room Setup" },
   { id: "assemblies", label: "Assembly Library", icon: "▦", group: "Room Setup" },
 ];
 
@@ -96,6 +99,7 @@ function getSidebarButtonPriorityClassName(pageId) {
       "parameters",
       "room-types",
       "rooms",
+      "assembly-lines",
       "assemblies",
     ].includes(pageId)
   ) {
@@ -137,6 +141,7 @@ function getDefaultGlobalLibraries() {
 function getDefaultLibraryData() {
   return {
     roomTemplates: initialRooms,
+    assemblyLineTemplates: initialAssemblyLineTemplates,
     assemblies: initialAssemblies,
     costs: initialCosts,
   };
@@ -295,11 +300,14 @@ function loadLibraryData() {
         ...defaultLibraryData,
         ...savedLibraryData,
         roomTemplates: savedLibraryData.roomTemplates || defaultLibraryData.roomTemplates,
+        assemblyLineTemplates:
+          savedLibraryData.assemblyLineTemplates || defaultLibraryData.assemblyLineTemplates,
         assemblies: savedLibraryData.assemblies || defaultLibraryData.assemblies,
         costs: savedLibraryData.costs || defaultLibraryData.costs,
       },
       {
         roomTemplates: "localStorage:library-data",
+        assemblyLineTemplates: "localStorage:library-data",
         assemblies: "localStorage:library-data",
         costs: "localStorage:library-data",
       }
@@ -311,6 +319,7 @@ function loadLibraryData() {
   if (!legacyProjectState) {
     return createLoadResult(defaultLibraryData, {
       roomTemplates: "seed/default",
+      assemblyLineTemplates: "seed/default",
       assemblies: "seed/default",
       costs: "seed/default",
     });
@@ -323,6 +332,8 @@ function loadLibraryData() {
         legacyProjectState.roomTemplates ||
         legacyProjectState.rooms ||
         defaultLibraryData.roomTemplates,
+      assemblyLineTemplates:
+        legacyProjectState.assemblyLineTemplates || defaultLibraryData.assemblyLineTemplates,
       assemblies: legacyProjectState.assemblies || defaultLibraryData.assemblies,
       costs: legacyProjectState.costs || defaultLibraryData.costs,
     },
@@ -331,6 +342,9 @@ function loadLibraryData() {
         legacyProjectState.roomTemplates || legacyProjectState.rooms
           ? "localStorage:legacy-project"
           : "seed/default",
+      assemblyLineTemplates: legacyProjectState.assemblyLineTemplates
+        ? "localStorage:legacy-project"
+        : "seed/default",
       assemblies: legacyProjectState.assemblies ? "localStorage:legacy-project" : "seed/default",
       costs: legacyProjectState.costs ? "localStorage:legacy-project" : "seed/default",
     }
@@ -550,6 +564,9 @@ function normalizeAppState(source = {}) {
       : Array.isArray(source.rooms)
         ? source.rooms
         : defaultLibraryData.roomTemplates,
+    assemblyLineTemplates: Array.isArray(source.assemblyLineTemplates)
+      ? source.assemblyLineTemplates
+      : defaultLibraryData.assemblyLineTemplates,
     assemblies: normalizeAssemblies(
       Array.isArray(source.assemblies) ? source.assemblies : defaultLibraryData.assemblies,
       {
@@ -644,6 +661,7 @@ function splitAppStateForStorage(appState) {
     },
     libraryData: {
       roomTemplates: appState.roomTemplates,
+      assemblyLineTemplates: appState.assemblyLineTemplates,
       assemblies: appState.assemblies,
       costs: appState.costs,
     },
@@ -831,6 +849,9 @@ function App() {
   const [revision, setRevision] = useState(initialProjectState.revision);
   const [revisionNumber, setRevisionNumber] = useState(initialProjectState.revisionNumber);
   const [roomTemplates, setRoomTemplates] = useState(initialProjectState.roomTemplates);
+  const [assemblyLineTemplates, setAssemblyLineTemplates] = useState(
+    initialProjectState.assemblyLineTemplates
+  );
   const [projectRooms, setProjectRooms] = useState(initialProjectState.projectRooms);
   const [estimateSections, setEstimateSections] = useState(initialProjectState.estimateSections);
   const [manualEstimateLines, setManualEstimateLines] = useState(
@@ -883,6 +904,7 @@ function App() {
       revision,
       revisionNumber,
       roomTemplates,
+      assemblyLineTemplates,
       projectRooms,
       estimateSections,
       manualEstimateLines,
@@ -917,6 +939,7 @@ function App() {
       revision,
       revisionNumber,
       roomTemplates,
+      assemblyLineTemplates,
       projectRooms,
       estimateSections,
       manualEstimateLines,
@@ -978,6 +1001,11 @@ function App() {
   useSupabaseCollectionSync({
     items: roomTemplates,
     libraryKey: "roomTemplates",
+    enabled: isSupabaseLibrarySyncEnabled,
+  });
+  useSupabaseCollectionSync({
+    items: assemblyLineTemplates,
+    libraryKey: "assemblyLineTemplates",
     enabled: isSupabaseLibrarySyncEnabled,
   });
   useSupabaseCollectionSync({
@@ -1186,6 +1214,9 @@ function App() {
         if (Array.isArray(libraryState.roomTemplates)) {
           setRoomTemplates(libraryState.roomTemplates);
         }
+        if (Array.isArray(libraryState.assemblyLineTemplates)) {
+          setAssemblyLineTemplates(libraryState.assemblyLineTemplates);
+        }
         if (Array.isArray(libraryState.assemblies)) {
           setAssemblies(libraryState.assemblies);
         }
@@ -1263,6 +1294,7 @@ function App() {
     setRevision(normalizedAppState.revision);
     setRevisionNumber(normalizedAppState.revisionNumber);
     setRoomTemplates(normalizedAppState.roomTemplates);
+    setAssemblyLineTemplates(normalizedAppState.assemblyLineTemplates);
     setProjectRooms(normalizedAppState.projectRooms);
     setEstimateSections(normalizedAppState.estimateSections);
     setManualEstimateLines(normalizedAppState.manualEstimateLines);
@@ -1757,6 +1789,20 @@ function App() {
 
         {activePage === "missing-rates" && <MissingRatesPage rows={estimateRows} />}
 
+        {activePage === "assembly-lines" && (
+          <AssemblyLineLibraryPage
+            assemblyLineTemplates={assemblyLineTemplates}
+            costs={costs}
+            trades={trades}
+            costCodes={costCodes}
+            units={units}
+            roomTypes={roomTypes}
+            elements={elements}
+            parameters={parameters}
+            onAssemblyLineTemplatesChange={setAssemblyLineTemplates}
+          />
+        )}
+
         {activePage === "assemblies" && (
           <AssemblyLibraryPage
             assemblies={assemblies}
@@ -1768,6 +1814,7 @@ function App() {
             itemFamilies={itemFamilies}
             units={units}
             costs={costs}
+            assemblyLineTemplates={assemblyLineTemplates}
             parameters={parameters}
             onAssembliesChange={setAssemblies}
             onCostsChange={setCosts}
@@ -1843,4 +1890,8 @@ function App() {
 }
 
 export default App;
+
+
+
+
 

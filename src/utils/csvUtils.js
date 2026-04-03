@@ -77,6 +77,40 @@ const roomTemplateCsvHeaders = [
   "Notes",
 ];
 
+export const assemblyParentCsvHeaders = [
+  "assembly_key",
+  "assembly_name",
+  "room_type",
+  "assembly_group",
+  "assembly_element",
+  "assembly_scope",
+  "assembly_spec",
+  "image_url",
+  "notes",
+  "sort_order",
+  "is_active",
+];
+
+export const assemblyItemCsvHeaders = [
+  "assembly_key",
+  "line_name",
+  "cost_item_id",
+  "cost_item_name",
+  "quantity_formula",
+  "qty_rule",
+  "waste_factor",
+  "unit_override",
+  "rate_override",
+  "trade_source",
+  "trade_id",
+  "cost_code_source",
+  "cost_code_id",
+  "unit_source",
+  "notes",
+  "sort_order",
+  "is_active",
+];
+
 function escapeCsvValue(value) {
   const normalizedValue = String(value ?? "");
 
@@ -182,6 +216,69 @@ export function convertAssembliesToCSV(assemblies = []) {
   ];
 
   return rows.join("\n");
+}
+
+export function convertAssembliesToParentCsv(assemblies = []) {
+  const normalizedAssemblies = normalizeAssemblies(assemblies);
+
+  return [
+    assemblyParentCsvHeaders.join(","),
+    ...normalizedAssemblies.map((assembly, index) =>
+      [
+        assembly.id || "",
+        assembly.assemblyName || "",
+        assembly.roomType || "",
+        assembly.assemblyGroup || "",
+        assembly.assemblyElement || "",
+        assembly.assemblyScope || "",
+        assembly.assemblySpec || "",
+        assembly.imageUrl || "",
+        assembly.notes || "",
+        assembly.sortOrder ?? index + 1,
+        assembly.isActive === false ? "false" : "true",
+      ]
+        .map(escapeCsvValue)
+        .join(",")
+    ),
+  ].join("\n");
+}
+
+export function convertAssemblyItemsToCsv(assemblies = []) {
+  const normalizedAssemblies = normalizeAssemblies(assemblies);
+
+  return [
+    assemblyItemCsvHeaders.join(","),
+    ...normalizedAssemblies.flatMap((assembly) =>
+      (assembly.items || []).map((item, index) => {
+        const linkedCostId = item.libraryItemId || item.costItemId || "";
+        const linkedTradeId = item.tradeId || "";
+        const linkedCostCodeId = item.costCodeId || "";
+        const linkedUnit = item.unit || "";
+
+        return [
+          assembly.id || "",
+          item.itemNameSnapshot || item.itemName || "",
+          linkedCostId,
+          item.itemNameSnapshot || item.itemName || "",
+          item.quantityFormula || "",
+          item.qtyRule || item.quantityFormula || "",
+          item.wasteFactor ?? "",
+          item.unitOverride || "",
+          item.rateOverride ?? "",
+          linkedTradeId ? "inherit" : "override",
+          linkedTradeId,
+          linkedCostCodeId ? "inherit" : "override",
+          linkedCostCodeId,
+          linkedUnit ? "inherit" : "override",
+          item.notes || "",
+          item.sortOrder ?? index + 1,
+          item.isActive === false ? "false" : "true",
+        ]
+          .map(escapeCsvValue)
+          .join(",");
+      })
+    ),
+  ].join("\n");
 }
 
 export function convertCostsToCSV(costs = []) {

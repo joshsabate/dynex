@@ -10784,3 +10784,122 @@ body[data-canvas-test-mode="true"] .estimate-canvas-layout *::after {
 
 
 
+
+.library-page-assembly-lines {
+  --library-tint-rgb: 185, 156, 110;
+}
+
+.assembly-line-library-form-card {
+  display: grid;
+  gap: 16px;
+}
+
+.assembly-line-library-sections {
+  display: grid;
+  gap: 14px;
+}
+
+.assembly-line-library-section {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(var(--library-tint-rgb), 0.18);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.assembly-line-library-section--inherited {
+  background: linear-gradient(180deg, rgba(var(--library-tint-rgb), 0.1), rgba(255, 255, 255, 0.94));
+  border-color: rgba(var(--library-tint-rgb), 0.28);
+}
+
+.assembly-line-library-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.assembly-line-library-section-header h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.assembly-line-library-section-header p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.assembly-line-library-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.assembly-line-library-override-row,
+.assembly-line-library-mode-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(0, 1.2fr);
+  gap: 12px;
+}
+
+.assembly-line-library-readonly-input {
+  background: rgba(248, 250, 252, 0.9) !important;
+  color: var(--color-text-muted);
+  border-style: dashed !important;
+}
+
+.assembly-line-library-field-note {
+  margin: -2px 0 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.assembly-library-import-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.assembly-library-import-preview-grid div,
+.assembly-library-import-preview-list {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.assembly-library-import-preview-grid strong {
+  font-size: 18px;
+}
+
+.assembly-library-import-preview-grid span,
+.assembly-library-import-preview-list p {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.library-page-assembly-lines .library-form-card .field textarea {
+  width: 100%;
+  border: 1px solid rgba(var(--library-tint-rgb), 0.24);
+  background: rgba(255, 255, 255, 0.94);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 96px;
+}
+
+@media (max-width: 960px) {
+  .assembly-line-library-grid,
+  .assembly-line-library-override-row,
+  .assembly-line-library-mode-row {
+    grid-template-columns: 1fr;
+  }
+}

@@ -271,6 +271,55 @@ const libraryConfigs = {
       };
     },
   },
+  assemblyLineTemplates: {
+    table: "assembly_line_templates",
+    mapItemToRow: (template) => ({
+      id: template.id,
+      name: template.name || "",
+      cost_item_id: template.costItemId || "",
+      cost_item_name_snapshot: template.costItemNameSnapshot || "",
+      default_formula: template.defaultFormula || "",
+      default_qty_rule: template.defaultQtyRule || "",
+      default_waste_factor:
+        template.defaultWasteFactor === "" || template.defaultWasteFactor == null
+          ? null
+          : Number(template.defaultWasteFactor),
+      default_unit: template.defaultUnit || "",
+      default_rate_override:
+        template.defaultRateOverride === "" || template.defaultRateOverride == null
+          ? null
+          : Number(template.defaultRateOverride),
+      trade_id: template.tradeId || "",
+      cost_code_id: template.costCodeId || "",
+      room_type: template.roomType || "",
+      assembly_group: template.assemblyGroup || "",
+      assembly_element: template.assemblyElement || "",
+      assembly_scope: template.assemblyScope || "",
+      notes: template.notes || "",
+      sort_order: Number(template.sortOrder || 0),
+      is_active: template.isActive !== false,
+    }),
+    mapRowToItem: (row) => ({
+      id: row.id ?? "",
+      name: row.name ?? "",
+      costItemId: row.cost_item_id ?? "",
+      costItemNameSnapshot: row.cost_item_name_snapshot ?? "",
+      defaultFormula: row.default_formula ?? "",
+      defaultQtyRule: row.default_qty_rule ?? "",
+      defaultWasteFactor: row.default_waste_factor ?? "",
+      defaultUnit: row.default_unit ?? "",
+      defaultRateOverride: row.default_rate_override ?? "",
+      tradeId: row.trade_id ?? "",
+      costCodeId: row.cost_code_id ?? "",
+      roomType: row.room_type ?? "",
+      assemblyGroup: row.assembly_group ?? "",
+      assemblyElement: row.assembly_element ?? "",
+      assemblyScope: row.assembly_scope ?? "",
+      notes: row.notes ?? "",
+      sortOrder: row.sort_order ?? 0,
+      isActive: row.is_active !== false,
+    }),
+  },
   assemblies: {
     table: "assemblies",
     mapItemToRow: (assembly) => ({
@@ -408,6 +457,7 @@ export async function fetchDynexLibraryState() {
     "itemFamilies",
     "elements",
     "roomTemplates",
+    "assemblyLineTemplates",
     "assemblies",
     "costs",
   ];
@@ -433,3 +483,6 @@ export function getSupabaseLibraryLabel(libraryKey) {
       return cleanText(libraryKey);
   }
 }
+
+
+

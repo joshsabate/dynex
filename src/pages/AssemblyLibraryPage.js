@@ -9,13 +9,18 @@ import {
   saveStoredAssemblyGroupNames,
   unassignedAssemblyGroupName,
 } from "../utils/assemblyGroups";
-import { applyImportMode, convertAssembliesToCSV, parseCSV } from "../utils/csvUtils";
+import {
+  assemblyItemCsvHeaders,
+  assemblyParentCsvHeaders,
+  convertAssembliesToParentCsv,
+  convertAssemblyItemsToCsv,
+  parseCSV,
+} from "../utils/csvUtils";
 import { getStructuredItemPresentation } from "../utils/itemNaming";
 import {
   costTypeOptions,
   deliveryTypeOptions,
   costStatusOptions,
-  findMatchingCost,
   normalizeCosts,
 } from "../utils/costs";
 import {
@@ -23,20 +28,6 @@ import {
   getQuantityFormulaOptions,
   parseQuantityFormula,
 } from "../utils/quantityFormulaOptions";
-
-const assemblyCsvHeaders = [
-  "Assembly Name",
-  "Room Type",
-  "Assembly Group",
-  "Item Name",
-  "Cost Type",
-  "Delivery Type",
-  "Trade",
-  "Cost Code",
-  "Quantity Formula",
-  "Unit",
-  "Unit Cost",
-];
 
 function sortActiveItems(items = []) {
   return [...items]
@@ -260,12 +251,27 @@ function formatCurrencyLabel(value) {
   return `$${numericValue}`;
 }
 
+function normalizeMatchKey(value) {
+  return cleanText(value).toLowerCase().replace(/\s+/g, " ");
+}
+
+function isTruthyCsvBoolean(value, fallback = true) {
+  const normalizedValue = normalizeMatchKey(value);
+
+  if (!normalizedValue) {
+    return fallback;
+  }
+
+  return !["false", "no", "0", "inactive"].includes(normalizedValue);
+}
+
 function AssemblyLibraryPage({
   assemblies,
   roomTypes,
   elements = [],
   units,
   costs,
+  assemblyLineTemplates = [],
   trades,
   costCodes,
   itemFamilies = [],
@@ -274,7 +280,6 @@ function AssemblyLibraryPage({
   onCostsChange = () => {},
   onItemFamiliesChange = () => {},
 }) {
-  const importFileInputRef = useRef(null);
   const activeRoomTypes = useMemo(() => sortActiveItems(roomTypes), [roomTypes]);
   const activeElements = useMemo(() => sortActiveItems(elements), [elements]);
   const activeUnits = useMemo(() => sortActiveItems(units), [units]);
@@ -298,6 +303,15 @@ function AssemblyLibraryPage({
   const costLookupById = useMemo(
     () => new Map(normalizedCosts.map((cost) => [cleanText(cost.id), cost])),
     [normalizedCosts]
+  );
+  const normalizedAssemblyLineTemplates = useMemo(
+    () =>
+      sortActiveItems(assemblyLineTemplates).sort(
+        (left, right) =>
+          Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0) ||
+          cleanText(left.name).localeCompare(cleanText(right.name))
+      ),
+    [assemblyLineTemplates]
   );
   const quantityFormulaOptions = useMemo(
     () => getQuantityFormulaOptions(parameters),
@@ -337,7 +351,15 @@ function AssemblyLibraryPage({
   });
   const [isAdvancedQtyFormulaMode, setIsAdvancedQtyFormulaMode] = useState(false);
   const [csvStatus, setCsvStatus] = useState("");
-  const [importMode, setImportMode] = useState("append");
+  const [csvImportState, setCsvImportState] = useState({
+    isOpen: false,
+    assembliesFile: null,
+    assemblyItemsFile: null,
+    assembliesFileName: "",
+    assemblyItemsFileName: "",
+    preview: null,
+    error: "",
+  });
   const [editorState, setEditorState] = useState({
     isOpen: false,
     mode: "create",
@@ -365,6 +387,13 @@ function AssemblyLibraryPage({
     tradeId: "",
     family: "",
     selectedCostIds: [],
+  });
+  const [assemblyLinePickerState, setAssemblyLinePickerState] = useState({
+    isOpen: false,
+    search: "",
+    roomType: "",
+    assemblyGroup: "",
+    selectedTemplateIds: [],
   });
   const [newCostItemState, setNewCostItemState] = useState({
     isOpen: false,
@@ -486,6 +515,31 @@ function AssemblyLibraryPage({
   const allFilteredPickerCostsSelected =
     filteredPickerCosts.length > 0 &&
     selectedPickerCostIds.length === filteredPickerCosts.length;
+  const filteredAssemblyLineTemplates = useMemo(() => {
+    const search = assemblyLinePickerState.search.trim().toLowerCase();
+
+    return normalizedAssemblyLineTemplates.filter((template) =>
+      (!assemblyLinePickerState.roomType ||
+        cleanText(template.roomType) === cleanText(assemblyLinePickerState.roomType)) &&
+      (!assemblyLinePickerState.assemblyGroup ||
+        cleanText(template.assemblyGroup) === cleanText(assemblyLinePickerState.assemblyGroup)) &&
+      (!search ||
+        [
+          template.name,
+          template.costItemNameSnapshot,
+          template.roomType,
+          template.assemblyGroup,
+          template.assemblyElement,
+          template.assemblyScope,
+        ].some((value) => cleanText(value).toLowerCase().includes(search)))
+    );
+  }, [assemblyLinePickerState.assemblyGroup, assemblyLinePickerState.roomType, assemblyLinePickerState.search, normalizedAssemblyLineTemplates]);
+  const selectedAssemblyLineTemplateIds = filteredAssemblyLineTemplates
+    .map((template) => template.id)
+    .filter((templateId) => assemblyLinePickerState.selectedTemplateIds.includes(templateId));
+  const allFilteredAssemblyLineTemplatesSelected =
+    filteredAssemblyLineTemplates.length > 0 &&
+    selectedAssemblyLineTemplateIds.length === filteredAssemblyLineTemplates.length;
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -512,7 +566,10 @@ function AssemblyLibraryPage({
 
   useEffect(() => {
     if (
-      (!costPickerState.isOpen && !isItemsManagerOpen && !groupManagerState.isOpen) ||
+      (!costPickerState.isOpen &&
+        !assemblyLinePickerState.isOpen &&
+        !isItemsManagerOpen &&
+        !groupManagerState.isOpen) ||
       typeof window === "undefined"
     ) {
       return undefined;
@@ -522,6 +579,14 @@ function AssemblyLibraryPage({
       if (event.key === "Escape") {
         if (costPickerState.isOpen) {
           setCostPickerState((current) => ({ ...current, isOpen: false }));
+          return;
+        }
+        if (assemblyLinePickerState.isOpen) {
+          setAssemblyLinePickerState((current) => ({
+            ...current,
+            isOpen: false,
+            selectedTemplateIds: [],
+          }));
           return;
         }
         if (groupManagerState.isOpen) {
@@ -539,7 +604,7 @@ function AssemblyLibraryPage({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [costPickerState.isOpen, groupManagerState.isOpen, isItemsManagerOpen]);
+  }, [assemblyLinePickerState.isOpen, costPickerState.isOpen, groupManagerState.isOpen, isItemsManagerOpen]);
 
   const readFileAsText = (file) =>
     typeof file?.text === "function"
@@ -560,6 +625,17 @@ function AssemblyLibraryPage({
         cleanText(unit.abbreviation).toLowerCase() === cleanText(value).toLowerCase() ||
         cleanText(unit.name).toLowerCase() === cleanText(value).toLowerCase()
     )?.id || "";
+  const getUnitLabelFromValue = (value) =>
+    activeUnits.find(
+      (unit) =>
+        unit.id === value ||
+        cleanText(unit.abbreviation).toLowerCase() === cleanText(value).toLowerCase() ||
+        cleanText(unit.name).toLowerCase() === cleanText(value).toLowerCase()
+    )?.abbreviation || cleanText(value);
+  const getTradeNameFromId = (tradeId) =>
+    activeTrades.find((trade) => trade.id === tradeId)?.name || "";
+  const getCostCodeNameFromId = (costCodeId) =>
+    activeCostCodes.find((costCode) => costCode.id === costCodeId)?.name || "";
   const getTradeIdFromValue = (value) =>
     activeTrades.find(
       (trade) =>
@@ -666,6 +742,24 @@ function AssemblyLibraryPage({
       ...current,
       isOpen: false,
       selectedCostIds: [],
+    }));
+  };
+
+  const openAssemblyLinePicker = () => {
+    setAssemblyLinePickerState({
+      isOpen: true,
+      search: "",
+      roomType: cleanText(draft.roomType),
+      assemblyGroup: cleanText(draft.assemblyGroup),
+      selectedTemplateIds: [],
+    });
+  };
+
+  const closeAssemblyLinePicker = () => {
+    setAssemblyLinePickerState((current) => ({
+      ...current,
+      isOpen: false,
+      selectedTemplateIds: [],
     }));
   };
 
@@ -899,29 +993,90 @@ function AssemblyLibraryPage({
     setIsItemsManagerOpen(false);
   };
 
+  const buildLinkedAssemblyItem = (cost, overrides = {}, itemIndex = draft.items.length) => ({
+    ...createEmptyAssemblyItem(itemIndex),
+    libraryItemId: overrides.libraryItemId ?? cost.id,
+    costItemId: overrides.costItemId ?? cost.id,
+    itemNameSnapshot: overrides.itemNameSnapshot ?? cost.itemName,
+    itemName: overrides.itemName ?? overrides.itemNameSnapshot ?? cost.itemName,
+    costType: overrides.costType ?? cost.costType,
+    deliveryType: overrides.deliveryType ?? cost.deliveryType,
+    tradeId: overrides.tradeId ?? cost.tradeId,
+    trade: overrides.trade ?? cost.trade,
+    costCodeId: overrides.costCodeId ?? cost.costCodeId,
+    costCode: overrides.costCode ?? cost.costCode,
+    unitId: overrides.unitId ?? cost.unitId,
+    unit: overrides.unit ?? cost.unit,
+    baseRate: overrides.baseRate ?? cost.rate,
+    unitCost: overrides.unitCost ?? cost.rate,
+    quantityFormula: overrides.quantityFormula ?? overrides.qtyRule ?? "",
+    qtyRule: overrides.qtyRule ?? overrides.quantityFormula ?? "",
+    rateOverride: overrides.rateOverride ?? "",
+    notes: overrides.notes ?? "",
+    isCustomItem: overrides.isCustomItem ?? false,
+  });
+
+  const buildAssemblyItemFromTemplate = (template, itemIndex = draft.items.length) => {
+    const linkedCost = costLookupById.get(cleanText(template.costItemId));
+    const resolvedTradeId = cleanText(template.tradeId || linkedCost?.tradeId);
+    const resolvedCostCodeId = cleanText(template.costCodeId || linkedCost?.costCodeId);
+    const resolvedUnitValue = cleanText(template.defaultUnit || linkedCost?.unit || linkedCost?.unitId);
+    const resolvedUnitId = linkedCost?.unitId || getUnitIdFromValue(resolvedUnitValue);
+    const resolvedName =
+      cleanText(template.costItemNameSnapshot) || cleanText(linkedCost?.itemName) || cleanText(template.name);
+    const quantityFormula = cleanText(template.defaultFormula || template.defaultQtyRule);
+
+    if (linkedCost) {
+      return buildLinkedAssemblyItem(
+        linkedCost,
+        {
+          libraryItemId: template.costItemId || linkedCost.id,
+          costItemId: template.costItemId || linkedCost.id,
+          itemNameSnapshot: resolvedName,
+          itemName: resolvedName,
+          tradeId: resolvedTradeId,
+          trade: resolvedTradeId ? getTradeNameFromId(resolvedTradeId) || linkedCost.trade : linkedCost.trade,
+          costCodeId: resolvedCostCodeId,
+          costCode: resolvedCostCodeId
+            ? getCostCodeNameFromId(resolvedCostCodeId) || linkedCost.costCode
+            : linkedCost.costCode,
+          unitId: resolvedUnitId,
+          unit: getUnitLabelFromValue(resolvedUnitId || resolvedUnitValue) || linkedCost.unit,
+          quantityFormula,
+          qtyRule: quantityFormula,
+          rateOverride: template.defaultRateOverride ?? "",
+          notes: cleanText(template.notes),
+        },
+        itemIndex
+      );
+    }
+
+    return {
+      ...createEmptyAssemblyItem(itemIndex),
+      libraryItemId: cleanText(template.costItemId),
+      costItemId: cleanText(template.costItemId),
+      itemNameSnapshot: resolvedName,
+      itemName: resolvedName,
+      tradeId: resolvedTradeId,
+      trade: getTradeNameFromId(resolvedTradeId),
+      costCodeId: resolvedCostCodeId,
+      costCode: getCostCodeNameFromId(resolvedCostCodeId),
+      unitId: resolvedUnitId,
+      unit: getUnitLabelFromValue(resolvedUnitId || resolvedUnitValue),
+      quantityFormula,
+      qtyRule: quantityFormula,
+      rateOverride: template.defaultRateOverride ?? "",
+      notes: cleanText(template.notes),
+      isCustomItem: false,
+    };
+  };
+
   const appendLinkedCostItem = (cost) => {
     if (!cost) {
       return;
     }
 
-    const nextItem = {
-      ...createEmptyAssemblyItem(draft.items.length),
-      libraryItemId: cost.id,
-      costItemId: cost.id,
-      itemNameSnapshot: cost.itemName,
-      itemName: cost.itemName,
-      costType: cost.costType,
-      deliveryType: cost.deliveryType,
-      tradeId: cost.tradeId,
-      trade: cost.trade,
-      costCodeId: cost.costCodeId,
-      costCode: cost.costCode,
-      unitId: cost.unitId,
-      unit: cost.unit,
-      baseRate: cost.rate,
-      unitCost: cost.rate,
-      isCustomItem: false,
-    };
+    const nextItem = buildLinkedAssemblyItem(cost);
 
     setDraft((current) => ({ ...current, items: [...current.items, nextItem] }));
     setEditorState((current) => ({ ...current, activeItemId: nextItem.id }));
@@ -929,15 +1084,6 @@ function AssemblyLibraryPage({
     setIsItemsManagerOpen(true);
   };
 
-  const addLinkedCostItem = (costId) => {
-    const cost = normalizedCosts.find((item) => item.id === costId);
-    if (!cost) {
-      return;
-    }
-
-    appendLinkedCostItem(cost);
-    closeCostPicker();
-  };
 
   const togglePickerCostSelection = (costId) => {
     setCostPickerState((current) => ({
@@ -975,23 +1121,8 @@ function AssemblyLibraryPage({
     }
     const itemSeed = Date.now();
     const nextItems = selectedCosts.map((cost, index) => ({
-          ...createEmptyAssemblyItem(draft.items.length + index),
-          id: `assembly-item-${itemSeed}-${draft.items.length + index}`,
-          libraryItemId: cost.id,
-          costItemId: cost.id,
-          itemNameSnapshot: cost.itemName,
-          itemName: cost.itemName,
-          costType: cost.costType,
-          deliveryType: cost.deliveryType,
-          tradeId: cost.tradeId,
-          trade: cost.trade,
-          costCodeId: cost.costCodeId,
-          costCode: cost.costCode,
-          unitId: cost.unitId,
-          unit: cost.unit,
-          baseRate: cost.rate,
-          unitCost: cost.rate,
-          isCustomItem: false,
+      ...buildLinkedAssemblyItem(cost, {}, draft.items.length + index),
+      id: `assembly-item-${itemSeed}-${draft.items.length + index}`,
     }));
 
     setDraft((current) => ({
@@ -1003,6 +1134,62 @@ function AssemblyLibraryPage({
       activeItemId: nextItems[0]?.id || current.activeItemId,
     }));
     closeCostPicker();
+  };
+
+  const toggleAssemblyLineTemplateSelection = (templateId) => {
+    setAssemblyLinePickerState((current) => ({
+      ...current,
+      selectedTemplateIds: current.selectedTemplateIds.includes(templateId)
+        ? current.selectedTemplateIds.filter((selectedId) => selectedId !== templateId)
+        : [...current.selectedTemplateIds, templateId],
+    }));
+  };
+
+  const toggleSelectAllAssemblyLineTemplates = () => {
+    setAssemblyLinePickerState((current) => ({
+      ...current,
+      selectedTemplateIds: allFilteredAssemblyLineTemplatesSelected
+        ? current.selectedTemplateIds.filter(
+            (templateId) => !filteredAssemblyLineTemplates.some((template) => template.id === templateId)
+          )
+        : [
+            ...new Set([
+              ...current.selectedTemplateIds,
+              ...filteredAssemblyLineTemplates.map((template) => template.id),
+            ]),
+          ],
+    }));
+  };
+
+  const addSelectedAssemblyLineTemplates = () => {
+    if (!assemblyLinePickerState.selectedTemplateIds.length) {
+      return;
+    }
+
+    const selectedTemplates = normalizedAssemblyLineTemplates.filter((template) =>
+      assemblyLinePickerState.selectedTemplateIds.includes(template.id)
+    );
+    if (!selectedTemplates.length) {
+      return;
+    }
+
+    const itemSeed = Date.now();
+    const nextItems = selectedTemplates.map((template, index) => ({
+      ...buildAssemblyItemFromTemplate(template, draft.items.length + index),
+      id: `assembly-item-${itemSeed}-${draft.items.length + index}`,
+    }));
+
+    setDraft((current) => ({
+      ...current,
+      items: [...current.items, ...nextItems],
+    }));
+    setEditorState((current) => ({
+      ...current,
+      activeItemId: nextItems[0]?.id || current.activeItemId,
+    }));
+    setSelectedItemIds([]);
+    setIsItemsManagerOpen(true);
+    closeAssemblyLinePicker();
   };
 
   const addCustomItem = () => {
@@ -1719,174 +1906,336 @@ function AssemblyLibraryPage({
     removeItemRow(selectedItemIds);
   };
 
+  const openCsvImport = () => {
+    setCsvImportState({
+      isOpen: true,
+      assembliesFile: null,
+      assemblyItemsFile: null,
+      assembliesFileName: "",
+      assemblyItemsFileName: "",
+      preview: null,
+      error: "",
+    });
+  };
+
+  const closeCsvImport = () => {
+    setCsvImportState({
+      isOpen: false,
+      assembliesFile: null,
+      assemblyItemsFile: null,
+      assembliesFileName: "",
+      assemblyItemsFileName: "",
+      preview: null,
+      error: "",
+    });
+  };
+
   const exportAssembliesAsCsv = () => {
     if (typeof window === "undefined") {
       return;
     }
-    const csvText = convertAssembliesToCSV(normalizedAssemblies);
-    const csvBlob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
-    const downloadUrl = window.URL.createObjectURL(csvBlob);
-    const link = document.createElement("a");
-    link.href = downloadUrl;
-    link.download = "assemblies-export.csv";
-    link.click();
-    window.URL.revokeObjectURL(downloadUrl);
+
+    const downloadCsvFile = (fileName, csvText) => {
+      const csvBlob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
+      const downloadUrl = window.URL.createObjectURL(csvBlob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = fileName;
+      link.click();
+      window.URL.revokeObjectURL(downloadUrl);
+    };
+
+    downloadCsvFile("assemblies.csv", convertAssembliesToParentCsv(normalizedAssemblies));
+    downloadCsvFile("assembly_items.csv", convertAssemblyItemsToCsv(normalizedAssemblies));
     setCsvStatus(
-      `Exported ${normalizedAssemblies.reduce(
-        (total, assembly) => total + assembly.items.length,
+      `Exported ${normalizedAssemblies.length} assemblies and ${normalizedAssemblies.reduce(
+        (total, assembly) => total + (assembly.items || []).length,
         0
-      )} assembly rows.`
+      )} assembly items.`
     );
   };
 
-  const importAssembliesFromCsv = async (file) => {
-    if (!file) {
-      return;
-    }
+  const buildAssemblyCsvImportPreview = (parentText, itemText) => {
     try {
-      const csvText = await readFileAsText(file);
-      const parsedRows = parseCSV(csvText);
-      const parsedHeaders = Object.keys(parsedRows[0] || {});
-      const missingHeaders = assemblyCsvHeaders.filter(
-        (header) => !parsedHeaders.includes(header)
+      const parentRows = parseCSV(parentText);
+      const itemRows = parseCSV(itemText);
+      const parentHeaders = Object.keys(parentRows[0] || {});
+      const itemHeaders = Object.keys(itemRows[0] || {});
+      const missingParentHeaders = assemblyParentCsvHeaders.filter(
+        (header) => !parentHeaders.includes(header)
       );
-      if (missingHeaders.length) {
-        setCsvStatus(
-          `Unable to import CSV. Missing required columns: ${missingHeaders.join(
-            ", "
-          )}.`
-        );
-        return;
+      const missingItemHeaders = assemblyItemCsvHeaders.filter(
+        (header) => !itemHeaders.includes(header)
+      );
+
+      if (missingParentHeaders.length || missingItemHeaders.length) {
+        return {
+          error: [
+            missingParentHeaders.length
+              ? `assemblies.csv missing: ${missingParentHeaders.join(", ")}`
+              : "",
+            missingItemHeaders.length
+              ? `assembly_items.csv missing: ${missingItemHeaders.join(", ")}`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(". "),
+        };
       }
 
-      const groups = new Map();
-      let skippedRows = 0;
-      parsedRows.forEach((row) => {
-        const assemblyName = cleanText(row["Assembly Name"]);
-        const roomType = cleanText(row["Room Type"]);
-        const assemblyGroup = cleanText(row["Assembly Group"]);
-        const itemName = cleanText(row["Item Name"]);
-        const costType = cleanText(row["Cost Type"]);
-        const deliveryType = cleanText(row["Delivery Type"]);
-        const trade = cleanText(row.Trade);
-        const costCode = cleanText(row["Cost Code"]);
-        const quantityFormula = cleanText(row["Quantity Formula"]);
-          const unit = cleanText(row.Unit);
-          const unitCost = Number(cleanText(row["Unit Cost"]));
-          const notes = cleanText(row.Notes);
+      const existingAssemblyMap = new Map(
+        normalizedAssemblies.map((assembly) => [cleanText(assembly.id), assembly])
+      );
+      const costNameLookup = new Map(
+        normalizedCosts.map((cost) => [normalizeMatchKey(cost.itemName), cost])
+      );
+      const parentAssembliesByKey = new Map();
+      const duplicateParentKeys = new Set();
+      let missingAssemblyKey = 0;
 
-        if (
-          !assemblyName ||
-          !roomType ||
-          !assemblyGroup ||
-          !itemName ||
-          !costTypeOptions.includes(costType) ||
-          !deliveryTypeOptions.includes(deliveryType) ||
-          !trade ||
-          !costCode ||
-          !quantityFormula ||
-          !unit ||
-          !Number.isFinite(unitCost)
-        ) {
-          skippedRows += 1;
+      parentRows.forEach((row) => {
+        const assemblyKey = cleanText(row.assembly_key);
+        if (!assemblyKey) {
+          missingAssemblyKey += 1;
+          return;
+        }
+        if (parentAssembliesByKey.has(assemblyKey)) {
+          duplicateParentKeys.add(assemblyKey);
           return;
         }
 
+        const roomTypeValue = cleanText(row.room_type);
         const roomTypeRecord =
-          activeRoomTypes.find((record) => record.name === roomType || record.id === roomType) ||
-          null;
-        const matchedCost = findMatchingCost(
-          normalizedCosts,
-          itemName,
-          getUnitIdFromValue(unit),
-          unit
-        );
-        const key = `${assemblyName}::${roomType}::${assemblyGroup}`;
+          activeRoomTypes.find(
+            (record) => record.id === roomTypeValue || record.name === roomTypeValue
+          ) || null;
+        const assemblyGroupValue =
+          cleanText(row.assembly_group) || unassignedAssemblyGroupName;
 
-        if (!groups.has(key)) {
-          groups.set(key, {
-            id: createAssemblyId({
-              assemblyName,
-              roomTypeId: roomTypeRecord?.id || "",
-              roomType,
-              assemblyGroup,
-            }),
-            assemblyName,
-            roomTypeId: roomTypeRecord?.id || "",
-            roomType,
-            appliesToRoomTypeId: roomTypeRecord?.id || "",
-            appliesToRoomType: roomType,
-            assemblyGroup,
-            assemblyCategory: assemblyGroup,
-            notes: "",
-            items: [],
+        parentAssembliesByKey.set(assemblyKey, {
+          id: assemblyKey,
+          assemblyName:
+            cleanText(row.assembly_name) ||
+            buildAssemblyName(row.assembly_element, row.assembly_scope, row.assembly_spec),
+          roomTypeId: roomTypeRecord?.id || "",
+          roomType: roomTypeRecord?.name || roomTypeValue,
+          appliesToRoomTypeId: roomTypeRecord?.id || "",
+          appliesToRoomType: roomTypeRecord?.name || roomTypeValue,
+          assemblyGroup: assemblyGroupValue,
+          assemblyCategory: assemblyGroupValue,
+          assemblyElement: cleanText(row.assembly_element),
+          assemblyScope: cleanText(row.assembly_scope),
+          assemblySpec: cleanText(row.assembly_spec),
+          imageUrl: cleanText(row.image_url),
+          notes: cleanText(row.notes),
+          sortOrder: Number(cleanText(row.sort_order) || 0),
+          isActive: isTruthyCsvBoolean(row.is_active, true),
+          items: [],
+        });
+      });
+
+      const invalidParentKeySet = new Set(duplicateParentKeys);
+      const unresolvedCostItems = [];
+      const childRowsByAssemblyKey = new Map();
+      let childMissingAssemblyKey = 0;
+      let childRowsMissingParent = 0;
+      let childItemsToCreate = 0;
+
+      itemRows.forEach((row, index) => {
+        const assemblyKey = cleanText(row.assembly_key);
+        if (!assemblyKey) {
+          childMissingAssemblyKey += 1;
+          return;
+        }
+        if (invalidParentKeySet.has(assemblyKey)) {
+          childRowsMissingParent += 1;
+          return;
+        }
+
+        const parentAssembly =
+          parentAssembliesByKey.get(assemblyKey) || existingAssemblyMap.get(assemblyKey);
+        if (!parentAssembly) {
+          childRowsMissingParent += 1;
+          return;
+        }
+
+        const costItemId = cleanText(row.cost_item_id);
+        const costItemName = cleanText(row.cost_item_name);
+        const matchedCost =
+          normalizedCosts.find((cost) => cleanText(cost.id) === costItemId) ||
+          costNameLookup.get(normalizeMatchKey(costItemName)) ||
+          null;
+
+        if (!matchedCost) {
+          unresolvedCostItems.push({
+            assemblyKey,
+            lineName: cleanText(row.line_name) || costItemName || `Row ${index + 1}`,
+            costItemId,
+            costItemName,
           });
         }
 
-        const group = groups.get(key);
-        group.items.push({
-          id: `${group.id}-item-${group.items.length + 1}`,
-          libraryItemId: matchedCost?.id || "",
-          itemNameSnapshot: itemName,
-          itemName,
-          costType,
-          deliveryType,
-          tradeId: matchedCost?.tradeId || getTradeIdFromValue(trade),
-          trade: matchedCost?.trade || trade,
-          costCodeId: matchedCost?.costCodeId || getCostCodeIdFromValue(costCode),
-          costCode: matchedCost?.costCode || costCode,
-          quantityFormula,
-          qtyRule: quantityFormula,
-          unitId: matchedCost?.unitId || getUnitIdFromValue(unit),
-          unit: matchedCost?.unit || unit,
-          baseRate: unitCost,
-          unitCost,
-          rateOverride: "",
-            notes: "",
-            isCustomItem: !matchedCost,
-          });
-          if (notes && !group.notes) {
-            group.notes = notes;
-          }
-        });
+        if (!childRowsByAssemblyKey.has(assemblyKey)) {
+          childRowsByAssemblyKey.set(assemblyKey, []);
+        }
 
-      const nextAssemblies = normalizeAssemblies(Array.from(groups.values()), {
+        const tradeSource = normalizeMatchKey(row.trade_source) || "inherit";
+        const costCodeSource = normalizeMatchKey(row.cost_code_source) || "inherit";
+        const unitSource = normalizeMatchKey(row.unit_source) || "inherit";
+        const resolvedTradeId =
+          tradeSource === "override"
+            ? getTradeIdFromValue(row.trade_id)
+            : matchedCost?.tradeId || getTradeIdFromValue(row.trade_id);
+        const resolvedCostCodeId =
+          costCodeSource === "override"
+            ? getCostCodeIdFromValue(row.cost_code_id)
+            : matchedCost?.costCodeId || getCostCodeIdFromValue(row.cost_code_id);
+        const resolvedUnitValue =
+          unitSource === "override"
+            ? cleanText(row.unit_override)
+            : matchedCost?.unit || cleanText(row.unit_override);
+        const resolvedUnitId = getUnitIdFromValue(resolvedUnitValue || matchedCost?.unitId);
+
+        childRowsByAssemblyKey.get(assemblyKey).push({
+          id: `${assemblyKey}-item-${index + 1}`,
+          libraryItemId: matchedCost?.id || costItemId,
+          costItemId: matchedCost?.id || costItemId,
+          itemNameSnapshot:
+            cleanText(row.line_name) || costItemName || matchedCost?.itemName || "",
+          itemName:
+            cleanText(row.line_name) || costItemName || matchedCost?.itemName || "",
+          costType: matchedCost?.costType || "",
+          deliveryType: matchedCost?.deliveryType || "",
+          tradeId: resolvedTradeId,
+          trade:
+            (tradeSource === "override" ? "" : matchedCost?.trade) ||
+            activeTrades.find((trade) => trade.id === resolvedTradeId)?.name ||
+            cleanText(row.trade_id),
+          costCodeId: resolvedCostCodeId,
+          costCode:
+            (costCodeSource === "override" ? "" : matchedCost?.costCode) ||
+            activeCostCodes.find((costCode) => costCode.id === resolvedCostCodeId)?.name ||
+            cleanText(row.cost_code_id),
+          quantityFormula: cleanText(row.quantity_formula),
+          qtyRule: cleanText(row.qty_rule) || cleanText(row.quantity_formula),
+          wasteFactor: cleanText(row.waste_factor),
+          unitId: resolvedUnitId,
+          unit: resolvedUnitValue || matchedCost?.unit || "",
+          unitOverride: unitSource === "override" ? cleanText(row.unit_override) : "",
+          baseRate: matchedCost?.rate ?? "",
+          unitCost: matchedCost?.rate ?? "",
+          rateOverride: cleanText(row.rate_override),
+          tradeSource,
+          costCodeSource,
+          unitSource,
+          notes: cleanText(row.notes),
+          sortOrder: Number(cleanText(row.sort_order) || childRowsByAssemblyKey.get(assemblyKey).length + 1),
+          isActive: isTruthyCsvBoolean(row.is_active, true),
+          isCustomItem: !matchedCost,
+        });
+        childItemsToCreate += 1;
+      });
+
+      const assembliesToCreate = [...parentAssembliesByKey.keys()].filter(
+        (assemblyKey) => !existingAssemblyMap.has(assemblyKey)
+      ).length;
+      const assembliesToUpdate = [...parentAssembliesByKey.keys()].filter((assemblyKey) =>
+        existingAssemblyMap.has(assemblyKey)
+      ).length;
+
+      return {
+        error: "",
+        parentAssembliesByKey,
+        childRowsByAssemblyKey,
+        unresolvedCostItems,
+        counts: {
+          assembliesToCreate,
+          assembliesToUpdate,
+          childItemsToCreate,
+          missingAssemblyKey: missingAssemblyKey + childMissingAssemblyKey,
+          duplicateAssemblyKey: duplicateParentKeys.size,
+          unresolvedCostItems: unresolvedCostItems.length,
+          childRowsMissingParent,
+        },
+      };
+    } catch (error) {
+      return {
+        error: "Unable to parse the selected CSV files.",
+      };
+    }
+  };
+
+  const previewAssemblyCsvImport = async (assembliesFile, assemblyItemsFile) => {
+    if (!assembliesFile || !assemblyItemsFile) {
+      setCsvImportState((current) => ({
+        ...current,
+        error: "Choose both assemblies.csv and assembly_items.csv.",
+        preview: null,
+      }));
+      return;
+    }
+
+    const [parentText, itemText] = await Promise.all([
+      readFileAsText(assembliesFile),
+      readFileAsText(assemblyItemsFile),
+    ]);
+    const preview = buildAssemblyCsvImportPreview(parentText, itemText);
+
+    setCsvImportState((current) => ({
+      ...current,
+      assembliesFile,
+      assemblyItemsFile,
+      assembliesFileName: assembliesFile.name,
+      assemblyItemsFileName: assemblyItemsFile.name,
+      preview: preview.error ? null : preview,
+      error: preview.error || "",
+    }));
+  };
+
+  const applyAssemblyCsvImport = () => {
+    if (!csvImportState.preview) {
+      return;
+    }
+
+    const { parentAssembliesByKey, childRowsByAssemblyKey, counts } = csvImportState.preview;
+    const assemblyKeysToReplaceItems = new Set([
+      ...parentAssembliesByKey.keys(),
+      ...childRowsByAssemblyKey.keys(),
+    ]);
+    const existingAssembliesByKey = new Map(
+      normalizedAssemblies.map((assembly) => [cleanText(assembly.id), assembly])
+    );
+
+    const nextAssemblies = normalizeAssemblies(
+      [
+        ...normalizedAssemblies
+          .filter((assembly) => !parentAssembliesByKey.has(cleanText(assembly.id)))
+          .map((assembly) => ({
+            ...assembly,
+            items: assemblyKeysToReplaceItems.has(cleanText(assembly.id))
+              ? childRowsByAssemblyKey.get(cleanText(assembly.id)) || []
+              : assembly.items,
+          })),
+        ...[...parentAssembliesByKey.entries()].map(([assemblyKey, assembly]) => ({
+          ...(existingAssembliesByKey.get(assemblyKey) || {}),
+          ...assembly,
+          id: assemblyKey,
+          items: childRowsByAssemblyKey.get(assemblyKey) || [],
+        })),
+      ],
+      {
         units,
         costs: normalizedCosts,
         trades,
         costCodes,
-      });
-      if (!nextAssemblies.length) {
-        setCsvStatus("Unable to import CSV. No valid assembly rows were found.");
-        return;
       }
-        const mergeResult = applyImportMode({
-          existingItems: normalizedAssemblies,
-          importedItems: nextAssemblies,
-          mode: importMode,
-          getMatchKey: (existing, incoming) =>
-            (cleanText(existing.id) && cleanText(existing.id) === cleanText(incoming.id)) ||
-            (cleanText(existing.assemblyName) === cleanText(incoming.assemblyName) &&
-              cleanText(existing.roomType) === cleanText(incoming.roomType) &&
-              cleanText(existing.assemblyGroup) === cleanText(incoming.assemblyGroup)),
-          shouldConfirmOverride: () =>
-            typeof window === "undefined" ||
-            window.confirm("Override all existing Assembly Library items with the imported CSV?"),
-        });
+    );
 
-        if (!mergeResult) {
-          return;
-        }
-
-        onAssembliesChange(mergeResult.items);
-        setCsvStatus(
-          `${mergeResult.summary.added} added, ${mergeResult.summary.replaced} replaced, ${
-            skippedRows + mergeResult.summary.skipped
-          } skipped.`
-        );
-    } catch (error) {
-      setCsvStatus("Unable to import CSV. Please choose a valid CSV file.");
-    }
+    onAssembliesChange(nextAssemblies);
+    setCsvStatus(
+      `${counts.assembliesToCreate} assemblies created, ${counts.assembliesToUpdate} assemblies updated, ${counts.childItemsToCreate} child items imported.`
+    );
+    closeCsvImport();
   };
 
   const namingGuidance =
@@ -1895,6 +2244,11 @@ function AssemblyLibraryPage({
       : "";
   const selectedAssemblyGroupLabel = draft.assemblyGroup || "No group selected";
   const selectedAssemblyGroupFilterLabel = assemblyGroupFilter || "All groups";
+  const csvImportHasBlockingIssues =
+    Boolean(csvImportState.error) ||
+    (csvImportState.preview?.counts.missingAssemblyKey || 0) > 0 ||
+    (csvImportState.preview?.counts.duplicateAssemblyKey || 0) > 0 ||
+    (csvImportState.preview?.counts.childRowsMissingParent || 0) > 0;
 
   return (
     <SectionCard
@@ -2029,30 +2383,11 @@ function AssemblyLibraryPage({
                 <button
                   type="button"
                   className="secondary-button"
-                  onClick={() => importFileInputRef.current?.click()}
+                  onClick={openCsvImport}
                 >
                   Import CSV
                 </button>
-                <FormField label="Import mode">
-                  <select value={importMode} onChange={(event) => setImportMode(event.target.value)}>
-                    <option value="append">Append</option>
-                    <option value="override">Override All</option>
-                    <option value="replace">Replace Duplicates</option>
-                  </select>
-                </FormField>
               </div>
-              <input
-                ref={importFileInputRef}
-                type="file"
-                accept=".csv,text/csv"
-                aria-label="Import Assembly CSV"
-                style={{ display: "none" }}
-                onChange={(event) => {
-                  const [file] = event.target.files || [];
-                  importAssembliesFromCsv(file);
-                  event.target.value = "";
-                }}
-              />
             </div>
 
             {csvStatus ? <p className="assembly-library-status">{csvStatus}</p> : null}
@@ -2187,6 +2522,130 @@ function AssemblyLibraryPage({
             )}
           </div>
         </div>
+        {csvImportState.isOpen ? (
+          <div
+            className="assembly-library-picker-backdrop"
+            onClick={closeCsvImport}
+          >
+            <div
+              className="assembly-library-picker-modal"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="assembly-library-picker-header">
+                <div>
+                  <p className="room-template-editor-kicker">Assembly CSV Import</p>
+                  <h3>Import Assemblies</h3>
+                </div>
+                <div className="action-row">
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() =>
+                      previewAssemblyCsvImport(
+                        csvImportState.assembliesFile,
+                        csvImportState.assemblyItemsFile
+                      )
+                    }
+                  >
+                    Preview Import
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={closeCsvImport}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+
+              <div className="assembly-library-picker-filters">
+                <FormField label="assemblies.csv">
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    aria-label="assemblies.csv"
+                    onChange={(event) => {
+                      const [file] = Array.from(event.target.files || []);
+                      setCsvImportState((current) => ({
+                        ...current,
+                        assembliesFile: file || null,
+                        assembliesFileName: file?.name || "",
+                        preview: null,
+                        error: "",
+                      }));
+                    }}
+                  />
+                </FormField>
+                <FormField label="assembly_items.csv">
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    aria-label="assembly_items.csv"
+                    onChange={(event) => {
+                      const [file] = Array.from(event.target.files || []);
+                      setCsvImportState((current) => ({
+                        ...current,
+                        assemblyItemsFile: file || null,
+                        assemblyItemsFileName: file?.name || "",
+                        preview: null,
+                        error: "",
+                      }));
+                    }}
+                  />
+                </FormField>
+              </div>
+
+              {csvImportState.error ? (
+                <div className="summary-section room-template-compact-section assembly-library-validation">
+                  <p>{csvImportState.error}</p>
+                </div>
+              ) : null}
+
+              {csvImportState.preview ? (
+                <div className="summary-section room-template-compact-section">
+                  <h3>Validation Preview</h3>
+                  <div className="assembly-library-import-preview-grid">
+                    <div><strong>{csvImportState.preview.counts.assembliesToCreate}</strong><span>assemblies to create</span></div>
+                    <div><strong>{csvImportState.preview.counts.assembliesToUpdate}</strong><span>assemblies to update</span></div>
+                    <div><strong>{csvImportState.preview.counts.childItemsToCreate}</strong><span>child items to create</span></div>
+                    <div><strong>{csvImportState.preview.counts.missingAssemblyKey}</strong><span>missing assembly_key</span></div>
+                    <div><strong>{csvImportState.preview.counts.duplicateAssemblyKey}</strong><span>duplicate assembly_key</span></div>
+                    <div><strong>{csvImportState.preview.counts.unresolvedCostItems}</strong><span>unresolved cost items</span></div>
+                    <div><strong>{csvImportState.preview.counts.childRowsMissingParent}</strong><span>child rows with missing parent</span></div>
+                  </div>
+                  {csvImportState.preview.unresolvedCostItems.length ? (
+                    <div className="assembly-library-import-preview-list">
+                      <strong>Unresolved cost items</strong>
+                      {csvImportState.preview.unresolvedCostItems.slice(0, 5).map((item) => (
+                        <p key={`${item.assemblyKey}-${item.lineName}`}>
+                          {item.assemblyKey}: {item.lineName}
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="assembly-library-form-actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={closeCsvImport}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={csvImportHasBlockingIssues}
+                      onClick={applyAssemblyCsvImport}
+                    >
+                      Apply Import
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         <div className="assembly-library-editor">
           {editorState.isOpen ? (
             <form className="assembly-editor-panel" onSubmit={saveAssembly}>
@@ -2617,6 +3076,9 @@ function AssemblyLibraryPage({
                 <div className="action-row assembly-library-inline-actions">
                   <button type="button" className="primary-button" onClick={openCostPicker}>
                     Add from Cost Library
+                  </button>
+                  <button type="button" className="secondary-button" onClick={openAssemblyLinePicker}>
+                    Add from Assembly Line Library
                   </button>
                   <button
                     type="button"
@@ -3433,6 +3895,150 @@ function AssemblyLibraryPage({
           </div>
         </div>
       ) : null}
+      {assemblyLinePickerState.isOpen ? (
+        <div className="assembly-library-picker-backdrop" onClick={closeAssemblyLinePicker}>
+          <div
+            className="assembly-library-picker-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="assembly-library-picker-header">
+              <div>
+                <p className="room-template-editor-kicker">Assembly Line Library Picker</p>
+                <h3>Add from Assembly Line Library</h3>
+              </div>
+              <div className="action-row">
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={addSelectedAssemblyLineTemplates}
+                  disabled={!assemblyLinePickerState.selectedTemplateIds.length}
+                >
+                  Add Selected
+                  {assemblyLinePickerState.selectedTemplateIds.length
+                    ? ` (${assemblyLinePickerState.selectedTemplateIds.length})`
+                    : ""}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={closeAssemblyLinePicker}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="assembly-library-picker-filters">
+              <FormField label="Search">
+                <input
+                  autoFocus
+                  value={assemblyLinePickerState.search}
+                  onChange={(event) =>
+                    setAssemblyLinePickerState((current) => ({
+                      ...current,
+                      search: event.target.value,
+                    }))
+                  }
+                  placeholder="Search assembly line templates"
+                />
+              </FormField>
+              <FormField label="Room Type">
+                <select
+                  value={assemblyLinePickerState.roomType}
+                  onChange={(event) =>
+                    setAssemblyLinePickerState((current) => ({
+                      ...current,
+                      roomType: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">All</option>
+                  {activeRoomTypes.map((roomType) => (
+                    <option key={roomType.id} value={roomType.name}>
+                      {roomType.name}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+              <FormField label="Assembly Group">
+                <select
+                  value={assemblyLinePickerState.assemblyGroup}
+                  onChange={(event) =>
+                    setAssemblyLinePickerState((current) => ({
+                      ...current,
+                      assemblyGroup: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">All</option>
+                  {assemblyGroupOptions.map((groupName) => (
+                    <option key={groupName} value={groupName}>
+                      {groupName}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+            </div>
+            <div className="assembly-library-picker-toolbar">
+              <label className="assembly-library-select-all">
+                <input
+                  type="checkbox"
+                  checked={allFilteredAssemblyLineTemplatesSelected}
+                  aria-label="Select all visible assembly line templates"
+                  onChange={toggleSelectAllAssemblyLineTemplates}
+                />
+                <span>Select all</span>
+              </label>
+              <span className="assembly-library-items-bulk-count">
+                {assemblyLinePickerState.selectedTemplateIds.length} selected
+              </span>
+            </div>
+
+            <div className="assembly-library-picker-results">
+              {filteredAssemblyLineTemplates.length ? (
+                filteredAssemblyLineTemplates.map((template) => {
+                  const isSelected = assemblyLinePickerState.selectedTemplateIds.includes(template.id);
+                  const templateSummary = [
+                    template.defaultFormula || template.defaultQtyRule,
+                    template.defaultUnit,
+                    getTradeLabel(getTradeNameFromId(template.tradeId)),
+                  ]
+                    .filter(Boolean)
+                    .join("  ");
+
+                  return (
+                    <button
+                      key={template.id}
+                      type="button"
+                      className={`assembly-library-picker-row${isSelected ? " is-selected" : ""}`}
+                      onClick={() => toggleAssemblyLineTemplateSelection(template.id)}
+                    >
+                      <span className="assembly-library-picker-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          aria-label={`Select ${template.name}`}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={() => toggleAssemblyLineTemplateSelection(template.id)}
+                        />
+                      </span>
+                      <span className="assembly-library-picker-primary">
+                        {template.name || template.costItemNameSnapshot || "Untitled template"}
+                      </span>
+                      <span className="assembly-library-picker-meta">
+                        {template.costItemNameSnapshot || "No cost item"}
+                        {templateSummary ? `  ${templateSummary}` : ""}
+                      </span>
+                    </button>
+                  );
+                })
+              ) : (
+                <p className="empty-state">No assembly line templates match the current search.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
       {costPickerState.isOpen ? (
         <div
           className="assembly-library-picker-backdrop"
@@ -3577,3 +4183,10 @@ function AssemblyLibraryPage({
 }
 
 export default AssemblyLibraryPage;
+
+
+
+
+
+
+

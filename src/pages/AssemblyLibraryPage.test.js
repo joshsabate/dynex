@@ -1,7 +1,10 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import AssemblyLibraryPage from "./AssemblyLibraryPage";
-import { convertAssembliesToCSV } from "../utils/csvUtils";
+import {
+  convertAssembliesToParentCsv,
+  convertAssemblyItemsToCsv,
+} from "../utils/csvUtils";
 
 const roomTypes = [
   { id: "room-type-bathroom", name: "Bathroom", sortOrder: 1, isActive: true },
@@ -89,6 +92,7 @@ function renderPage(overrides = {}) {
       costCodes={costCodes}
       itemFamilies={overrides.itemFamilies || itemFamilies}
       costs={overrides.costs || costs}
+      assemblyLineTemplates={overrides.assemblyLineTemplates || []}
       parameters={overrides.parameters || parameters}
       onAssembliesChange={onAssembliesChange}
       onCostsChange={onCostsChange}
@@ -98,14 +102,19 @@ function renderPage(overrides = {}) {
   return { onAssembliesChange, onCostsChange, onItemFamiliesChange };
 }
 
-test("builds dynex assembly csv rows with classification fields", () => {
-  const csvText = convertAssembliesToCSV(assemblies);
+test("exports assembly parent and child csv files with the 2-file format", () => {
+  const parentCsv = convertAssembliesToParentCsv(assemblies);
+  const itemCsv = convertAssemblyItemsToCsv(assemblies);
 
-  expect(csvText).toContain(
-    "Assembly Name,Room Type,Assembly Group,Item Name,Cost Type,Delivery Type,Trade,Cost Code,Quantity Formula,Unit,Unit Cost"
+  expect(parentCsv).toContain(
+    "assembly_key,assembly_name,room_type,assembly_group,assembly_element,assembly_scope,assembly_spec,image_url,notes,sort_order,is_active"
   );
-  expect(csvText).toContain(
-    "Wall  Villaboard Lining,Bathroom,Walls & Linings,Villaboard Sheets,MTL,Supply,General,S10,villaboardArea,SQM,22"
+  expect(parentCsv).toContain("assembly-1,Wall  Villaboard Lining,Bathroom,Walls & Linings");
+  expect(itemCsv).toContain(
+    "assembly_key,line_name,cost_item_id,cost_item_name,quantity_formula,qty_rule,waste_factor,unit_override,rate_override,trade_source,trade_id,cost_code_source,cost_code_id,unit_source,notes,sort_order,is_active"
+  );
+  expect(itemCsv).toContain(
+    "assembly-1,Villaboard Sheets,cost-1,Villaboard Sheets,villaboardArea,villaboardArea"
   );
 });
 
@@ -126,39 +135,78 @@ test("requires linked or custom assembly items to include the new classification
   expect(screen.getByText(/cost item 1: trade is required\./i)).toBeInTheDocument();
 });
 
-test("imports dynex assembly csv rows and relinks cost library items where possible", async () => {
-  const { onAssembliesChange } = renderPage({ assemblies: [] });
-  const fileInput = screen.getByLabelText(/import assembly csv/i);
-  const csvFile = new File(
+test("imports 2 csv files, previews validation, and replaces matching child items", async () => {
+  const { onAssembliesChange } = renderPage();
+  const assembliesFile = new File(
     [
       [
-        "Assembly Name,Room Type,Assembly Group,Item Name,Cost Type,Delivery Type,Trade,Cost Code,Quantity Formula,Unit,Unit Cost",
-        "Wall  Villaboard Lining,Bathroom,Walls & Linings,Villaboard Sheets,MTL,Supply,General,S10,villaboardArea,SQM,22",
-        "Wall  Villaboard Lining,Bathroom,Walls & Linings,Install Villaboard,LBR,Install,Tile,Finishes,villaboardArea * 0.7,HR,75",
+        "assembly_key,assembly_name,room_type,assembly_group,assembly_element,assembly_scope,assembly_spec,image_url,notes,sort_order,is_active",
+        "assembly-1,Wall  Villaboard Lining,Bathroom,Walls & Linings,Wall,Villaboard Lining,,https://example.com/assembly.jpg,Imported notes,1,true",
       ].join("\n"),
     ],
     "assemblies.csv",
     { type: "text/csv" }
   );
+  const assemblyItemsFile = new File(
+    [
+      [
+        "assembly_key,line_name,cost_item_id,cost_item_name,quantity_formula,qty_rule,waste_factor,unit_override,rate_override,trade_source,trade_id,cost_code_source,cost_code_id,unit_source,notes,sort_order,is_active",
+        "assembly-1,Villaboard Sheets,cost-1,Villaboard Sheets,floorArea,floorArea,,,12.5,inherit,trade-general,inherit,cost-code-wall,inherit,,1,true",
+        "assembly-1,Install Villaboard,,Villaboard Sheets,floorArea * 0.7,floorArea * 0.7,,,75,override,trade-tile,override,cost-code-finishes,override,HR,2,true",
+      ].join("\n"),
+    ],
+    "assembly_items.csv",
+    { type: "text/csv" }
+  );
 
-  fireEvent.change(fileInput, { target: { files: [csvFile] } });
+  await userEvent.click(screen.getByRole("button", { name: /import csv/i }));
+  fireEvent.change(screen.getByLabelText(/assemblies\.csv/i), {
+    target: { files: [assembliesFile] },
+  });
+  fireEvent.change(screen.getByLabelText(/assembly_items\.csv/i), {
+    target: { files: [assemblyItemsFile] },
+  });
+  await userEvent.click(screen.getByRole("button", { name: /preview import/i }));
+
+  await waitFor(() => {
+    expect(screen.getByText(/validation preview/i)).toBeInTheDocument();
+  });
+  expect(
+    screen.getByText((_, node) => node?.textContent === "0assemblies to create")
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText((_, node) => node?.textContent === "1assemblies to update")
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText((_, node) => node?.textContent === "2child items to create")
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText((_, node) => node?.textContent === "0unresolved cost items")
+  ).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: /apply import/i }));
 
   await waitFor(() => expect(onAssembliesChange).toHaveBeenCalledTimes(1));
   const nextAssemblies = onAssembliesChange.mock.calls[0][0];
 
   expect(nextAssemblies).toHaveLength(1);
   expect(nextAssemblies[0].items).toHaveLength(2);
+  expect(nextAssemblies[0]).toMatchObject({
+    id: "assembly-1",
+    imageUrl: "https://example.com/assembly.jpg",
+    notes: "Imported notes",
+  });
   expect(nextAssemblies[0].items[0]).toMatchObject({
     libraryItemId: "cost-1",
     itemNameSnapshot: "Villaboard Sheets",
-    costType: "MTL",
-    deliveryType: "Supply",
+    quantityFormula: "floorArea",
+    rateOverride: 12.5,
   });
   expect(nextAssemblies[0].items[1]).toMatchObject({
-    itemNameSnapshot: "Install Villaboard",
-    costType: "LBR",
-    deliveryType: "Install",
-    isCustomItem: true,
+    itemNameSnapshot: "Villaboard Sheets",
+    tradeId: "trade-tile",
+    costCodeId: "cost-code-finishes",
+    unit: "SQM",
+    isCustomItem: false,
   });
 });
 
@@ -578,3 +626,47 @@ test("creates a reusable cost item inside manage assembly items and auto-adds it
   expect(screen.getByLabelText(/base rate/i)).toHaveValue(39.5);
   expect(screen.getByLabelText(/link id/i).value).toMatch(/^cost-/);
 });
+
+
+test("copies selected assembly line templates into the current assembly as editable items", async () => {
+  const assemblyLineTemplates = [
+    {
+      id: "template-1",
+      name: "Bathroom floor tile line",
+      costItemId: "cost-1",
+      costItemNameSnapshot: "Villaboard Sheets",
+      defaultFormula: "floorArea * 1.1",
+      defaultQtyRule: "FloorArea",
+      defaultUnit: "SQM",
+      defaultRateOverride: "12.5",
+      tradeId: "trade-general",
+      costCodeId: "cost-code-wall",
+      roomType: "Bathroom",
+      assemblyGroup: "Walls & Linings",
+      assemblyElement: "Wall",
+      assemblyScope: "Villaboard Lining",
+      notes: "Template note",
+      sortOrder: 1,
+      isActive: true,
+    },
+  ];
+
+  renderPage({ assemblies: [], assemblyLineTemplates });
+
+  await userEvent.click(screen.getByRole("button", { name: /add assembly/i }));
+  await userEvent.click(screen.getByRole("button", { name: /manage assembly items/i }));
+  await userEvent.click(
+    screen.getByRole("button", { name: /add from assembly line library/i })
+  );
+  await userEvent.click(screen.getByLabelText(/select bathroom floor tile line/i));
+  await userEvent.click(screen.getByRole("button", { name: /add selected \(1\)/i }));
+
+  expect(screen.getByLabelText(/item name/i)).toHaveValue("Villaboard Sheets");
+  expect(screen.getByLabelText(/^trade$/i)).toHaveValue("General");
+  expect(screen.getByLabelText(/cost code/i)).toHaveValue("S10");
+  expect(screen.getByLabelText(/^unit$/i)).toHaveValue("SQM");
+  expect(screen.getByLabelText(/base rate/i)).toHaveValue(22);
+  expect(screen.getByLabelText(/^override rate$/i)).toHaveValue(12.5);
+  expect(screen.getByLabelText(/link id/i)).toHaveValue("cost-1");
+});
+

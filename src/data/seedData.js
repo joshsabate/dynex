@@ -1054,9 +1054,12 @@ const seedCostRows = [
   { id: "cost-027", itemName: "Carpentry Labour", unit: "HR", rate: 78 },
 ];
 
+export const initialAssemblyLineTemplates = [];
+
 export const initialCosts = normalizeCosts(seedCostRows.map(withManagedUnit), {
   units: initialUnits,
   trades: initialTrades,
   costCodes: initialCostCodes,
   itemFamilies: initialItemFamilies,
 });
+
