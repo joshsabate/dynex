@@ -1009,11 +1009,6 @@ function App() {
     enabled: isSupabaseLibrarySyncEnabled,
   });
   useSupabaseCollectionSync({
-    items: assemblies,
-    libraryKey: "assemblies",
-    enabled: isSupabaseLibrarySyncEnabled,
-  });
-  useSupabaseCollectionSync({
     items: costs,
     libraryKey: "costs",
     enabled: isSupabaseLibrarySyncEnabled,

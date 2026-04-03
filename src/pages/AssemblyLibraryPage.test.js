@@ -294,7 +294,9 @@ test("supports add rename and delete in manage groups", async () => {
   await userEvent.clear(editInput);
   await userEvent.type(editInput, "Feature Ceilings");
   await userEvent.click(within(ceilingsRow).getByRole("button", { name: /save ceilings/i }));
-  expect(screen.getByText("Feature Ceilings", { selector: "strong" })).toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.getByText("Feature Ceilings", { selector: "strong" })).toBeInTheDocument();
+  });
 
   jest.spyOn(window, "confirm").mockReturnValue(true);
   const featureCeilingsRow = screen
@@ -312,9 +314,13 @@ test("supports add rename and delete in manage groups", async () => {
   await userEvent.type(usedEditInput, "Wall Systems");
   await userEvent.click(within(wallsRow).getByRole("button", { name: /save walls & linings/i }));
 
-  expect(screen.getByText("Wall Systems", { selector: "strong" })).toBeInTheDocument();
-  expect(screen.getByText(/in use by existing assemblies/i)).toBeInTheDocument();
-  expect(onAssembliesChange).toHaveBeenCalled();
+  await waitFor(() => {
+    expect(screen.getByText("Wall Systems", { selector: "strong" })).toBeInTheDocument();
+  });
+  expect(
+    screen.getByText((_, node) => node?.textContent === "In use by existing assemblies")
+  ).toBeInTheDocument();
+  await waitFor(() => expect(onAssembliesChange).toHaveBeenCalled());
   window.confirm.mockRestore();
 });
 
@@ -333,7 +339,7 @@ test("deletes in-use groups by reassigning affected assemblies to Unassigned", a
   expect(window.confirm).toHaveBeenCalledWith(
     expect.stringMatching(/used by 1 assemblies\. those assemblies will be reassigned to unassigned\./i)
   );
-  expect(onAssembliesChange).toHaveBeenCalled();
+  await waitFor(() => expect(onAssembliesChange).toHaveBeenCalled());
   const nextAssemblies = onAssembliesChange.mock.calls.at(-1)[0];
   expect(nextAssemblies[0]).toMatchObject({
     assemblyGroup: "Unassigned",

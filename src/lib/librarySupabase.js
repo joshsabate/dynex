@@ -12,6 +12,132 @@ function chunkItems(items = [], size = 100) {
   return chunks;
 }
 
+function toNullableNumber(value) {
+  if (value === "" || value === null || value === undefined) {
+    return null;
+  }
+
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function toText(value) {
+  return String(value || "").trim();
+}
+
+export function mapAssemblyToSupabaseRow(assembly) {
+  return {
+    id: assembly.id,
+    assembly_name: assembly.assemblyName || "",
+    room_type_id: assembly.roomTypeId || assembly.appliesToRoomTypeId || "",
+    room_type: assembly.roomType || assembly.appliesToRoomType || "",
+    assembly_group: assembly.assemblyGroup || assembly.assemblyCategory || "",
+    assembly_element: assembly.assemblyElement || "",
+    assembly_scope: assembly.assemblyScope || "",
+    assembly_spec: assembly.assemblySpec || "",
+    image_url: assembly.imageUrl || "",
+    notes: assembly.notes || "",
+    sort_order:
+      assembly.sortOrder === "" || assembly.sortOrder == null
+        ? 0
+        : Number(assembly.sortOrder),
+    is_active: assembly.isActive !== false,
+    assembly_data: assembly,
+  };
+}
+
+export function mapAssemblyItemToSupabaseRow(item, assemblyId, index = 0) {
+  const itemId = item.id || `${assemblyId}-item-${index + 1}`;
+  return {
+    id: itemId,
+    assembly_id: assemblyId,
+    line_name: item.itemNameSnapshot || item.itemName || "",
+    cost_item_id: item.libraryItemId || item.costItemId || "",
+    cost_item_name: item.itemNameSnapshot || item.itemName || "",
+    quantity_formula: item.quantityFormula || "",
+    qty_rule: item.qtyRule || item.quantityFormula || "",
+    waste_factor: toNullableNumber(item.wasteFactor),
+    unit_override: item.unitOverride || "",
+    rate_override: toNullableNumber(item.rateOverride),
+    trade_source: item.tradeSource || "inherit",
+    trade_id: item.tradeId || "",
+    cost_code_source: item.costCodeSource || "inherit",
+    cost_code_id: item.costCodeId || "",
+    unit_source: item.unitSource || "inherit",
+    notes: item.notes || "",
+    sort_order:
+      item.sortOrder === "" || item.sortOrder == null ? index : Number(item.sortOrder),
+    is_active: item.isActive !== false,
+    item_data: {
+      ...item,
+      id: itemId,
+      assemblyId,
+    },
+  };
+}
+
+export function mapAssemblyItemRowToItem(row) {
+  const payload = row.item_data || {};
+
+  return {
+    ...payload,
+    id: row.id ?? payload.id ?? "",
+    assemblyId: row.assembly_id ?? payload.assemblyId ?? "",
+    libraryItemId: row.cost_item_id ?? payload.libraryItemId ?? payload.costItemId ?? "",
+    costItemId: row.cost_item_id ?? payload.costItemId ?? payload.libraryItemId ?? "",
+    itemNameSnapshot:
+      row.line_name ?? row.cost_item_name ?? payload.itemNameSnapshot ?? payload.itemName ?? "",
+    itemName:
+      row.line_name ?? row.cost_item_name ?? payload.itemName ?? payload.itemNameSnapshot ?? "",
+    quantityFormula:
+      row.quantity_formula ?? payload.quantityFormula ?? payload.qtyRule ?? "",
+    qtyRule: row.qty_rule ?? payload.qtyRule ?? payload.quantityFormula ?? "",
+    wasteFactor: row.waste_factor ?? payload.wasteFactor ?? "",
+    unitOverride: row.unit_override ?? payload.unitOverride ?? "",
+    rateOverride: row.rate_override ?? payload.rateOverride ?? "",
+    tradeSource: row.trade_source ?? payload.tradeSource ?? "inherit",
+    tradeId: row.trade_id ?? payload.tradeId ?? "",
+    costCodeSource: row.cost_code_source ?? payload.costCodeSource ?? "inherit",
+    costCodeId: row.cost_code_id ?? payload.costCodeId ?? "",
+    unitSource: row.unit_source ?? payload.unitSource ?? "inherit",
+    notes: row.notes ?? payload.notes ?? "",
+    sortOrder: row.sort_order ?? payload.sortOrder ?? 0,
+    isActive: row.is_active ?? payload.isActive ?? true,
+  };
+}
+
+export function mapAssemblyRowToItem(row, childRows = []) {
+  const payload = row.assembly_data || {};
+
+  return {
+    ...payload,
+    id: row.id ?? payload.id ?? "",
+    assemblyName: row.assembly_name ?? payload.assemblyName ?? "",
+    roomTypeId:
+      row.room_type_id ?? payload.roomTypeId ?? payload.appliesToRoomTypeId ?? "",
+    roomType: row.room_type ?? payload.roomType ?? payload.appliesToRoomType ?? "",
+    appliesToRoomTypeId:
+      row.room_type_id ?? payload.appliesToRoomTypeId ?? payload.roomTypeId ?? "",
+    appliesToRoomType:
+      row.room_type ?? payload.appliesToRoomType ?? payload.roomType ?? "",
+    assemblyGroup: row.assembly_group ?? payload.assemblyGroup ?? payload.assemblyCategory ?? "",
+    assemblyCategory:
+      row.assembly_group ?? payload.assemblyCategory ?? payload.assemblyGroup ?? "",
+    assemblyElement: row.assembly_element ?? payload.assemblyElement ?? "",
+    assemblyScope: row.assembly_scope ?? payload.assemblyScope ?? "",
+    assemblySpec: row.assembly_spec ?? payload.assemblySpec ?? "",
+    imageUrl: row.image_url ?? payload.imageUrl ?? "",
+    notes: row.notes ?? payload.notes ?? "",
+    sortOrder: row.sort_order ?? payload.sortOrder ?? 0,
+    isActive: row.is_active ?? payload.isActive ?? true,
+    items: childRows.length
+      ? childRows.map(mapAssemblyItemRowToItem)
+      : Array.isArray(payload.items)
+        ? payload.items
+        : [],
+  };
+}
+
 const libraryConfigs = {
   units: {
     table: "units",
@@ -322,42 +448,8 @@ const libraryConfigs = {
   },
   assemblies: {
     table: "assemblies",
-    mapItemToRow: (assembly) => ({
-      id: assembly.id,
-      assembly_name: assembly.assemblyName || "",
-      room_type_id: assembly.roomTypeId || assembly.appliesToRoomTypeId || "",
-      room_type: assembly.roomType || assembly.appliesToRoomType || "",
-      assembly_group: assembly.assemblyGroup || assembly.assemblyCategory || "",
-      assembly_element: assembly.assemblyElement || "",
-      assembly_scope: assembly.assemblyScope || "",
-      assembly_spec: assembly.assemblySpec || "",
-      image_url: assembly.imageUrl || "",
-      notes: assembly.notes || "",
-      assembly_data: assembly,
-    }),
-    mapRowToItem: (row) => {
-      const payload = row.assembly_data || {};
-
-      return {
-        ...payload,
-        id: row.id ?? payload.id ?? "",
-        assemblyName: row.assembly_name ?? payload.assemblyName ?? "",
-        roomTypeId:
-          row.room_type_id ?? payload.roomTypeId ?? payload.appliesToRoomTypeId ?? "",
-        roomType: row.room_type ?? payload.roomType ?? payload.appliesToRoomType ?? "",
-        appliesToRoomTypeId:
-          row.room_type_id ?? payload.appliesToRoomTypeId ?? payload.roomTypeId ?? "",
-        appliesToRoomType:
-          row.room_type ?? payload.appliesToRoomType ?? payload.roomType ?? "",
-        assemblyGroup: row.assembly_group ?? payload.assemblyGroup ?? "",
-        assemblyCategory: row.assembly_group ?? payload.assemblyCategory ?? "",
-        assemblyElement: row.assembly_element ?? payload.assemblyElement ?? "",
-        assemblyScope: row.assembly_scope ?? payload.assemblyScope ?? "",
-        assemblySpec: row.assembly_spec ?? payload.assemblySpec ?? "",
-        imageUrl: row.image_url ?? payload.imageUrl ?? "",
-        notes: row.notes ?? payload.notes ?? "",
-      };
-    },
+    mapItemToRow: mapAssemblyToSupabaseRow,
+    mapRowToItem: mapAssemblyRowToItem,
   },
 };
 
@@ -389,6 +481,52 @@ async function fetchCollection(table, mapRowToItem) {
   }
 
   return (data || []).map(mapRowToItem);
+}
+
+async function fetchAssembliesCollection() {
+  if (!hasSupabaseCredentials || !supabase) {
+    return null;
+  }
+
+  let assemblyQuery = supabase.from("assemblies").select("*");
+  ["sort_order", "assembly_name"].forEach((column) => {
+    assemblyQuery = assemblyQuery.order(column, { ascending: true, nullsFirst: false });
+  });
+
+  const { data: assemblyRows, error: assemblyError } = await assemblyQuery;
+
+  if (assemblyError) {
+    throw assemblyError;
+  }
+
+  const assemblyIds = (assemblyRows || []).map((row) => row.id).filter(Boolean);
+  let itemRows = [];
+
+  if (assemblyIds.length) {
+    let itemQuery = supabase.from("assembly_items").select("*").in("assembly_id", assemblyIds);
+    ["assembly_id", "sort_order", "line_name"].forEach((column) => {
+      itemQuery = itemQuery.order(column, { ascending: true, nullsFirst: false });
+    });
+
+    const { data, error } = await itemQuery;
+    if (error) {
+      throw error;
+    }
+    itemRows = data || [];
+  }
+
+  const itemsByAssemblyId = itemRows.reduce((map, row) => {
+    const assemblyId = row.assembly_id;
+    if (!map.has(assemblyId)) {
+      map.set(assemblyId, []);
+    }
+    map.get(assemblyId).push(row);
+    return map;
+  }, new Map());
+
+  return (assemblyRows || []).map((row) =>
+    mapAssemblyRowToItem(row, itemsByAssemblyId.get(row.id) || [])
+  );
 }
 
 async function replaceCollection(table, items, mapItemToRow) {
@@ -433,6 +571,9 @@ async function replaceCollection(table, items, mapItemToRow) {
 }
 
 export async function fetchLibraryItems(libraryKey) {
+  if (libraryKey === "assemblies") {
+    return fetchAssembliesCollection();
+  }
   const { table, mapRowToItem } = getLibraryConfig(libraryKey);
   return fetchCollection(table, mapRowToItem);
 }
@@ -440,6 +581,103 @@ export async function fetchLibraryItems(libraryKey) {
 export async function replaceLibraryItems(libraryKey, items) {
   const { table, mapItemToRow } = getLibraryConfig(libraryKey);
   return replaceCollection(table, items, mapItemToRow);
+}
+
+export async function saveAssemblyWithItems(assembly) {
+  if (!hasSupabaseCredentials || !supabase) {
+    return assembly;
+  }
+
+  const assemblyId = toText(assembly?.id);
+  if (!assemblyId) {
+    throw new Error("Assembly id is required for Supabase save.");
+  }
+
+  const assemblyRow = mapAssemblyToSupabaseRow(assembly);
+  const childRows = (assembly.items || []).map((item, index) =>
+    mapAssemblyItemToSupabaseRow(item, assemblyId, index)
+  );
+
+  const { error: assemblyError } = await supabase
+    .from("assemblies")
+    .upsert(assemblyRow, { onConflict: "id" });
+  if (assemblyError) {
+    throw assemblyError;
+  }
+
+  const { error: deleteChildrenError } = await supabase
+    .from("assembly_items")
+    .delete()
+    .eq("assembly_id", assemblyId);
+  if (deleteChildrenError) {
+    throw deleteChildrenError;
+  }
+
+  if (childRows.length) {
+    const { error: insertChildrenError } = await supabase
+      .from("assembly_items")
+      .insert(childRows);
+    if (insertChildrenError) {
+      throw insertChildrenError;
+    }
+  }
+
+  return assembly;
+}
+
+export async function deleteAssemblyWithItems(assemblyId) {
+  if (!hasSupabaseCredentials || !supabase) {
+    return;
+  }
+
+  const normalizedAssemblyId = toText(assemblyId);
+  if (!normalizedAssemblyId) {
+    return;
+  }
+
+  const { error: deleteChildrenError } = await supabase
+    .from("assembly_items")
+    .delete()
+    .eq("assembly_id", normalizedAssemblyId);
+  if (deleteChildrenError) {
+    throw deleteChildrenError;
+  }
+
+  const { error: deleteAssemblyError } = await supabase
+    .from("assemblies")
+    .delete()
+    .eq("id", normalizedAssemblyId);
+  if (deleteAssemblyError) {
+    throw deleteAssemblyError;
+  }
+}
+
+export async function replaceAssembliesWithItems(assemblies = []) {
+  if (!hasSupabaseCredentials || !supabase) {
+    return assemblies;
+  }
+
+  const { data: existingRows, error: existingError } = await supabase
+    .from("assemblies")
+    .select("id");
+  if (existingError) {
+    throw existingError;
+  }
+
+  const nextIds = new Set((assemblies || []).map((assembly) => toText(assembly.id)).filter(Boolean));
+  const deletedIds = (existingRows || [])
+    .map((row) => row.id)
+    .filter((id) => id && !nextIds.has(id));
+
+  for (const assemblyId of deletedIds) {
+    await deleteAssemblyWithItems(assemblyId);
+  }
+
+  for (const assembly of assemblies || []) {
+    await saveAssemblyWithItems(assembly);
+  }
+
+  return assemblies;
 }
 
 export async function fetchDynexLibraryState() {

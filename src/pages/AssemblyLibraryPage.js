@@ -1,6 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import FormField from "../components/FormField";
 import SectionCard from "../components/SectionCard";
+import { hasSupabaseCredentials } from "../lib/supabase";
+import {
+  deleteAssemblyWithItems,
+  replaceAssembliesWithItems,
+  saveAssemblyWithItems,
+} from "../lib/librarySupabase";
 import { createAssemblyId, normalizeAssemblies } from "../utils/assemblies";
 import {
   getAssemblyGroupNames,
@@ -351,6 +357,7 @@ function AssemblyLibraryPage({
   });
   const [isAdvancedQtyFormulaMode, setIsAdvancedQtyFormulaMode] = useState(false);
   const [csvStatus, setCsvStatus] = useState("");
+  const [isPersistingAssemblies, setIsPersistingAssemblies] = useState(false);
   const [csvImportState, setCsvImportState] = useState({
     isOpen: false,
     assembliesFile: null,
@@ -792,16 +799,15 @@ function AssemblyLibraryPage({
     }));
   };
 
-  const syncAssemblyGroupReferences = (previousGroupName, nextGroupName) => {
+  const syncAssemblyGroupReferences = async (previousGroupName, nextGroupName) => {
     const normalizedPreviousName = cleanText(previousGroupName);
     const normalizedNextName = cleanText(nextGroupName);
 
     if (!normalizedPreviousName || normalizedPreviousName === normalizedNextName) {
-      return;
+      return true;
     }
 
-    onAssembliesChange(
-      normalizedAssemblies.map((assembly) =>
+    const nextAssemblies = normalizedAssemblies.map((assembly) =>
         assembly.assemblyGroup === normalizedPreviousName
           ? {
               ...assembly,
@@ -809,8 +815,11 @@ function AssemblyLibraryPage({
               assemblyCategory: normalizedNextName,
             }
           : assembly
-      )
     );
+    const didPersist = await persistAssemblyCollection(nextAssemblies);
+    if (!didPersist) {
+      return false;
+    }
 
     setDraft((current) =>
       current.assemblyGroup === normalizedPreviousName
@@ -824,6 +833,7 @@ function AssemblyLibraryPage({
     setAssemblyGroupFilter((current) =>
       current === normalizedPreviousName ? normalizedNextName : current
     );
+    return true;
   };
 
   const addManagedAssemblyGroup = () => {
@@ -868,7 +878,7 @@ function AssemblyLibraryPage({
     }));
   };
 
-  const saveManagedAssemblyGroupRename = (groupName) => {
+  const saveManagedAssemblyGroupRename = async (groupName) => {
     if (groupName === unassignedAssemblyGroupName) {
       setGroupManagerState((current) => ({
         ...current,
@@ -900,11 +910,14 @@ function AssemblyLibraryPage({
         ).filter(Boolean)
       )].sort((left, right) => left.localeCompare(right))
     );
-    syncAssemblyGroupReferences(groupName, nextGroupName);
+    const didPersist = await syncAssemblyGroupReferences(groupName, nextGroupName);
+    if (!didPersist) {
+      return;
+    }
     stopEditingManagedAssemblyGroup();
   };
 
-  const removeManagedAssemblyGroup = (groupName) => {
+  const removeManagedAssemblyGroup = async (groupName) => {
     if (groupName === unassignedAssemblyGroupName) {
       setGroupManagerState((current) => ({
         ...current,
@@ -928,7 +941,13 @@ function AssemblyLibraryPage({
 
     setManagedAssemblyGroups((current) => current.filter((entry) => entry !== groupName));
     if (isInUse) {
-      syncAssemblyGroupReferences(groupName, unassignedAssemblyGroupName);
+      const didPersist = await syncAssemblyGroupReferences(
+        groupName,
+        unassignedAssemblyGroupName
+      );
+      if (!didPersist) {
+        return;
+      }
     } else {
       setAssemblyGroupFilter((current) =>
         current === groupName ? unassignedAssemblyGroupName : current
@@ -1750,7 +1769,40 @@ function AssemblyLibraryPage({
     return errors;
   };
 
-  const saveAssembly = (event) => {
+  const handlePersistenceError = (actionLabel, error) => {
+    console.error(`Assembly Library ${actionLabel} Supabase error:`, error);
+    setCsvStatus(`Unable to ${actionLabel} in Supabase. Check console for details.`);
+    if (typeof window !== "undefined" && typeof window.alert === "function") {
+      window.alert(`Unable to ${actionLabel}. Supabase write failed.`);
+    }
+  };
+
+  const persistAssemblyCollection = async (nextAssemblies, successMessage = "") => {
+    if (!hasSupabaseCredentials) {
+      onAssembliesChange(nextAssemblies);
+      if (successMessage) {
+        setCsvStatus(successMessage);
+      }
+      return true;
+    }
+
+    setIsPersistingAssemblies(true);
+    try {
+      await replaceAssembliesWithItems(nextAssemblies);
+      onAssembliesChange(nextAssemblies);
+      if (successMessage) {
+        setCsvStatus(successMessage);
+      }
+      return true;
+    } catch (error) {
+      handlePersistenceError("sync assemblies", error);
+      return false;
+    } finally {
+      setIsPersistingAssemblies(false);
+    }
+  };
+
+  const saveAssembly = async (event) => {
     event.preventDefault();
     const errors = validateDraft();
     setValidationErrors(errors);
@@ -1782,17 +1834,36 @@ function AssemblyLibraryPage({
       { units, costs: normalizedCosts, trades, costCodes }
     )[0];
 
-    onAssembliesChange(
+    const nextAssemblies =
       editorState.mode === "edit"
         ? normalizedAssemblies.map((assembly) =>
             assembly.id === editorState.assemblyId ? nextAssembly : assembly
           )
-        : [...normalizedAssemblies, nextAssembly]
-    );
+        : [...normalizedAssemblies, nextAssembly];
+
+    setIsPersistingAssemblies(true);
+    try {
+      await saveAssemblyWithItems(nextAssembly);
+      onAssembliesChange(nextAssemblies);
+      setCsvStatus(
+        editorState.mode === "edit"
+          ? `Saved ${nextAssembly.assemblyName}.`
+          : `Created ${nextAssembly.assemblyName}.`
+      );
+    } catch (error) {
+      handlePersistenceError(
+        editorState.mode === "edit" ? "save assembly" : "create assembly",
+        error
+      );
+      return;
+    } finally {
+      setIsPersistingAssemblies(false);
+    }
+
     closeEditor();
   };
 
-  const deleteAssembly = (assemblyId) => {
+  const deleteAssembly = async (assemblyId) => {
     if (typeof window !== "undefined") {
       const shouldDelete = window.confirm(
         "Delete this assembly? This action cannot be undone."
@@ -1801,16 +1872,27 @@ function AssemblyLibraryPage({
         return;
       }
     }
-    onAssembliesChange(
-      normalizedAssemblies.filter((assembly) => assembly.id !== assemblyId)
-    );
+
+    const nextAssemblies = normalizedAssemblies.filter((assembly) => assembly.id !== assemblyId);
+    setIsPersistingAssemblies(true);
+    try {
+      await deleteAssemblyWithItems(assemblyId);
+      onAssembliesChange(nextAssemblies);
+      setCsvStatus("Deleted assembly.");
+    } catch (error) {
+      handlePersistenceError("delete assembly", error);
+      return;
+    } finally {
+      setIsPersistingAssemblies(false);
+    }
+
     setSelectedAssemblyIds((current) => current.filter((id) => id !== assemblyId));
     if (editorState.assemblyId === assemblyId) {
       closeEditor();
     }
   };
 
-  const duplicateAssembly = (assemblyId) => {
+  const duplicateAssembly = async (assemblyId) => {
     const sourceAssembly = normalizedAssemblies.find(
       (assembly) => assembly.id === assemblyId
     );
@@ -1840,11 +1922,17 @@ function AssemblyLibraryPage({
       ],
       { units, costs: normalizedCosts, trades, costCodes }
     )[0];
-    onAssembliesChange([...normalizedAssemblies, nextAssembly]);
-    openEditEditor(nextAssembly);
+    const nextAssemblies = [...normalizedAssemblies, nextAssembly];
+    const didPersist = await persistAssemblyCollection(
+      nextAssemblies,
+      `Duplicated ${nextAssembly.assemblyName}.`
+    );
+    if (didPersist) {
+      openEditEditor(nextAssembly);
+    }
   };
 
-  const deleteSelectedAssemblies = () => {
+  const deleteSelectedAssemblies = async () => {
     if (!selectedAssemblyIds.length) {
       return;
     }
@@ -1857,18 +1945,25 @@ function AssemblyLibraryPage({
     ) {
       return;
     }
-    onAssembliesChange(
-      normalizedAssemblies.filter(
-        (assembly) => !selectedAssemblyIds.includes(assembly.id)
-      )
+    const nextAssemblies = normalizedAssemblies.filter(
+      (assembly) => !selectedAssemblyIds.includes(assembly.id)
     );
+    const didPersist = await persistAssemblyCollection(
+      nextAssemblies,
+      `Deleted ${selectedAssemblyIds.length} selected assembl${
+        selectedAssemblyIds.length === 1 ? "y" : "ies"
+      }.`
+    );
+    if (!didPersist) {
+      return;
+    }
     if (selectedAssemblyIds.includes(editorState.assemblyId)) {
       closeEditor();
     }
     setSelectedAssemblyIds([]);
   };
 
-  const deleteFilteredAssemblies = () => {
+  const deleteFilteredAssemblies = async () => {
     if (!filteredAssemblies.length) {
       return;
     }
@@ -1880,9 +1975,18 @@ function AssemblyLibraryPage({
       return;
     }
     const filteredIds = filteredAssemblies.map((assembly) => assembly.id);
-    onAssembliesChange(
-      normalizedAssemblies.filter((assembly) => !filteredIds.includes(assembly.id))
+    const nextAssemblies = normalizedAssemblies.filter(
+      (assembly) => !filteredIds.includes(assembly.id)
     );
+    const didPersist = await persistAssemblyCollection(
+      nextAssemblies,
+      `Deleted ${filteredAssemblies.length} filtered assembl${
+        filteredAssemblies.length === 1 ? "y" : "ies"
+      }.`
+    );
+    if (!didPersist) {
+      return;
+    }
     if (filteredIds.includes(editorState.assemblyId)) {
       closeEditor();
     }
@@ -1952,6 +2056,27 @@ function AssemblyLibraryPage({
         (total, assembly) => total + (assembly.items || []).length,
         0
       )} assembly items.`
+    );
+  };
+
+  const resyncAssembliesToSupabase = async () => {
+    if (!hasSupabaseCredentials) {
+      setCsvStatus("Supabase credentials are not configured.");
+      return;
+    }
+
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        `Resync ${normalizedAssemblies.length} assemblies and all child items to Supabase?`
+      )
+    ) {
+      return;
+    }
+
+    await persistAssemblyCollection(
+      normalizedAssemblies,
+      `Resynced ${normalizedAssemblies.length} assemblies to Supabase.`
     );
   };
 
@@ -2192,7 +2317,7 @@ function AssemblyLibraryPage({
     }));
   };
 
-  const applyAssemblyCsvImport = () => {
+  const applyAssemblyCsvImport = async () => {
     if (!csvImportState.preview) {
       return;
     }
@@ -2231,10 +2356,13 @@ function AssemblyLibraryPage({
       }
     );
 
-    onAssembliesChange(nextAssemblies);
-    setCsvStatus(
+    const didPersist = await persistAssemblyCollection(
+      nextAssemblies,
       `${counts.assembliesToCreate} assemblies created, ${counts.assembliesToUpdate} assemblies updated, ${counts.childItemsToCreate} child items imported.`
     );
+    if (!didPersist) {
+      return;
+    }
     closeCsvImport();
   };
 
@@ -2370,8 +2498,22 @@ function AssemblyLibraryPage({
                   type="button"
                   className="secondary-button"
                   onClick={deleteFilteredAssemblies}
+                  disabled={isPersistingAssemblies}
                 >
                   Delete All (Filtered)
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={resyncAssembliesToSupabase}
+                  disabled={isPersistingAssemblies || !hasSupabaseCredentials}
+                  title={
+                    hasSupabaseCredentials
+                      ? "Rewrites all assemblies and child items to Supabase"
+                      : "Supabase credentials are not configured"
+                  }
+                >
+                  Resync Supabase
                 </button>
                 <button
                   type="button"
@@ -2384,6 +2526,7 @@ function AssemblyLibraryPage({
                   type="button"
                   className="secondary-button"
                   onClick={openCsvImport}
+                  disabled={isPersistingAssemblies}
                 >
                   Import CSV
                 </button>
@@ -2540,6 +2683,7 @@ function AssemblyLibraryPage({
                   <button
                     type="button"
                     className="primary-button"
+                    disabled={isPersistingAssemblies}
                     onClick={() =>
                       previewAssemblyCsvImport(
                         csvImportState.assembliesFile,
@@ -2552,6 +2696,7 @@ function AssemblyLibraryPage({
                   <button
                     type="button"
                     className="secondary-button"
+                    disabled={isPersistingAssemblies}
                     onClick={closeCsvImport}
                   >
                     Close
@@ -2628,6 +2773,7 @@ function AssemblyLibraryPage({
                     <button
                       type="button"
                       className="secondary-button"
+                      disabled={isPersistingAssemblies}
                       onClick={closeCsvImport}
                     >
                       Cancel
@@ -2635,10 +2781,10 @@ function AssemblyLibraryPage({
                     <button
                       type="button"
                       className="primary-button"
-                      disabled={csvImportHasBlockingIssues}
+                      disabled={csvImportHasBlockingIssues || isPersistingAssemblies}
                       onClick={applyAssemblyCsvImport}
                     >
-                      Apply Import
+                      {isPersistingAssemblies ? "Applying..." : "Apply Import"}
                     </button>
                   </div>
                 </div>
@@ -2879,12 +3025,17 @@ function AssemblyLibraryPage({
                   <button
                     type="button"
                     className="secondary-button"
+                    disabled={isPersistingAssemblies}
                     onClick={closeEditor}
                   >
                     Cancel
                   </button>
-                  <button type="submit" className="primary-button">
-                    {editorState.mode === "edit" ? "Save Changes" : "Save Assembly"}
+                  <button type="submit" className="primary-button" disabled={isPersistingAssemblies}>
+                    {isPersistingAssemblies
+                      ? "Saving..."
+                      : editorState.mode === "edit"
+                        ? "Save Changes"
+                        : "Save Assembly"}
                   </button>
                 </div>
               </div>
