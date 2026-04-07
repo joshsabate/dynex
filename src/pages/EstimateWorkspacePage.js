@@ -194,6 +194,13 @@ function EstimateWorkspacePage({
   manualBuilderRows = [],
   generatedRowSectionAssignments = {},
   onGeneratedRowSectionAssignmentsChange = () => {},
+  presentationSettings,
+  onPresentationSettingsChange = () => {},
+  presentationModel = null,
+  clientPresentationModel = null,
+  onExportPresentationPdf = () => {},
+  onCreateShareLink = () => {},
+  shareState = { status: "idle", message: "", url: "" },
   activeView: controlledActiveView,
   onActiveViewChange,
   topBarPortalTarget,
@@ -872,6 +879,13 @@ function EstimateWorkspacePage({
           generatedRows={generatedRows}
           generatedRowSectionAssignments={generatedRowSectionAssignments}
           onGeneratedRowSectionAssignmentsChange={onGeneratedRowSectionAssignmentsChange}
+          presentationSettings={presentationSettings}
+          onPresentationSettingsChange={onPresentationSettingsChange}
+          presentationModel={presentationModel}
+          clientPresentationModel={clientPresentationModel}
+          onExportPresentationPdf={onExportPresentationPdf}
+          onCreateShareLink={onCreateShareLink}
+          shareState={shareState}
           topBarPortalTarget={topBarPortalTarget}
         />
       ) : activeView === "canvas" ? (

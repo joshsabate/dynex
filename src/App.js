@@ -47,6 +47,10 @@ import { buildCanonicalStageId, canonicalStageLibrary, normalizeStages } from ".
 import { fetchDynexLibraryState } from "./lib/librarySupabase";
 import { hasSupabaseCredentials } from "./lib/supabase";
 import useSupabaseCollectionSync from "./hooks/useSupabaseCollectionSync";
+import { buildEstimatePresentationModel, defaultPresentationOptions } from "./utils/presentationModel";
+import EstimateShareView from "./pages/EstimateShareView";
+import { buildShareUrl, createEstimateShareLink } from "./lib/shareLinks";
+import { EstimatePDFPrintLayer } from "./components/pdf/EstimatePDF";
 
 const legacyLocalStorageKey = "estimator-app-project";
 const globalLibrariesStorageKey = "estimator-app-global-libraries";
@@ -56,6 +60,24 @@ const projectFileFormat = "estimator-app-project-file";
 const projectFileVersion = 1;
 const defaultProjectName = "Untitled Project";
 const defaultEstimateName = "Untitled Estimate";
+const defaultPresentationSettings = {
+  previewMode: "client",
+  presentationLayout: "line_sheet",
+  groupBy: defaultPresentationOptions.groupBy,
+  clientGroupBy: "room",
+  allowedClientGroupings: ["room", "stage"],
+  allowClientGroupingSwitch: true,
+  clientLineItemDetailFields: ["specification", "gradeOrQuality", "brand", "finishOrVariant"],
+  clientHideQuantities: true,
+  clientShowUnits: false,
+  clientPrimaryLabelField: "coreName",
+  markupPercent: defaultPresentationOptions.markupPercent,
+  gstEnabled: defaultPresentationOptions.gstEnabled,
+  gstRate: defaultPresentationOptions.gstRate,
+  visibility: {
+    ...defaultPresentationOptions.visibility,
+  },
+};
 
 const pages = [
   { id: "estimate-builder", label: "Estimate Builder", icon: "◫", group: "Workflow" },
@@ -167,6 +189,7 @@ function getDefaultProjectData() {
     estimateSections: [],
     manualEstimateLines: [],
     generatedRowSectionAssignments: {},
+    presentationSettings: defaultPresentationSettings,
     estimateRowOverrides: {},
     parameterLibraryUiState: {
       expandedCategories: {},
@@ -174,6 +197,27 @@ function getDefaultProjectData() {
     lastSavedAt: "",
     lastBackupAt: "",
     lastFileName: "",
+  };
+}
+
+function getCurrentRoute() {
+  if (typeof window === "undefined") {
+    return { type: "app", shareId: "" };
+  }
+
+  const pathname = String(window.location.pathname || "").replace(/\/+$/, "");
+  const shareMatch = pathname.match(/^\/share\/([^/]+)$/i);
+
+  if (shareMatch) {
+    return {
+      type: "share",
+      shareId: decodeURIComponent(shareMatch[1]),
+    };
+  }
+
+  return {
+    type: "app",
+    shareId: "",
   };
 }
 
@@ -389,6 +433,14 @@ function loadProjectData() {
         generatedRowSectionAssignments:
           savedProjectData.generatedRowSectionAssignments ||
           defaultProjectData.generatedRowSectionAssignments,
+        presentationSettings: {
+          ...defaultProjectData.presentationSettings,
+          ...(savedProjectData.presentationSettings || {}),
+          visibility: {
+            ...defaultProjectData.presentationSettings.visibility,
+            ...(savedProjectData.presentationSettings?.visibility || {}),
+          },
+        },
         estimateRowOverrides:
           savedProjectData.estimateRowOverrides || defaultProjectData.estimateRowOverrides,
         lastSavedAt: savedProjectData.lastSavedAt || defaultProjectData.lastSavedAt,
@@ -432,6 +484,7 @@ function loadProjectData() {
       generatedRowSectionAssignments:
         legacyProjectState.generatedRowSectionAssignments ||
         defaultProjectData.generatedRowSectionAssignments,
+      presentationSettings: defaultProjectData.presentationSettings,
       estimateRowOverrides:
         legacyProjectState.estimateRowOverrides || defaultProjectData.estimateRowOverrides,
       lastSavedAt: legacyProjectState.lastSavedAt || defaultProjectData.lastSavedAt,
@@ -615,6 +668,18 @@ function normalizeAppState(source = {}) {
     generatedRowSectionAssignments: isRecord(source.generatedRowSectionAssignments)
       ? source.generatedRowSectionAssignments
       : defaultProjectData.generatedRowSectionAssignments,
+    presentationSettings: isRecord(source.presentationSettings)
+      ? {
+          ...defaultProjectData.presentationSettings,
+          ...source.presentationSettings,
+          visibility: isRecord(source.presentationSettings.visibility)
+            ? {
+                ...defaultProjectData.presentationSettings.visibility,
+                ...source.presentationSettings.visibility,
+              }
+            : defaultProjectData.presentationSettings.visibility,
+        }
+      : defaultProjectData.presentationSettings,
     estimateRowOverrides: normalizeStageOverrides(
       isRecord(source.estimateRowOverrides)
         ? source.estimateRowOverrides
@@ -691,6 +756,7 @@ function splitAppStateForStorage(appState) {
       estimateSections: appState.estimateSections,
       manualEstimateLines: appState.manualEstimateLines,
       generatedRowSectionAssignments: appState.generatedRowSectionAssignments,
+      presentationSettings: appState.presentationSettings,
       estimateRowOverrides: appState.estimateRowOverrides,
       parameterLibraryUiState: appState.parameterLibraryUiState,
       lastSavedAt: appState.lastSavedAt,
@@ -793,6 +859,7 @@ function buildComparableAppState(appState) {
     estimateSections: appState.estimateSections,
     manualEstimateLines: appState.manualEstimateLines,
     generatedRowSectionAssignments: appState.generatedRowSectionAssignments,
+    presentationSettings: appState.presentationSettings,
     estimateRowOverrides: appState.estimateRowOverrides,
     parameterLibraryUiState: appState.parameterLibraryUiState,
   });
@@ -839,6 +906,7 @@ function App() {
     () => buildComparableAppState(initialProjectState),
     [initialProjectState]
   );
+  const [routeInfo, setRouteInfo] = useState(getCurrentRoute);
   const [activePage, setActivePage] = useState("estimate-builder");
   const [roomTypes, setRoomTypes] = useState(initialProjectState.roomTypes);
   const [parameters, setParameters] = useState(initialProjectState.parameters);
@@ -869,6 +937,9 @@ function App() {
   const [generatedRowSectionAssignments, setGeneratedRowSectionAssignments] = useState(
     initialProjectState.generatedRowSectionAssignments
   );
+  const [presentationSettings, setPresentationSettings] = useState(
+    initialProjectState.presentationSettings
+  );
   const [parameterLibraryUiState, setParameterLibraryUiState] = useState(
     initialProjectState.parameterLibraryUiState
   );
@@ -893,6 +964,12 @@ function App() {
   const projectMenuRef = useRef(null);
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   const [workspaceTopbarPortalTarget, setWorkspaceTopbarPortalTarget] = useState(null);
+  const [shareState, setShareState] = useState({
+    status: "idle",
+    message: "",
+    url: "",
+  });
+  const [printJob, setPrintJob] = useState(null);
   const currentAppState = useMemo(
     () => ({
       localProjectId,
@@ -918,6 +995,7 @@ function App() {
       estimateSections,
       manualEstimateLines,
       generatedRowSectionAssignments,
+      presentationSettings,
       parameterLibraryUiState,
       stages,
       trades,
@@ -953,6 +1031,7 @@ function App() {
       estimateSections,
       manualEstimateLines,
       generatedRowSectionAssignments,
+      presentationSettings,
       parameterLibraryUiState,
       stages,
       trades,
@@ -1119,7 +1198,93 @@ function App() {
   const estimateSummary = useMemo(() => {
     return summarizeEstimateRows(estimateRows);
   }, [estimateRows]);
-
+  const presentationRows = useMemo(
+    () => [...estimateRows, ...manualBuilderRows],
+    [estimateRows, manualBuilderRows]
+  );
+  const sharedPresentationProject = useMemo(
+    () => ({
+      projectName,
+      estimateName,
+      clientName,
+      projectAddress,
+      contactDetails,
+      projectManager,
+      estimator,
+      revision,
+    }),
+    [
+      clientName,
+      contactDetails,
+      estimateName,
+      estimator,
+      projectAddress,
+      projectManager,
+      projectName,
+      revision,
+    ]
+  );
+  const activePresentationModel = useMemo(
+    () =>
+      buildEstimatePresentationModel({
+        rows: presentationRows,
+        sections: estimateSections,
+        projectRooms: committedProjectRooms,
+        generatedRowSectionAssignments,
+        project: sharedPresentationProject,
+        mode: presentationSettings.previewMode,
+        groupBy: presentationSettings.groupBy,
+        presentationLayout: presentationSettings.presentationLayout,
+        clientPrimaryLabelField: presentationSettings.clientPrimaryLabelField,
+        clientLineItemDetailFields: presentationSettings.clientLineItemDetailFields,
+        clientHideQuantities: presentationSettings.clientHideQuantities,
+        clientShowUnits: presentationSettings.clientShowUnits,
+        visibility: presentationSettings.visibility,
+        markupPercent: presentationSettings.markupPercent,
+        gstEnabled: presentationSettings.gstEnabled,
+        gstRate: presentationSettings.gstRate,
+      }),
+    [
+      committedProjectRooms,
+      estimateSections,
+      generatedRowSectionAssignments,
+      presentationRows,
+      presentationSettings,
+      sharedPresentationProject,
+    ]
+  );
+  const clientPresentationModel = useMemo(
+    () =>
+      buildEstimatePresentationModel({
+        rows: presentationRows,
+        sections: estimateSections,
+        projectRooms: committedProjectRooms,
+        generatedRowSectionAssignments,
+        project: sharedPresentationProject,
+        mode: "client",
+        groupBy: presentationSettings.clientGroupBy || presentationSettings.groupBy,
+        presentationLayout: presentationSettings.presentationLayout,
+        clientPrimaryLabelField: presentationSettings.clientPrimaryLabelField,
+        clientLineItemDetailFields: presentationSettings.clientLineItemDetailFields,
+        clientHideQuantities: presentationSettings.clientHideQuantities,
+        clientShowUnits: presentationSettings.clientShowUnits,
+        visibility: {
+          ...presentationSettings.visibility,
+          hideUnitRates: true,
+        },
+        markupPercent: presentationSettings.markupPercent,
+        gstEnabled: presentationSettings.gstEnabled,
+        gstRate: presentationSettings.gstRate,
+      }),
+    [
+      committedProjectRooms,
+      estimateSections,
+      generatedRowSectionAssignments,
+      presentationRows,
+      presentationSettings,
+      sharedPresentationProject,
+    ]
+  );
   const handleEstimateRowChange = (rowId, updates) => {
     const normalizedUpdates =
       Object.prototype.hasOwnProperty.call(updates || {}, "stageId")
@@ -1174,6 +1339,19 @@ function App() {
       )
     );
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handlePopState = () => {
+      setRouteInfo(getCurrentRoute());
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   useEffect(() => {
     if (!hasSupabaseCredentials) {
@@ -1308,6 +1486,7 @@ function App() {
     setEstimateSections(normalizedAppState.estimateSections);
     setManualEstimateLines(normalizedAppState.manualEstimateLines);
     setGeneratedRowSectionAssignments(normalizedAppState.generatedRowSectionAssignments);
+    setPresentationSettings(normalizedAppState.presentationSettings);
     setParameterLibraryUiState(normalizedAppState.parameterLibraryUiState);
     setStages(normalizedAppState.stages);
     setTrades(normalizedAppState.trades);
@@ -1326,6 +1505,85 @@ function App() {
     }
     setProjectStatus(statusMessage);
   };
+
+  const handlePresentationSettingsChange = (nextSettings) => {
+    setPresentationSettings((current) => {
+      const resolvedSettings =
+        typeof nextSettings === "function" ? nextSettings(current) : nextSettings;
+
+      return {
+        ...current,
+        ...(resolvedSettings || {}),
+        visibility: {
+          ...current.visibility,
+          ...(resolvedSettings?.visibility || {}),
+        },
+      };
+    });
+  };
+
+  const handleExportPresentationPdf = () => {
+    if (!activePresentationModel) {
+      setProjectStatus("Nothing is ready to export yet.");
+      return;
+    }
+
+    setPrintJob({
+      id: `${Date.now()}`,
+      model: activePresentationModel,
+      title: estimateName || projectName || "Dynex Estimate",
+    });
+  };
+
+  const handleCreateShareLink = async () => {
+    if (!hasSupabaseCredentials) {
+      setShareState({
+        status: "error",
+        message: "Supabase credentials are required before creating a share link.",
+        url: "",
+      });
+      return;
+    }
+
+    setShareState({
+      status: "working",
+      message: "Creating share link…",
+      url: "",
+    });
+
+    try {
+      const shareLink = await createEstimateShareLink({
+        estimateId: localProjectId,
+        project: sharedPresentationProject,
+        rows: presentationRows,
+        sections: estimateSections,
+        projectRooms: committedProjectRooms,
+        generatedRowSectionAssignments,
+        presentationSettings,
+      });
+      const shareUrl = buildShareUrl(shareLink.shareId);
+
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+      }
+
+      setShareState({
+        status: "success",
+        message: "Share link copied to clipboard.",
+        url: shareUrl,
+      });
+    } catch (error) {
+      setShareState({
+        status: "error",
+        message: error.message || "Unable to create share link.",
+        url: "",
+      });
+    }
+  };
+
+  if (routeInfo.type === "share") {
+    return <EstimateShareView shareId={routeInfo.shareId} />;
+  }
 
   const handleStagesChange = (nextStages) => {
     applyAppState(
@@ -1499,6 +1757,14 @@ function App() {
 
   return (
     <div>
+      <EstimatePDFPrintLayer
+        job={printJob}
+        onComplete={() => setPrintJob(null)}
+        onError={(message) => {
+          setPrintJob(null);
+          setProjectStatus(message || "Unable to start print export.");
+        }}
+      />
       <div className="app-shell">
         <aside className="sidebar">
         {false ? (
@@ -1874,6 +2140,13 @@ function App() {
             manualBuilderRows={manualBuilderRows}
             generatedRowSectionAssignments={generatedRowSectionAssignments}
             onGeneratedRowSectionAssignmentsChange={setGeneratedRowSectionAssignments}
+            presentationSettings={presentationSettings}
+            onPresentationSettingsChange={handlePresentationSettingsChange}
+            presentationModel={activePresentationModel}
+            clientPresentationModel={clientPresentationModel}
+            onExportPresentationPdf={handleExportPresentationPdf}
+            onCreateShareLink={handleCreateShareLink}
+            shareState={shareState}
             activeView={estimateWorkspaceView}
             onActiveViewChange={setEstimateWorkspaceView}
             topBarPortalTarget={workspaceTopbarPortalTarget}

@@ -756,6 +756,7 @@ test("estimate builder supports inline editing of generated estimate-instance ro
   await userEvent.type(screen.getByLabelText(/quantity for tile installation/i), "12.5");
   expect(onGeneratedRowOverrideChange).toHaveBeenLastCalledWith("generated-row-1", {
     quantityOverride: "12.5",
+    takeoffApplied: null,
   });
 });
 

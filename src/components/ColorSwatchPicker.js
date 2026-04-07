@@ -56,11 +56,11 @@ function ColorSwatchPicker({
       {isOpen ? (
         <div className="color-swatch-popover">
           <div className="color-swatch-grid">
-            {presetColors.map((presetColor) => {
-              const isSelected = presetColor.toLowerCase() === String(value).toLowerCase();
+          {presetColors.map((presetColor) => {
+            const isSelected = presetColor.toLowerCase() === String(value).toLowerCase();
 
-              return (
-                <button
+            return (
+              <button
                   key={presetColor}
                   type="button"
                   className={`color-swatch-option ${isSelected ? "color-swatch-option-selected" : ""}`}
@@ -68,7 +68,6 @@ function ColorSwatchPicker({
                   aria-label={`Use color ${presetColor}`}
                   onClick={() => {
                     onChange(presetColor);
-                    setIsOpen(false);
                   }}
                 />
               );
@@ -84,6 +83,13 @@ function ColorSwatchPicker({
               Custom
             </button>
             <span className="color-swatch-footer-value">{value}</span>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setIsOpen(false)}
+            >
+              Done
+            </button>
           </div>
 
           <input
@@ -94,7 +100,6 @@ function ColorSwatchPicker({
             value={value}
             onChange={(event) => {
               onChange(event.target.value);
-              setIsOpen(false);
             }}
             aria-label={`${ariaLabel} custom`}
           />

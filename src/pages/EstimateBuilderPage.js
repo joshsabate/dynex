@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import ColorSwatchPicker from "../components/ColorSwatchPicker";
 import FormField from "../components/FormField";
 import SectionCard from "../components/SectionCard";
 import { normalizeAssemblies } from "../utils/assemblies";
@@ -16,6 +17,13 @@ import { getStructuredItemPresentation, getWorkTypeTone, workTypeOptions } from 
 import { instantiateRoomTemplate } from "../utils/roomTemplates";
 import { getDefaultStageId, getStageIntegrity } from "../utils/stageIntegrity";
 import { getUnitAbbreviation, isHourUnit } from "../utils/units";
+import {
+  calculateEstimateTotals,
+  getEstimateRowSubtotal,
+  getEstimateSubtotal,
+} from "../utils/estimateTotals";
+import EstimatePresentationView from "../components/presentation/EstimatePresentationView";
+import PresentationSettingsModal from "../components/presentation/PresentationSettingsModal";
 
 const defaultSectionForm = {
   name: "",
@@ -233,7 +241,9 @@ const estimateColumns = [
 
 const ESTIMATE_BUILDER_GRID_TEMPLATE =
   "110px minmax(620px, 1fr) 96px 92px 98px 122px 56px 64px 74px 108px 176px";
-const ESTIMATE_SECTION_TONE_COUNT = 3;
+const SECTION_COLOR_DEFAULTS = ["#a0aebf", "#b8a491", "#a7c0b0", "#b59fb5"];
+const DEFAULT_SECTION_COLOR = SECTION_COLOR_DEFAULTS[0];
+const ESTIMATE_SECTION_TONE_COUNT = SECTION_COLOR_DEFAULTS.length;
 const DEFAULT_GST_RATE = 0.1;
 
 function getStoredEstimateColumnWidths() {
@@ -269,6 +279,36 @@ function getStableSectionToneIndex(sectionId) {
 
   return hash % ESTIMATE_SECTION_TONE_COUNT;
 }
+function getSectionClassName(depth = 0, toneIndex = 0) {
+  return [
+    "estimate-builder-section",
+    depth === 0 ? "estimate-builder-section--main" : "estimate-builder-section--child",
+    depth > 0 ? "estimate-builder-section--nested" : "",
+    `estimate-builder-section--tone-${toneIndex}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function getDefaultSectionColor(section) {
+  if (!section?.id) {
+    return DEFAULT_SECTION_COLOR;
+  }
+
+  const index = getStableSectionToneIndex(section.id);
+  return SECTION_COLOR_DEFAULTS[index % SECTION_COLOR_DEFAULTS.length];
+}
+
+function SectionColorPicker({ color = DEFAULT_SECTION_COLOR, onChange }) {
+  return (
+    <ColorSwatchPicker
+      value={color}
+      onChange={onChange}
+      presetColors={SECTION_COLOR_DEFAULTS}
+      ariaLabel="Change section color"
+    />
+  );
+}
 
 function EstimateBuilderPage({
   estimateName = "",
@@ -295,6 +335,13 @@ function EstimateBuilderPage({
   generatedRows = [],
   generatedRowSectionAssignments = {},
   onGeneratedRowSectionAssignmentsChange,
+  presentationSettings: controlledPresentationSettings = null,
+  onPresentationSettingsChange = () => {},
+  presentationModel = null,
+  clientPresentationModel = null,
+  onExportPresentationPdf = () => {},
+  onCreateShareLink = () => {},
+  shareState = { status: "idle", message: "", url: "" },
   topBarPortalTarget,
 }) {
   const [sectionForm, setSectionForm] = useState(defaultSectionForm);
@@ -322,7 +369,77 @@ function EstimateBuilderPage({
   const [debugRowUpdates, setDebugRowUpdates] = useState(() => getBuilderDebugRowUpdates());
   const [flashingRowIds, setFlashingRowIds] = useState({});
   const [isSectionModalOpen, setIsSectionModalOpen] = useState(false);
-  const [markupPercent, setMarkupPercent] = useState("0");
+  const [isPresentationPreviewOpen, setIsPresentationPreviewOpen] = useState(false);
+  const [isPresentationSettingsModalOpen, setIsPresentationSettingsModalOpen] = useState(false);
+  const [uncontrolledPresentationSettings, setUncontrolledPresentationSettings] = useState({
+    previewMode: "client",
+    presentationLayout: "line_sheet",
+    groupBy: "section",
+    clientGroupBy: "room",
+    allowedClientGroupings: ["room", "stage"],
+    allowClientGroupingSwitch: true,
+    clientLineItemDetailFields: ["specification", "gradeOrQuality", "brand", "finishOrVariant"],
+    clientHideQuantities: true,
+    clientShowUnits: false,
+    clientPrimaryLabelField: "coreName",
+    markupPercent: "0",
+    gstEnabled: true,
+    gstRate: DEFAULT_GST_RATE,
+    visibility: {
+      totalsOnly: false,
+      groupedBreakdown: true,
+      hideUnitRates: false,
+      hideLineItems: false,
+      showItemTotals: true,
+      showGroupTotals: true,
+      showSummaryTotals: true,
+    },
+  });
+  const presentationSettings = controlledPresentationSettings || uncontrolledPresentationSettings;
+
+  const getSectionColor = (section) => section?.color || getDefaultSectionColor(section);
+
+  useEffect(() => {
+    const hasMissingColor = sections.some((section) => !section?.color);
+
+    if (!hasMissingColor) {
+      return;
+    }
+
+    onSectionsChange(
+      sections.map((section) =>
+        section.color
+          ? section
+          : {
+              ...section,
+              color: getDefaultSectionColor(section),
+            }
+      )
+    );
+  }, [sections, onSectionsChange]);
+
+  const updatePresentationSettings = (updates) => {
+    const applySettings = (current) => {
+      const nextResolvedSettings =
+        typeof updates === "function" ? updates(current) : updates;
+
+      return {
+        ...current,
+        ...(nextResolvedSettings || {}),
+        visibility: {
+          ...current.visibility,
+          ...(nextResolvedSettings?.visibility || {}),
+        },
+      };
+    };
+
+    if (controlledPresentationSettings) {
+      onPresentationSettingsChange(applySettings);
+      return;
+    }
+
+    setUncontrolledPresentationSettings((current) => applySettings(current));
+  };
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -597,20 +714,7 @@ function EstimateBuilderPage({
     getUnitAbbreviation(units, unitId, fallback, fallback) || "Unassigned";
   const getCostDisplayName = (cost) => getStructuredItemPresentation(cost).displayName;
   const getRowRate = (row) => row.unitRate ?? row.rate ?? "";
-  const getDisplayedRowTotal = (row) => {
-    const quantity = Number(row.quantity ?? 0);
-    const rate = Number(getRowRate(row));
-
-    if (row.include === false) {
-      return 0;
-    }
-
-    if (!Number.isFinite(quantity) || !Number.isFinite(rate)) {
-      return 0;
-    }
-
-    return quantity * rate;
-  };
+  const getDisplayedRowTotal = (row) => getEstimateRowSubtotal(row);
   const getRowSortValue = (row, key) => {
     switch (key) {
       case "item":
@@ -629,6 +733,36 @@ function EstimateBuilderPage({
         return Number(row.sortOrder ?? 0);
     }
   };
+
+  const previewClientControls = {
+    groupBy: presentationSettings.clientGroupBy,
+    allowedGroupings: presentationSettings.allowedClientGroupings,
+    allowGroupingSwitch: presentationSettings.allowClientGroupingSwitch,
+    onGroupChange: (value) =>
+      updatePresentationSettings({
+        clientGroupBy: value,
+      }),
+  };
+
+  const presentationLayoutLabel =
+    presentationSettings.presentationLayout === "line_sheet" ? "Line sheet" : "Cards";
+  const resolvedClientGroupBy = presentationSettings.clientGroupBy || "room";
+  const presentationGroupLabel =
+    resolvedClientGroupBy[0].toUpperCase() + resolvedClientGroupBy.slice(1);
+  const presentationPrimaryLabel =
+    presentationSettings.clientPrimaryLabelField === "coreName" ? "Core Name" : "Item Name";
+  const DETAIL_FIELD_LABELS = {
+    specification: "Specification",
+    gradeOrQuality: "Grade / Quality",
+    brand: "Brand",
+    finishOrVariant: "Finish / Variant",
+  };
+  const detailFieldList = (presentationSettings.clientLineItemDetailFields || [])
+    .map((field) => DETAIL_FIELD_LABELS[field] || field)
+    .join(", ");
+  const detailFieldsSummary = detailFieldList || "None";
+  const quantityDisplayLabel = presentationSettings.clientHideQuantities ? "Hidden" : "Shown";
+  const unitDisplayLabel = presentationSettings.clientShowUnits ? "Shown" : "Hidden";
   const compareEstimateRows = (left, right) => {
     if (builderSort.key === "sortOrder") {
       const direction = builderSort.direction === "asc" ? 1 : -1;
@@ -1159,16 +1293,22 @@ function EstimateBuilderPage({
       }
     };
 
+    const indentClass = options.indentLevel ? `estimate-builder-row-indent-${options.indentLevel}` : "";
+    const rowClassName = [
+      "estimate-builder-grid",
+      "estimate-builder-grid-row",
+      row.include === false ? "estimate-builder-grid-row-excluded" : "",
+      debugMode && flashingRowIds[row.id] ? "estimate-builder-grid-row-flash" : "",
+      options.className || "",
+      indentClass,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
     return (
     <div
       key={row.id}
-      className={`estimate-builder-grid estimate-builder-grid-row ${
-        row.include === false ? "estimate-builder-grid-row-excluded" : ""
-      } ${
-        debugMode && flashingRowIds[row.id] ? "estimate-builder-grid-row-flash" : ""
-      } ${
-        options.className || ""
-      }`.trim()}
+      className={rowClassName}
       role="row"
       style={estimateGridStyle}
       data-testid={`builder-row-${row.id}`}
@@ -1338,83 +1478,87 @@ function EstimateBuilderPage({
   const getSectionTotal = (sectionId) => {
     const nestedSectionIds = new Set(getNestedSectionIds(sectionId));
     const roomSectionIdById = new Map(projectRooms.map((room) => [room.id, room.sectionId]));
-    const manualTotal = manualLines.reduce((total, line) => {
-      if (!nestedSectionIds.has(line.sectionId)) {
-        return total;
-      }
-
-      return total + getDisplayedRowTotal(line);
-    }, 0);
-    const generatedTotal = generatedRows.reduce((total, row) => {
-      const rowSectionId = roomSectionIdById.get(row.roomId);
-
-      if (!nestedSectionIds.has(rowSectionId)) {
-        return total;
-      }
-
-      return total + getDisplayedRowTotal(row);
-    }, 0);
-
-    return manualTotal + generatedTotal;
+    return getEstimateSubtotal([
+      ...manualLines.filter((line) => nestedSectionIds.has(line.sectionId)),
+      ...generatedRows.filter((row) => nestedSectionIds.has(roomSectionIdById.get(row.roomId))),
+    ]);
   };
 
-  const builderGrandTotal =
-    manualLines.reduce((total, line) => total + getDisplayedRowTotal(line), 0) +
-    generatedRows.reduce((total, row) => total + getDisplayedRowTotal(row), 0);
-  const normalizedMarkupPercent = Math.max(0, toNumber(markupPercent, 0));
-  const markupAmount = builderGrandTotal * (normalizedMarkupPercent / 100);
-  const subtotalWithMarkup = builderGrandTotal + markupAmount;
-  const gstAmount = subtotalWithMarkup * DEFAULT_GST_RATE;
-  const subtotalWithGst = subtotalWithMarkup + gstAmount;
-  const builderTotal = subtotalWithGst;
+  const {
+    subtotal: builderGrandTotal,
+    markupAmount,
+    subtotalWithMarkup,
+    gstAmount,
+    finalTotal: builderTotal,
+  } = calculateEstimateTotals({
+    rows: [...manualLines, ...generatedRows],
+    markupPercent: presentationSettings.markupPercent,
+    gstEnabled: presentationSettings.gstEnabled,
+    gstRate: presentationSettings.gstRate ?? DEFAULT_GST_RATE,
+  });
+  const subtotalWithGst = builderTotal;
+  const activePresentationModel =
+    presentationSettings.previewMode === "internal" && presentationModel
+      ? presentationModel
+      : presentationSettings.previewMode === "client" && clientPresentationModel
+        ? clientPresentationModel
+        : presentationModel || clientPresentationModel;
 
 
-  const renderSectionActionButtons = (section) => (
-    <div className="estimate-builder-section-actions" aria-label={`Section actions for ${section.name}`}>
-      {renderIconActionButton({
-        label: "Add Room",
-        icon: "Room",
-        className:
-          "estimate-builder-section-action estimate-builder-section-action-wide estimate-builder-section-action-room",
-        onClick: () => openSectionAction(section, "room"),
-      })}
-      {renderIconActionButton({
-        label: "Add Assembly",
-        icon: "Assembly",
-        className:
-          "estimate-builder-section-action estimate-builder-section-action-wide estimate-builder-section-action-assembly",
-        onClick: () => openSectionAction(section, "assembly"),
-      })}
-      {renderIconActionButton({
-        label: "Add Cost Item",
-        icon: "Cost Item",
-        className:
-          "estimate-builder-section-action estimate-builder-section-action-wide estimate-builder-section-action-cost",
-        onClick: () => openSectionAction(section, "cost-item"),
-      })}
-      {renderIconActionButton({
-        label: "Add Manual Item",
-        icon: "Manual",
-        className:
-          "estimate-builder-section-action estimate-builder-section-action-wide estimate-builder-section-action-manual",
-        onClick: () => openSectionAction(section, "manual-item"),
-      })}
-      {renderIconActionButton({
-        label: "Add Manual Labour",
-        icon: "Labour",
-        className:
-          "estimate-builder-section-action estimate-builder-section-action-wide estimate-builder-section-action-labour",
-        onClick: () => openSectionAction(section, "manual-labour"),
-      })}
-      {renderIconActionButton({
-        label: "Add Child Section",
-        icon: "Child",
-        className:
-          "estimate-builder-section-action estimate-builder-section-action-wide estimate-builder-section-action-child",
-        onClick: () => openSectionAction(section, "child-section"),
-      })}
-    </div>
-  );
+  const renderSectionActionButtons = (section) => {
+    const currentColor = getSectionColor(section);
+
+    return (
+      <div className="estimate-builder-section-actions" aria-label={`Section actions for ${section.name}`}>
+        <SectionColorPicker
+          color={currentColor}
+          onChange={(nextColor) => updateSectionColor(section.id, nextColor)}
+        />
+        {renderIconActionButton({
+          label: "Add Room",
+          icon: "Room",
+          className:
+            "estimate-builder-section-action estimate-builder-section-action-wide estimate-builder-section-action-room",
+          onClick: () => openSectionAction(section, "room"),
+        })}
+        {renderIconActionButton({
+          label: "Add Assembly",
+          icon: "Assembly",
+          className:
+            "estimate-builder-section-action estimate-builder-section-action-wide estimate-builder-section-action-assembly",
+          onClick: () => openSectionAction(section, "assembly"),
+        })}
+        {renderIconActionButton({
+          label: "Add Cost Item",
+          icon: "Cost Item",
+          className:
+            "estimate-builder-section-action estimate-builder-section-action-wide estimate-builder-section-action-cost",
+          onClick: () => openSectionAction(section, "cost-item"),
+        })}
+        {renderIconActionButton({
+          label: "Add Manual Item",
+          icon: "Manual",
+          className:
+            "estimate-builder-section-action estimate-builder-section-action-wide estimate-builder-section-action-manual",
+          onClick: () => openSectionAction(section, "manual-item"),
+        })}
+        {renderIconActionButton({
+          label: "Add Manual Labour",
+          icon: "Labour",
+          className:
+            "estimate-builder-section-action estimate-builder-section-action-wide estimate-builder-section-action-labour",
+          onClick: () => openSectionAction(section, "manual-labour"),
+        })}
+        {renderIconActionButton({
+          label: "Add Child Section",
+          icon: "Child",
+          className:
+            "estimate-builder-section-action estimate-builder-section-action-wide estimate-builder-section-action-child",
+          onClick: () => openSectionAction(section, "child-section"),
+        })}
+      </div>
+    );
+  };
 
   const updateSectionForm = (key, value) => {
     setSectionForm((current) => ({ ...current, [key]: value }));
@@ -1472,6 +1616,23 @@ function EstimateBuilderPage({
           ? {
               ...section,
               name: value,
+            }
+          : section
+      )
+    );
+  };
+
+  const updateSectionColor = (sectionId, nextColor) => {
+    if (!sectionId || !nextColor) {
+      return;
+    }
+
+    onSectionsChange(
+      sections.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              color: nextColor,
             }
           : section
       )
@@ -1762,14 +1923,16 @@ function EstimateBuilderPage({
       return;
     }
 
+    const nextSectionId = `estimate-section-${Date.now()}`;
     onSectionsChange([
       ...sections,
       {
-        id: `estimate-section-${Date.now()}`,
+        id: nextSectionId,
         name: sectionForm.name,
         parentSectionId: sectionForm.parentSectionId,
         stageId: "",
         sortOrder: Number(sectionForm.sortOrder),
+        color: getDefaultSectionColor({ id: nextSectionId }),
       },
     ]);
 
@@ -2254,10 +2417,8 @@ function EstimateBuilderPage({
     return (
       <div className="estimate-builder-tree">
         {childSections.map((section) => {
-          const topLevelToneClass =
-            depth === 0
-              ? `estimate-builder-section--tone-${getStableSectionToneIndex(section.id)}`
-              : "";
+          const toneIndex = getStableSectionToneIndex(section.id);
+          const sectionColor = getSectionColor(section);
           const sectionLines = manualLines
             .filter((line) => line.sectionId === section.id)
             .filter(matchesBuilderRow)
@@ -2309,14 +2470,8 @@ function EstimateBuilderPage({
           return (
             <div
               key={section.id}
-              className={[
-                "estimate-builder-section",
-                depth === 0 ? "estimate-builder-section--main" : "estimate-builder-section--child",
-                depth > 0 ? "estimate-builder-section--nested" : "",
-                topLevelToneClass,
-              ]
-                .filter(Boolean)
-                .join(" ")}
+              className={getSectionClassName(depth, toneIndex)}
+              style={{ "--section-color-base": sectionColor }}
             >
               <div className="estimate-builder-section-header">
                 <div className="estimate-builder-section-title">
@@ -3077,18 +3232,19 @@ function EstimateBuilderPage({
                                       (row) =>
                                         renderEstimateGridRow(
                                           row,
-                                          renderRowActions(
-                                            row,
-                                            "generated",
-                                            () => moveGeneratedRow(roomRows, row.id, -1),
-                                            () => moveGeneratedRow(roomRows, row.id, 1),
-                                            () => updateGeneratedRow(row, "remove", true)
-                                          ),
-                                          {
-                                            className: "estimate-builder-generated-row",
-                                            sourceType: "generated",
-                                          }
+                                        renderRowActions(
+                                          row,
+                                          "generated",
+                                          () => moveGeneratedRow(roomRows, row.id, -1),
+                                          () => moveGeneratedRow(roomRows, row.id, 1),
+                                          () => updateGeneratedRow(row, "remove", true)
                                         ),
+                                        {
+                                          className: "estimate-builder-generated-row",
+                                          sourceType: "generated",
+                                          indentLevel: 2,
+                                        }
+                                      ),
                                       "No generated room rows in this section."
                                     )}
                                   </div>
@@ -3172,6 +3328,7 @@ function EstimateBuilderPage({
                                         {
                                           className: "estimate-builder-manual-row",
                                           sourceType: "manual-builder",
+                                          indentLevel: 2,
                                         }
                                       ),
                                       "No assembly rows in this group."
@@ -3185,7 +3342,17 @@ function EstimateBuilderPage({
                       ) : null}
 
                       {standaloneSectionLines.length ? (
-                        <div className="estimate-builder-manual-lines">
+                        <div
+                          className={[
+                            "estimate-builder-manual-lines",
+                            "estimate-builder-manual-lines--standalone",
+                            sectionAssemblyGroups.length
+                              ? "estimate-builder-manual-lines--after-assemblies"
+                              : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                        >
                           {renderGroupedEstimateRows(
                             standaloneSectionLines,
                             (row) =>
@@ -3201,6 +3368,7 @@ function EstimateBuilderPage({
                               {
                                 className: "estimate-builder-manual-row",
                                 sourceType: "manual-builder",
+                                indentLevel: 2,
                               }
                             ),
                             "No manual lines in this section."
@@ -4328,11 +4496,27 @@ function EstimateBuilderPage({
                       min="0"
                       step="0.1"
                       inputMode="decimal"
-                      value={markupPercent}
-                      onChange={(event) => setMarkupPercent(event.target.value)}
+                      value={presentationSettings.markupPercent}
+                      onChange={(event) =>
+                        updatePresentationSettings({
+                          markupPercent: event.target.value,
+                        })
+                      }
                     />
                     <span aria-hidden="true">%</span>
                   </div>
+                </label>
+                <label className="estimate-builder-summary-toggle">
+                  <input
+                    type="checkbox"
+                    checked={presentationSettings.gstEnabled !== false}
+                    onChange={(event) =>
+                      updatePresentationSettings({
+                        gstEnabled: event.target.checked,
+                      })
+                    }
+                  />
+                  <span>GST</span>
                 </label>
               </div>
               <table className="summary-table estimate-builder-summary-table">
@@ -4342,12 +4526,20 @@ function EstimateBuilderPage({
                     <td>{currencyFormatter.format(builderGrandTotal)}</td>
                   </tr>
                   <tr>
+                    <th scope="row">Markup</th>
+                    <td>{currencyFormatter.format(markupAmount)}</td>
+                  </tr>
+                  <tr>
                     <th scope="row">Subtotal + Markup</th>
                     <td>{currencyFormatter.format(subtotalWithMarkup)}</td>
                   </tr>
                   <tr>
-                    <th scope="row">Subtotal + GST</th>
-                    <td>{currencyFormatter.format(subtotalWithGst)}</td>
+                    <th scope="row">
+                      {presentationSettings.gstEnabled !== false ? "Subtotal + GST" : "GST"}
+                    </th>
+                    <td title={`GST amount ${currencyFormatter.format(gstAmount)}`}>
+                      {currencyFormatter.format(presentationSettings.gstEnabled !== false ? subtotalWithGst : 0)}
+                    </td>
                   </tr>
                   <tr>
                     <th scope="row">Total</th>
@@ -4356,10 +4548,138 @@ function EstimateBuilderPage({
                 </tbody>
               </table>
             </div>
+            <div className="estimate-builder-presentation-panel" aria-label="Presentation controls">
+              <div className="estimate-builder-presentation-header">
+                <div>
+                  <p className="room-template-editor-kicker">Client Presentation</p>
+                  <h3>Preview, export, and share</h3>
+                </div>
+                <div className="estimate-builder-presentation-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setIsPresentationPreviewOpen((current) => !current)}
+                    disabled={!activePresentationModel}
+                  >
+                    {isPresentationPreviewOpen ? "Hide Preview" : "Preview Presentation"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={onExportPresentationPdf}
+                    disabled={!activePresentationModel}
+                  >
+                    Export PDF
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={onCreateShareLink}
+                    disabled={shareState.status === "working" || !activePresentationModel}
+                  >
+                    {shareState.status === "working" ? "Creating Link..." : "Create / Copy Share Link"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setIsPresentationSettingsModalOpen(true)}
+                    disabled={!activePresentationModel}
+                  >
+                    Presentation Settings
+                  </button>
+                </div>
+              </div>
+              <div className="estimate-builder-presentation-grid">
+                <div className="presentation-settings-summary">
+                  <div className="presentation-settings-summary__row">
+                    <span>Preview mode</span>
+                    <select
+                      value={presentationSettings.previewMode || "client"}
+                      onChange={(event) =>
+                        updatePresentationSettings({
+                          previewMode: event.target.value,
+                        })
+                      }
+                    >
+                      <option value="client">Client</option>
+                      <option value="internal">Internal</option>
+                    </select>
+                  </div>
+                  <div className="presentation-settings-summary__row">
+                    <span>Layout</span>
+                    <strong>{presentationLayoutLabel}</strong>
+                  </div>
+                  <div className="presentation-settings-summary__row">
+                    <span>Group by</span>
+                    <strong>{presentationGroupLabel}</strong>
+                  </div>
+                  <div className="presentation-settings-summary__row">
+                    <span>Primary label</span>
+                    <strong>{presentationPrimaryLabel}</strong>
+                  </div>
+                  <div className="presentation-settings-summary__row">
+                    <span>Detail fields</span>
+                    <strong>{detailFieldsSummary}</strong>
+                  </div>
+                  <div className="presentation-settings-summary__row">
+                    <span>Quantities</span>
+                    <strong>{quantityDisplayLabel}</strong>
+                    <span>Units</span>
+                    <strong>{unitDisplayLabel}</strong>
+                  </div>
+                </div>
+                <div className="presentation-settings-share">
+                  {shareState.message ? (
+                    <p
+                      className={[
+                        "estimate-builder-presentation-status",
+                        shareState.status === "error" ? "is-error" : "is-success",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
+                      {shareState.message}
+                    </p>
+                  ) : null}
+                  {shareState.url ? (
+                    <label className="field estimate-builder-presentation-link">
+                      <span>Share link</span>
+                      <div className="estimate-builder-presentation-link__controls">
+                        <input type="text" readOnly value={shareState.url} />
+                        <a
+                          className="secondary-button estimate-builder-presentation-link__open"
+                          href={shareState.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Open share view
+                        </a>
+                      </div>
+                    </label>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+            {isPresentationPreviewOpen && activePresentationModel ? (
+              <div className="estimate-builder-presentation-preview">
+                <EstimatePresentationView
+                  model={activePresentationModel}
+                  clientControls={previewClientControls}
+                />
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
       {sectionActionModal}
+      {isPresentationSettingsModalOpen ? (
+        <PresentationSettingsModal
+          isOpen
+          settings={presentationSettings}
+          onChange={updatePresentationSettings}
+          onClose={() => setIsPresentationSettingsModalOpen(false)}
+        />
+      ) : null}
       {isSectionModalOpen ? (
         <div
           className="estimate-builder-modal-backdrop"
