@@ -25,6 +25,12 @@ function toText(value) {
   return String(value || "").trim();
 }
 
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    toText(value)
+  );
+}
+
 export function mapCostItemToSupabaseRow(cost) {
   return {
     internal_id: cost.internalId || null,
@@ -157,11 +163,14 @@ export function mapAssemblyToSupabaseRow(assembly) {
 
 export function mapAssemblyItemToSupabaseRow(item, assemblyId, index = 0) {
   const itemId = item.id || `${assemblyId}-item-${index + 1}`;
+  const resolvedCostItemId = isUuid(item.libraryItemId || item.costItemId)
+    ? toText(item.libraryItemId || item.costItemId)
+    : "";
   return {
     id: itemId,
     assembly_id: assemblyId,
     line_name: item.itemNameSnapshot || item.itemName || "",
-    cost_item_id: item.libraryItemId || item.costItemId || "",
+    cost_item_id: resolvedCostItemId,
     cost_item_name: item.itemNameSnapshot || item.itemName || "",
     quantity_formula: item.quantityFormula || "",
     qty_rule: item.qtyRule || item.quantityFormula || "",

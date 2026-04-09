@@ -1,4 +1,5 @@
 import {
+  mapAssemblyItemToSupabaseRow,
   mapCostItemToSupabaseRow,
   mapSupabaseCostRowToItem,
 } from "./librarySupabase";
@@ -97,4 +98,35 @@ test("hydrates a legacy simplified cost_items row into the app cost model", () =
     status: "Active",
     isActive: true,
   });
+});
+
+test("maps assembly item cost references to uuid columns only", () => {
+  const invalidReferenceRow = mapAssemblyItemToSupabaseRow(
+    {
+      id: "assembly-1-item-1",
+      libraryItemId: "WALL-PB-MTL",
+      costItemId: "WALL-PB-MTL",
+      itemNameSnapshot: "Villaboard Sheets",
+      itemName: "Villaboard Sheets",
+    },
+    "assembly-1",
+    0
+  );
+
+  const validReferenceRow = mapAssemblyItemToSupabaseRow(
+    {
+      id: "assembly-1-item-2",
+      libraryItemId: "11111111-1111-4111-8111-111111111111",
+      costItemId: "11111111-1111-4111-8111-111111111111",
+      itemNameSnapshot: "Villaboard Sheets",
+      itemName: "Villaboard Sheets",
+    },
+    "assembly-1",
+    1
+  );
+
+  expect(invalidReferenceRow.cost_item_id).toBe("");
+  expect(validReferenceRow.cost_item_id).toBe(
+    "11111111-1111-4111-8111-111111111111"
+  );
 });

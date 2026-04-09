@@ -26,8 +26,10 @@ const itemFamilies = [
 ];
 const costs = [
   {
-    id: "cost-1",
+    id: "11111111-1111-4111-8111-111111111111",
+    internalId: "WALL-PB-MTL",
     itemName: "Villaboard Sheets",
+    coreName: "Villaboard Sheets",
     displayName: "Villaboard Sheets",
     costType: "MTL",
     deliveryType: "Supply",
@@ -59,7 +61,7 @@ const assemblies = [
     items: [
       {
         id: "assembly-1-item-1",
-        libraryItemId: "cost-1",
+        libraryItemId: "11111111-1111-4111-8111-111111111111",
         itemNameSnapshot: "Villaboard Sheets",
         itemName: "Villaboard Sheets",
         costType: "MTL",
@@ -114,7 +116,7 @@ test("exports assembly parent and child csv files with the 2-file format", () =>
     "assembly_key,line_name,cost_item_id,cost_item_name,quantity_formula,qty_rule,waste_factor,unit_override,rate_override,trade_source,trade_id,cost_code_source,cost_code_id,unit_source,notes,sort_order,is_active"
   );
   expect(itemCsv).toContain(
-    "assembly-1,Villaboard Sheets,cost-1,Villaboard Sheets,villaboardArea,villaboardArea"
+    "assembly-1,Villaboard Sheets,11111111-1111-4111-8111-111111111111,Villaboard Sheets,villaboardArea,villaboardArea"
   );
 });
 
@@ -151,7 +153,7 @@ test("imports 2 csv files, previews validation, and replaces matching child item
     [
       [
         "assembly_key,line_name,cost_item_id,cost_item_name,quantity_formula,qty_rule,waste_factor,unit_override,rate_override,trade_source,trade_id,cost_code_source,cost_code_id,unit_source,notes,sort_order,is_active",
-        "assembly-1,Villaboard Sheets,cost-1,Villaboard Sheets,floorArea,floorArea,,,12.5,inherit,trade-general,inherit,cost-code-wall,inherit,,1,true",
+        "assembly-1,Villaboard Sheets,WALL-PB-MTL,Villaboard Sheets,floorArea,floorArea,,,12.5,inherit,trade-general,inherit,cost-code-wall,inherit,,1,true",
         "assembly-1,Install Villaboard,,Villaboard Sheets,floorArea * 0.7,floorArea * 0.7,,,75,override,trade-tile,override,cost-code-finishes,override,HR,2,true",
       ].join("\n"),
     ],
@@ -196,7 +198,7 @@ test("imports 2 csv files, previews validation, and replaces matching child item
     notes: "Imported notes",
   });
   expect(nextAssemblies[0].items[0]).toMatchObject({
-    libraryItemId: "cost-1",
+    libraryItemId: "11111111-1111-4111-8111-111111111111",
     itemNameSnapshot: "Villaboard Sheets",
     quantityFormula: "floorArea",
     rateOverride: 12.5,
@@ -208,6 +210,56 @@ test("imports 2 csv files, previews validation, and replaces matching child item
     unit: "SQM",
     isCustomItem: false,
   });
+});
+
+test("marks unresolved assembly csv cost references and skips importing those child rows", async () => {
+  const { onAssembliesChange } = renderPage({ assemblies: [] });
+  const assembliesFile = new File(
+    [
+      [
+        "assembly_key,assembly_name,room_type,assembly_group,assembly_element,assembly_scope,assembly_spec,image_url,notes,sort_order,is_active",
+        "assembly-2,Wall  Lining,Bathroom,Walls & Linings,Wall,Lining,,,Imported notes,1,true",
+      ].join("\n"),
+    ],
+    "assemblies.csv",
+    { type: "text/csv" }
+  );
+  const assemblyItemsFile = new File(
+    [
+      [
+        "assembly_key,line_name,cost_item_id,cost_item_name,quantity_formula,qty_rule,waste_factor,unit_override,rate_override,trade_source,trade_id,cost_code_source,cost_code_id,unit_source,notes,sort_order,is_active",
+        "assembly-2,Unknown Board,UNKNOWN-COST,Unknown Board,floorArea,floorArea,,,12.5,inherit,trade-general,inherit,cost-code-wall,inherit,,1,true",
+      ].join("\n"),
+    ],
+    "assembly_items.csv",
+    { type: "text/csv" }
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: /import csv/i }));
+  fireEvent.change(screen.getByLabelText(/assemblies\.csv/i), {
+    target: { files: [assembliesFile] },
+  });
+  fireEvent.change(screen.getByLabelText(/assembly_items\.csv/i), {
+    target: { files: [assemblyItemsFile] },
+  });
+  await userEvent.click(screen.getByRole("button", { name: /preview import/i }));
+
+  await waitFor(() => {
+    expect(screen.getByText(/validation preview/i)).toBeInTheDocument();
+  });
+  expect(
+    screen.getByText((_, node) => node?.textContent === "0child items to create")
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText((_, node) => node?.textContent === "1unresolved cost items")
+  ).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: /apply import/i }));
+
+  await waitFor(() => expect(onAssembliesChange).toHaveBeenCalledTimes(1));
+  const nextAssemblies = onAssembliesChange.mock.calls[0][0];
+  expect(nextAssemblies).toHaveLength(1);
+  expect(nextAssemblies[0].items).toHaveLength(0);
 });
 
 test("builds assembly names from structured identity fields and keeps notes collapsed by default", async () => {
@@ -639,7 +691,7 @@ test("copies selected assembly line templates into the current assembly as edita
     {
       id: "template-1",
       name: "Bathroom floor tile line",
-      costItemId: "cost-1",
+      costItemId: "11111111-1111-4111-8111-111111111111",
       costItemNameSnapshot: "Villaboard Sheets",
       defaultFormula: "floorArea * 1.1",
       defaultQtyRule: "FloorArea",
@@ -673,6 +725,8 @@ test("copies selected assembly line templates into the current assembly as edita
   expect(screen.getByLabelText(/^unit$/i)).toHaveValue("SQM");
   expect(screen.getByLabelText(/base rate/i)).toHaveValue(22);
   expect(screen.getByLabelText(/^override rate$/i)).toHaveValue(12.5);
-  expect(screen.getByLabelText(/link id/i)).toHaveValue("cost-1");
+  expect(screen.getByLabelText(/link id/i)).toHaveValue(
+    "11111111-1111-4111-8111-111111111111"
+  );
 });
 

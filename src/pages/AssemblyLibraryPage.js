@@ -261,6 +261,25 @@ function normalizeMatchKey(value) {
   return cleanText(value).toLowerCase().replace(/\s+/g, " ");
 }
 
+function resolveImportedCostReference(referenceValue, referenceName, costs = []) {
+  const normalizedReferenceValue = normalizeMatchKey(referenceValue);
+  const normalizedReferenceName = normalizeMatchKey(referenceName);
+
+  if (!normalizedReferenceValue && !normalizedReferenceName) {
+    return null;
+  }
+
+  return (
+    costs.find((cost) => normalizeMatchKey(cost.internalId) === normalizedReferenceValue) ||
+    costs.find((cost) => cleanText(cost.id) === cleanText(referenceValue)) ||
+    costs.find((cost) => normalizeMatchKey(cost.itemName) === normalizedReferenceValue) ||
+    costs.find((cost) => normalizeMatchKey(cost.coreName) === normalizedReferenceValue) ||
+    costs.find((cost) => normalizeMatchKey(cost.itemName) === normalizedReferenceName) ||
+    costs.find((cost) => normalizeMatchKey(cost.coreName) === normalizedReferenceName) ||
+    null
+  );
+}
+
 function isTruthyCsvBoolean(value, fallback = true) {
   const normalizedValue = normalizeMatchKey(value);
 
@@ -2147,9 +2166,6 @@ function AssemblyLibraryPage({
       const existingAssemblyMap = new Map(
         normalizedAssemblies.map((assembly) => [cleanText(assembly.id), assembly])
       );
-      const costNameLookup = new Map(
-        normalizedCosts.map((cost) => [normalizeMatchKey(cost.itemName), cost])
-      );
       const parentAssembliesByKey = new Map();
       const duplicateParentKeys = new Set();
       let missingAssemblyKey = 0;
@@ -2222,10 +2238,11 @@ function AssemblyLibraryPage({
 
         const costItemId = cleanText(row.cost_item_id);
         const costItemName = cleanText(row.cost_item_name);
-        const matchedCost =
-          normalizedCosts.find((cost) => cleanText(cost.id) === costItemId) ||
-          costNameLookup.get(normalizeMatchKey(costItemName)) ||
-          null;
+        const matchedCost = resolveImportedCostReference(
+          costItemId,
+          costItemName,
+          normalizedCosts
+        );
 
         if (!matchedCost) {
           unresolvedCostItems.push({
@@ -2234,6 +2251,7 @@ function AssemblyLibraryPage({
             costItemId,
             costItemName,
           });
+          return;
         }
 
         if (!childRowsByAssemblyKey.has(assemblyKey)) {
@@ -2259,32 +2277,32 @@ function AssemblyLibraryPage({
 
         childRowsByAssemblyKey.get(assemblyKey).push({
           id: `${assemblyKey}-item-${index + 1}`,
-          libraryItemId: matchedCost?.id || costItemId,
-          costItemId: matchedCost?.id || costItemId,
+          libraryItemId: matchedCost.id,
+          costItemId: matchedCost.id,
           itemNameSnapshot:
-            cleanText(row.line_name) || costItemName || matchedCost?.itemName || "",
+            cleanText(row.line_name) || costItemName || matchedCost.itemName || "",
           itemName:
-            cleanText(row.line_name) || costItemName || matchedCost?.itemName || "",
-          costType: matchedCost?.costType || "",
-          deliveryType: matchedCost?.deliveryType || "",
+            cleanText(row.line_name) || costItemName || matchedCost.itemName || "",
+          costType: matchedCost.costType || "",
+          deliveryType: matchedCost.deliveryType || "",
           tradeId: resolvedTradeId,
           trade:
-            (tradeSource === "override" ? "" : matchedCost?.trade) ||
+            (tradeSource === "override" ? "" : matchedCost.trade) ||
             activeTrades.find((trade) => trade.id === resolvedTradeId)?.name ||
             cleanText(row.trade_id),
           costCodeId: resolvedCostCodeId,
           costCode:
-            (costCodeSource === "override" ? "" : matchedCost?.costCode) ||
+            (costCodeSource === "override" ? "" : matchedCost.costCode) ||
             activeCostCodes.find((costCode) => costCode.id === resolvedCostCodeId)?.name ||
             cleanText(row.cost_code_id),
           quantityFormula: cleanText(row.quantity_formula),
           qtyRule: cleanText(row.qty_rule) || cleanText(row.quantity_formula),
           wasteFactor: cleanText(row.waste_factor),
           unitId: resolvedUnitId,
-          unit: resolvedUnitValue || matchedCost?.unit || "",
+          unit: resolvedUnitValue || matchedCost.unit || "",
           unitOverride: unitSource === "override" ? cleanText(row.unit_override) : "",
-          baseRate: matchedCost?.rate ?? "",
-          unitCost: matchedCost?.rate ?? "",
+          baseRate: matchedCost.rate ?? "",
+          unitCost: matchedCost.rate ?? "",
           rateOverride: cleanText(row.rate_override),
           tradeSource,
           costCodeSource,
@@ -2292,7 +2310,7 @@ function AssemblyLibraryPage({
           notes: cleanText(row.notes),
           sortOrder: Number(cleanText(row.sort_order) || childRowsByAssemblyKey.get(assemblyKey).length + 1),
           isActive: isTruthyCsvBoolean(row.is_active, true),
-          isCustomItem: !matchedCost,
+          isCustomItem: false,
         });
         childItemsToCreate += 1;
       });
