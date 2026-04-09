@@ -2198,6 +2198,14 @@ textarea {
   width: 13%;
 }
 
+.cost-library-col-delivery {
+  width: 12%;
+}
+
+.cost-library-col-cost-code {
+  width: 12%;
+}
+
 .cost-library-col-actions {
   width: 12%;
 }
@@ -2279,6 +2287,45 @@ textarea {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.cost-library-delivery-tag {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 2px 7px;
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+}
+
+.cost-library-delivery-tag.is-supply {
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+}
+
+.cost-library-delivery-tag.is-install {
+  background: rgba(22, 163, 74, 0.12);
+  color: #16a34a;
+}
+
+.cost-library-delivery-tag.is-supply-install {
+  background: rgba(124, 58, 237, 0.12);
+  color: #7c3aed;
+}
+
+.cost-library-delivery-tag.is-labour {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+}
+
+.cost-library-delivery-tag.is-unassigned {
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
 }
 
 .cost-library-name-primary {

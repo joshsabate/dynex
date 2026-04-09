@@ -145,3 +145,26 @@ test("reports row-level validation failures and duplicate internal ids during ap
   expect(screen.getByText(/Row 3: Invalid Cost Type/i)).toBeInTheDocument();
   expect(screen.getByText(/Row 4: Missing required field: Core Name/i)).toBeInTheDocument();
 });
+
+test("toggles optional cost library columns without affecting the compact default view", async () => {
+  renderPage();
+
+  expect(screen.queryByRole("columnheader", { name: /delivery type/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("columnheader", { name: /cost code/i })).not.toBeInTheDocument();
+  expect(screen.getByRole("columnheader", { name: /actions/i })).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: /show more/i }));
+
+  expect(screen.getByRole("columnheader", { name: /delivery type/i })).toBeInTheDocument();
+  expect(screen.getByRole("columnheader", { name: /cost code/i })).toBeInTheDocument();
+  expect(screen.getByText("Supply")).toBeInTheDocument();
+  expect(screen.getAllByText("Finishes")[0]).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /show less/i })).toBeInTheDocument();
+  expect(screen.getByRole("columnheader", { name: /actions/i })).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: /show less/i }));
+
+  expect(screen.queryByRole("columnheader", { name: /delivery type/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("columnheader", { name: /cost code/i })).not.toBeInTheDocument();
+  expect(screen.getByRole("columnheader", { name: /actions/i })).toBeInTheDocument();
+});

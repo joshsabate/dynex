@@ -200,6 +200,109 @@ function createDuplicateName(itemName) {
   return baseName.includes("(Copy)") ? baseName : `${baseName} (Copy)`;
 }
 
+function getDeliveryTypeTagClassName(deliveryType) {
+  switch (cleanText(deliveryType)) {
+    case "Supply":
+      return "is-supply";
+    case "Install":
+      return "is-install";
+    case "Supply & Install":
+      return "is-supply-install";
+    case "Labour":
+      return "is-labour";
+    default:
+      return "is-unassigned";
+  }
+}
+
+const costLibraryBaseColumns = [
+  {
+    key: "coreName",
+    header: "Core Name",
+    colClassName: "cost-library-col-core",
+    render: (cost) => cost.itemName,
+  },
+  {
+    key: "itemName",
+    header: "Item Name",
+    colClassName: "cost-library-col-item",
+    render: (cost) => {
+      const itemPresentation = getStructuredItemPresentation(cost);
+
+      return (
+        <div className="cost-library-name-cell">
+          {cost.imageUrl ? (
+            <img
+              className="library-image-thumb"
+              src={cost.imageUrl}
+              alt=""
+              loading="lazy"
+            />
+          ) : null}
+          <span className="cost-library-name-primary">
+            {itemPresentation.primaryLabel}
+          </span>
+          {itemPresentation.metaLabel ? (
+            <span
+              className="cost-library-name-meta"
+              title={itemPresentation.metaLabel}
+            >
+              {itemPresentation.metaLabel}
+            </span>
+          ) : null}
+        </div>
+      );
+    },
+  },
+  {
+    key: "costType",
+    header: "Cost Type",
+    colClassName: "cost-library-col-type",
+    render: (cost) => cost.costType,
+  },
+  {
+    key: "unit",
+    header: "Unit",
+    colClassName: "cost-library-col-unit",
+    render: (cost) => cost.unit || "",
+  },
+  {
+    key: "rate",
+    header: "Rate",
+    colClassName: "cost-library-col-rate",
+    render: (cost) => cost.rate,
+  },
+  {
+    key: "trade",
+    header: "Trade",
+    colClassName: "cost-library-col-trade",
+    render: (cost) => cost.trade || "Unassigned",
+  },
+];
+
+const costLibraryExpandedColumns = [
+  {
+    key: "deliveryType",
+    header: "Delivery Type",
+    colClassName: "cost-library-col-delivery",
+    render: (cost) => (
+      <span
+        className={`cost-library-delivery-tag ${getDeliveryTypeTagClassName(
+          cost.deliveryType
+        )}`}
+      >
+        {cost.deliveryType || "Unassigned"}
+      </span>
+    ),
+  },
+  {
+    key: "costCode",
+    header: "Cost Code",
+    colClassName: "cost-library-col-cost-code",
+    render: (cost) => cost.costCode || "Unassigned",
+  },
+];
+
 function buildImportedCostSource(row, index) {
   const coreName = cleanText(row["Core Name"] || row["Item Name"]);
 
@@ -311,6 +414,7 @@ useEffect(() => {
   const [importFailures, setImportFailures] = useState([]);
   const [importMode, setImportMode] = useState("append");
   const [sortKey, setSortKey] = useState("itemName");
+  const [showExpandedColumns, setShowExpandedColumns] = useState(false);
   const [editorState, setEditorState] = useState({
     isOpen: false,
     mode: "create",
@@ -387,6 +491,13 @@ useEffect(() => {
   const allFilteredSelected =
     filteredCosts.length > 0 &&
     selectedFilteredCostIds.length === filteredCosts.length;
+  const visibleTableColumns = useMemo(
+    () =>
+      showExpandedColumns
+        ? [...costLibraryBaseColumns, ...costLibraryExpandedColumns]
+        : costLibraryBaseColumns,
+    [showExpandedColumns]
+  );
 
   const readFileAsText = (file) =>
     typeof file?.text === "function"
@@ -981,6 +1092,14 @@ const saveCost = async (event) => {
               </div>
 
               <div className="action-row">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  aria-pressed={showExpandedColumns}
+                  onClick={() => setShowExpandedColumns((current) => !current)}
+                >
+                  {showExpandedColumns ? "Show less" : "Show more"}
+                </button>
                 {editorState.costId ? (
                   <button
                     type="button"
@@ -1073,12 +1192,9 @@ const saveCost = async (event) => {
                 <table className="data-table cost-library-table">
                   <colgroup>
                     <col className="cost-library-col-select" />
-                    <col className="cost-library-col-core" />
-                    <col className="cost-library-col-item" />
-                    <col className="cost-library-col-type" />
-                    <col className="cost-library-col-unit" />
-                    <col className="cost-library-col-rate" />
-                    <col className="cost-library-col-trade" />
+                    {visibleTableColumns.map((column) => (
+                      <col key={column.key} className={column.colClassName} />
+                    ))}
                     <col className="cost-library-col-actions" />
                   </colgroup>
                   <thead>
@@ -1091,12 +1207,9 @@ const saveCost = async (event) => {
                           onChange={toggleSelectAllFiltered}
                         />
                       </th>
-                      <th>Core Name</th>
-                      <th>Item Name</th>
-                      <th>Cost Type</th>
-                      <th>Unit</th>
-                      <th>Rate</th>
-                      <th>Trade</th>
+                      {visibleTableColumns.map((column) => (
+                        <th key={column.key}>{column.header}</th>
+                      ))}
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -1104,7 +1217,6 @@ const saveCost = async (event) => {
                     {filteredCosts.map((cost) => {
                       const isActive = editorState.costId === cost.id;
                       const isSelected = selectedCostIds.includes(cost.id);
-                      const itemPresentation = getStructuredItemPresentation(cost);
 
                       return (
                         <tr
@@ -1123,34 +1235,9 @@ const saveCost = async (event) => {
                               onChange={() => toggleCostSelection(cost.id)}
                             />
                           </td>
-                          <td>{cost.itemName}</td>
-                          <td>
-                            <div className="cost-library-name-cell">
-                              {cost.imageUrl ? (
-                                <img
-                                  className="library-image-thumb"
-                                  src={cost.imageUrl}
-                                  alt=""
-                                  loading="lazy"
-                                />
-                              ) : null}
-                              <span className="cost-library-name-primary">
-                                {itemPresentation.primaryLabel}
-                              </span>
-                              {itemPresentation.metaLabel ? (
-                                <span
-                                  className="cost-library-name-meta"
-                                  title={itemPresentation.metaLabel}
-                                >
-                                  {itemPresentation.metaLabel}
-                                </span>
-                              ) : null}
-                            </div>
-                          </td>
-                          <td>{cost.costType}</td>
-                          <td>{cost.unit || ""}</td>
-                          <td>{cost.rate}</td>
-                          <td>{cost.trade || "Unassigned"}</td>
+                          {visibleTableColumns.map((column) => (
+                            <td key={column.key}>{column.render(cost)}</td>
+                          ))}
                           <td>
                             <div className="action-row">
                               <button
