@@ -36,7 +36,6 @@ test("maps the structured cost library model into Supabase row columns", () => {
   });
 
   expect(row).toMatchObject({
-    id: "cost-1",
     internal_id: "INT-001",
     core_name: "Floor Tile",
     item_name: "Floor Tile",
@@ -66,6 +65,7 @@ test("maps the structured cost library model into Supabase row columns", () => {
     sort_order: 4,
     description: "Imported from supplier list",
   });
+  expect(row.id).toBeUndefined();
 });
 
 test("hydrates a legacy simplified cost_items row into the app cost model", () => {

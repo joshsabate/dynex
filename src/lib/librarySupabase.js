@@ -27,7 +27,6 @@ function toText(value) {
 
 export function mapCostItemToSupabaseRow(cost) {
   return {
-    id: cost.id || undefined,
     internal_id: cost.internalId || null,
     item_name: cost.itemName || "",
     core_name: cost.coreName || "",
@@ -365,6 +364,7 @@ const libraryConfigs = {
   },
   costs: {
     table: "cost_items",
+    keyColumn: "internal_id",
     orderBy: ["sort_order", "item_name"],
     mapItemToRow: mapCostItemToSupabaseRow,
     mapRowToItem: mapSupabaseCostRowToItem,
@@ -583,22 +583,35 @@ async function fetchAssembliesCollection() {
   );
 }
 
-async function replaceCollection(table, items, mapItemToRow) {
+async function replaceCollection(
+  table,
+  items,
+  mapItemToRow,
+  { keyColumn = "id" } = {}
+) {
   if (!hasSupabaseCredentials || !supabase) {
     return;
   }
 
   const { data: existingRows, error: existingError } = await supabase
     .from(table)
-    .select("id");
+    .select(keyColumn);
 
   if (existingError) {
     throw existingError;
   }
 
-  const existingIds = new Set((existingRows || []).map((row) => row.id));
+  const existingIds = new Set(
+    (existingRows || [])
+      .map((row) => row[keyColumn])
+      .filter((value) => value !== null && value !== undefined && value !== "")
+  );
   const nextRows = (items || []).map(mapItemToRow);
-  const nextIds = new Set(nextRows.map((row) => row.id).filter(Boolean));
+  const nextIds = new Set(
+    nextRows
+      .map((row) => row[keyColumn])
+      .filter((value) => value !== null && value !== undefined && value !== "")
+  );
   const deletedIds = [...existingIds].filter((id) => !nextIds.has(id));
 
   for (const idsChunk of chunkItems(deletedIds)) {
@@ -606,7 +619,7 @@ async function replaceCollection(table, items, mapItemToRow) {
       continue;
     }
 
-    const { error } = await supabase.from(table).delete().in("id", idsChunk);
+    const { error } = await supabase.from(table).delete().in(keyColumn, idsChunk);
     if (error) {
       throw error;
     }
@@ -617,7 +630,9 @@ async function replaceCollection(table, items, mapItemToRow) {
       continue;
     }
 
-    const { error } = await supabase.from(table).upsert(rowsChunk, { onConflict: "id" });
+    const { error } = await supabase
+      .from(table)
+      .upsert(rowsChunk, { onConflict: keyColumn });
     if (error) {
       throw error;
     }
@@ -633,8 +648,8 @@ export async function fetchLibraryItems(libraryKey) {
 }
 
 export async function replaceLibraryItems(libraryKey, items) {
-  const { table, mapItemToRow } = getLibraryConfig(libraryKey);
-  return replaceCollection(table, items, mapItemToRow);
+  const { table, mapItemToRow, keyColumn = "id" } = getLibraryConfig(libraryKey);
+  return replaceCollection(table, items, mapItemToRow, { keyColumn });
 }
 
 export async function fetchCostItemsFromSupabase() {
@@ -644,18 +659,20 @@ export async function fetchCostItemsFromSupabase() {
 
 export async function saveCostItemToSupabase(cost) {
   if (!hasSupabaseCredentials || !supabase) {
-    const fallbackId = cost.id || cost.internalId || `cost-${Date.now()}`;
+    const fallbackId = cost.internalId || cost.id || `cost-${Date.now()}`;
     return {
       ...cost,
-      id: fallbackId,
       internalId: cost.internalId || fallbackId,
     };
   }
 
   const payload = mapCostItemToSupabaseRow(cost);
+  if (!payload.internal_id) {
+    payload.internal_id = cost.internalId || cost.id || `cost-${Date.now()}`;
+  }
   const { data, error } = await supabase
     .from("cost_items")
-    .upsert(payload, { onConflict: "id" })
+    .upsert(payload, { onConflict: "internal_id" })
     .select()
     .single();
 

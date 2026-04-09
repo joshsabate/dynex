@@ -86,6 +86,14 @@ function createDuplicateName(itemName) {
   return baseName.includes("(Copy)") ? baseName : `${baseName} (Copy)`;
 }
 
+function ensureCostInternalId(cost, fallback = "") {
+  const internalId = cleanText(cost.internalId) || cleanText(fallback) || `cost-${Date.now()}`;
+  return {
+    ...cost,
+    internalId,
+  };
+}
+
 function getDeliveryTypeTagClassName(deliveryType) {
   switch (cleanText(deliveryType)) {
     case "Supply":
@@ -191,10 +199,11 @@ const costLibraryExpandedColumns = [
 
 function buildImportedCostSource(row, index) {
   const coreName = cleanText(row["Core Name"] || row["Item Name"]);
+  const internalId =
+    cleanText(row["Internal ID"]) || `cost-import-${Date.now()}-${index}`;
 
   return {
-    id: `cost-import-${Date.now()}-${index}`,
-    internalId: cleanText(row["Internal ID"]),
+    internalId,
     coreName,
     itemName: coreName,
     costType: cleanText(row["Cost Type"]),
@@ -396,10 +405,14 @@ useEffect(() => {
         });
 
   const syncCostCollection = async (nextCosts) => {
-    onCostsChange(nextCosts);
+    const syncedCosts = nextCosts.map((cost, index) =>
+      ensureCostInternalId(cost, cost.id || `cost-${index + 1}`)
+    );
+
+    onCostsChange(syncedCosts);
 
     try {
-      await replaceLibraryItems("costs", nextCosts);
+      await replaceLibraryItems("costs", syncedCosts);
     } catch (error) {
       console.error("Failed to sync Cost Library collection to Supabase:", error);
     }
@@ -528,7 +541,12 @@ const saveCost = async (event) => {
   }
 
   const nextCost = {
-    ...draft,
+    ...ensureCostInternalId(
+      draft,
+      editorState.mode === "edit" && editorState.costId
+        ? draft.internalId || draft.id || editorState.costId
+        : draft.internalId || draft.id
+    ),
     id:
       editorState.mode === "edit" && editorState.costId
         ? editorState.costId

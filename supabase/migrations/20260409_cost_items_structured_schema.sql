@@ -137,7 +137,9 @@ set
 create index if not exists cost_items_sort_order_item_name_idx
   on public.cost_items (sort_order, item_name);
 
-create index if not exists cost_items_internal_id_idx
+drop index if exists public.cost_items_internal_id_idx;
+
+create unique index if not exists cost_items_internal_id_idx
   on public.cost_items (internal_id);
 
 create index if not exists cost_items_trade_id_idx
