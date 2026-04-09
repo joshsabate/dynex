@@ -1,5 +1,9 @@
 import { useMemo, useRef, useState, useEffect } from "react";
-import { supabase } from "../lib/supabase";
+import {
+  fetchCostItemsFromSupabase,
+  replaceLibraryItems,
+  saveCostItemToSupabase,
+} from "../lib/librarySupabase";
 import FormField from "../components/FormField";
 import SectionCard from "../components/SectionCard";
 import { applyImportMode, convertCostsToCSV, parseCSV } from "../utils/csvUtils";
@@ -33,124 +37,6 @@ function sortActiveItems(items = []) {
 
 function cleanText(value) {
   return String(value || "").trim();
-}
-
-function mapCostItemToSupabaseRow(cost) {
-  return {
-    id: cost.id || undefined,
-    internal_id: cost.internalId || null,
-    item_name: cost.itemName || "",
-    core_name: cost.coreName || "",
-    item_type: cost.costType || "",
-    work_type: cost.deliveryType || "",
-    item_family: cost.itemFamily || cost.family || "",
-    trade_id: cost.tradeId || null,
-    trade: cost.trade || "",
-    cost_code_id: cost.costCodeId || null,
-    cost_code: cost.costCode || "",
-    specification: cost.specification || cost.spec || "",
-    grade_or_quality: cost.gradeOrQuality || cost.grade || "",
-    finish_or_variant: cost.finishOrVariant || cost.finish || "",
-    brand: cost.brand || "",
-    unit_id: cost.unitId || null,
-    unit: cost.unit || "",
-    unit_cost:
-      cost.rate === "" || cost.rate === null || cost.rate === undefined
-        ? 0
-        : Number(cost.rate),
-    image_url: cost.imageUrl || "",
-    is_active: cost.isActive !== false,
-    internal_note: cost.notes || "",
-    source_link: cost.sourceLink || "",
-    labour_hours_per_unit:
-      cost.labourHoursPerUnit === "" ||
-      cost.labourHoursPerUnit === null ||
-      cost.labourHoursPerUnit === undefined
-        ? null
-        : Number(cost.labourHoursPerUnit),
-    is_taxable: cost.isTaxable ?? true,
-    is_optional: cost.isOptional ?? false,
-    sort_order: cost.sortOrder ?? 0,
-  };
-}
-
-function mapSupabaseRowToCostItem(row) {
-  return {
-    id: row.id ?? "",
-    internalId: row.internal_id ?? "",
-    itemName: row.item_name ?? "",
-    coreName: row.core_name ?? "",
-    costType: row.item_type ?? "",
-    deliveryType: row.work_type ?? "",
-    itemFamily: row.item_family ?? "",
-    family: row.item_family ?? "",
-    tradeId: row.trade_id ?? "",
-    trade: row.trade ?? "",
-    costCodeId: row.cost_code_id ?? "",
-    costCode: row.cost_code ?? "",
-    specification: row.specification ?? "",
-    spec: row.specification ?? "",
-    gradeOrQuality: row.grade_or_quality ?? "",
-    grade: row.grade_or_quality ?? "",
-    finishOrVariant: row.finish_or_variant ?? "",
-    finish: row.finish_or_variant ?? "",
-    brand: row.brand ?? "",
-    unitId: row.unit_id ?? "",
-    unit: row.unit ?? "",
-    rate: row.unit_cost ?? "",
-    imageUrl: row.image_url ?? "",
-    status: row.is_active === false ? "Inactive" : "Active",
-    isActive: row.is_active !== false,
-    notes: row.internal_note ?? "",
-    sourceLink: row.source_link ?? "",
-    labourHoursPerUnit: row.labour_hours_per_unit ?? "",
-    isTaxable: row.is_taxable ?? true,
-    isOptional: row.is_optional ?? false,
-    sortOrder: row.sort_order ?? 0,
-  };
-}
-
-async function saveCostToSupabase(cost) {
-  const payload = mapCostItemToSupabaseRow(cost);
-
-  if (!supabase) {
-    const fallbackId = cost.id || cost.internalId || `cost-${Date.now()}`;
-    return {
-      ...cost,
-      id: fallbackId,
-      internalId: cost.internalId || fallbackId,
-    };
-  }
-
-  const { data, error } = await supabase
-    .from("cost_items")
-    .upsert(payload)
-    .select()
-    .single();
-
-  if (error) {
-    throw error;
-  }
-
-  return mapSupabaseRowToCostItem(data);
-}
-
-async function fetchCostItemsFromSupabase() {
-  if (!supabase) {
-    return [];
-  }
-
-  const { data, error } = await supabase
-    .from("cost_items")
-    .select("*")
-    .order("sort_order", { ascending: true });
-
-  if (error) {
-    console.error("Supabase load error:", error);
-    return [];
-  }
-
-  return (data ?? []).map(mapSupabaseRowToCostItem);
 }
 
 function createEmptyCostItem(units = []) {
@@ -509,6 +395,16 @@ useEffect(() => {
           reader.readAsText(file);
         });
 
+  const syncCostCollection = async (nextCosts) => {
+    onCostsChange(nextCosts);
+
+    try {
+      await replaceLibraryItems("costs", nextCosts);
+    } catch (error) {
+      console.error("Failed to sync Cost Library collection to Supabase:", error);
+    }
+  };
+
   const ensureFamiliesExist = (familyNames) => {
     const existing = new Set(
       activeItemFamilies.map((itemFamily) => itemFamily.name)
@@ -665,7 +561,7 @@ const saveCost = async (event) => {
   };
 
   try {
-    const savedCost = await saveCostToSupabase(nextCost);
+    const savedCost = await saveCostItemToSupabase(nextCost);
 
     onCostsChange(
       editorState.mode === "edit"
@@ -682,7 +578,7 @@ const saveCost = async (event) => {
   }
 };
 
-  const deleteCost = (costId) => {
+  const deleteCost = async (costId) => {
     if (typeof window !== "undefined") {
       const shouldDelete = window.confirm(
         "Delete this cost item? This action cannot be undone."
@@ -692,7 +588,7 @@ const saveCost = async (event) => {
       }
     }
 
-    onCostsChange(normalizedCosts.filter((cost) => cost.id !== costId));
+    await syncCostCollection(normalizedCosts.filter((cost) => cost.id !== costId));
     setSelectedCostIds((current) =>
       current.filter((selectedCostId) => selectedCostId !== costId)
     );
@@ -701,7 +597,7 @@ const saveCost = async (event) => {
     }
   };
 
-  const duplicateCost = (costId) => {
+  const duplicateCost = async (costId) => {
     const sourceCost = normalizedCosts.find((cost) => cost.id === costId);
     if (!sourceCost) {
       return;
@@ -722,7 +618,7 @@ const saveCost = async (event) => {
     )[0];
 
     const nextCosts = [...normalizedCosts, duplicatedCost];
-    onCostsChange(nextCosts);
+    await syncCostCollection(nextCosts);
     setSelectedCostIds([]);
     openEditEditor(duplicatedCost);
   };
@@ -757,7 +653,7 @@ const saveCost = async (event) => {
     return confirmation === "DELETE";
   };
 
-  const deleteSelectedCosts = () => {
+  const deleteSelectedCosts = async () => {
     if (!selectedCostIds.length) {
       return;
     }
@@ -772,7 +668,7 @@ const saveCost = async (event) => {
       return;
     }
 
-    onCostsChange(
+    await syncCostCollection(
       normalizedCosts.filter((cost) => !selectedCostIds.includes(cost.id))
     );
     if (selectedCostIds.includes(editorState.costId)) {
@@ -781,7 +677,7 @@ const saveCost = async (event) => {
     setSelectedCostIds([]);
   };
 
-  const deleteAllFilteredCosts = () => {
+  const deleteAllFilteredCosts = async () => {
     if (!filteredCosts.length) {
       return;
     }
@@ -797,7 +693,7 @@ const saveCost = async (event) => {
     }
 
     const filteredIds = filteredCosts.map((cost) => cost.id);
-    onCostsChange(
+    await syncCostCollection(
       normalizedCosts.filter((cost) => !filteredIds.includes(cost.id))
     );
     if (filteredIds.includes(editorState.costId)) {
@@ -916,7 +812,7 @@ const saveCost = async (event) => {
         });
 
         if (importedCount) {
-          onCostsChange(nextItems);
+          await syncCostCollection(nextItems);
         }
 
         setImportFailures(validationFailures);
@@ -948,7 +844,7 @@ const saveCost = async (event) => {
         return;
       }
 
-      onCostsChange(mergeResult.items);
+      await syncCostCollection(mergeResult.items);
       setImportFailures(validationFailures);
       setCsvStatus(
         `Imported ${mergeResult.summary.added} row${

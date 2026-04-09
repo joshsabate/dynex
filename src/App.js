@@ -1483,6 +1483,11 @@ function App() {
         }
         if (Array.isArray(libraryState.costs)) {
           setCosts(libraryState.costs);
+          startupSourcesRef.current = {
+            ...startupSourcesRef.current,
+            costs: "Supabase",
+          };
+          console.info("[Dynex] Cost Library source: Supabase");
         }
       } catch (error) {
         console.error("Failed to hydrate libraries from Supabase:", error);

@@ -25,6 +25,116 @@ function toText(value) {
   return String(value || "").trim();
 }
 
+export function mapCostItemToSupabaseRow(cost) {
+  return {
+    id: cost.id || undefined,
+    internal_id: cost.internalId || null,
+    item_name: cost.itemName || "",
+    core_name: cost.coreName || "",
+    item_type: cost.costType || "",
+    work_type: cost.workType || cost.deliveryType || "",
+    delivery_type: cost.deliveryType || "",
+    item_family: cost.itemFamily || cost.family || "",
+    trade_id: cost.tradeId || null,
+    trade: cost.trade || "",
+    cost_code_id: cost.costCodeId || null,
+    cost_code: cost.costCode || "",
+    specification: cost.specification || cost.spec || "",
+    grade_or_quality: cost.gradeOrQuality || cost.grade || "",
+    finish_or_variant: cost.finishOrVariant || cost.finish || "",
+    brand: cost.brand || "",
+    unit_id: cost.unitId || null,
+    unit: cost.unit || "",
+    unit_cost:
+      cost.rate === "" || cost.rate === null || cost.rate === undefined
+        ? 0
+        : Number(cost.rate),
+    image_url: cost.imageUrl || "",
+    status: cost.status || (cost.isActive === false ? "Inactive" : "Active"),
+    is_active: cost.isActive !== false,
+    internal_note: cost.notes || "",
+    source_link: cost.sourceLink || "",
+    labour_hours_per_unit:
+      cost.labourHoursPerUnit === "" ||
+      cost.labourHoursPerUnit === null ||
+      cost.labourHoursPerUnit === undefined
+        ? null
+        : Number(cost.labourHoursPerUnit),
+    is_taxable: cost.isTaxable ?? true,
+    is_optional: cost.isOptional ?? false,
+    sort_order: cost.sortOrder ?? 0,
+    description: cost.notes || "",
+    cost_data: {
+      ...cost,
+      status: cost.status || (cost.isActive === false ? "Inactive" : "Active"),
+      isActive: cost.isActive !== false,
+    },
+  };
+}
+
+export function mapSupabaseCostRowToItem(row) {
+  const payload = row.cost_data || {};
+  const isActive = row.is_active ?? payload.isActive ?? true;
+
+  return {
+    ...payload,
+    id: row.id ?? payload.id ?? "",
+    internalId: row.internal_id ?? payload.internalId ?? row.id ?? "",
+    itemName: row.item_name ?? payload.itemName ?? "",
+    coreName:
+      row.core_name ??
+      payload.coreName ??
+      row.item_name ??
+      payload.itemName ??
+      "",
+    costType: row.item_type ?? payload.costType ?? "",
+    deliveryType:
+      row.delivery_type ??
+      payload.deliveryType ??
+      row.work_type ??
+      payload.workType ??
+      "",
+    workType:
+      row.work_type ??
+      payload.workType ??
+      row.delivery_type ??
+      payload.deliveryType ??
+      "",
+    itemFamily: row.item_family ?? payload.itemFamily ?? payload.family ?? "",
+    family: row.item_family ?? payload.family ?? payload.itemFamily ?? "",
+    tradeId: row.trade_id ?? payload.tradeId ?? "",
+    trade: row.trade ?? payload.trade ?? "",
+    costCodeId: row.cost_code_id ?? payload.costCodeId ?? "",
+    costCode: row.cost_code ?? payload.costCode ?? "",
+    specification: row.specification ?? payload.specification ?? payload.spec ?? "",
+    spec: row.specification ?? payload.spec ?? payload.specification ?? "",
+    gradeOrQuality:
+      row.grade_or_quality ?? payload.gradeOrQuality ?? payload.grade ?? "",
+    grade: row.grade_or_quality ?? payload.grade ?? payload.gradeOrQuality ?? "",
+    finishOrVariant:
+      row.finish_or_variant ?? payload.finishOrVariant ?? payload.finish ?? "",
+    finish: row.finish_or_variant ?? payload.finish ?? payload.finishOrVariant ?? "",
+    brand: row.brand ?? payload.brand ?? "",
+    unitId: row.unit_id ?? payload.unitId ?? "",
+    unit: row.unit ?? payload.unit ?? "",
+    rate: row.unit_cost ?? payload.rate ?? "",
+    imageUrl: row.image_url ?? payload.imageUrl ?? "",
+    status: row.status ?? payload.status ?? (isActive === false ? "Inactive" : "Active"),
+    isActive,
+    notes:
+      row.internal_note ??
+      payload.notes ??
+      row.description ??
+      "",
+    sourceLink: row.source_link ?? payload.sourceLink ?? "",
+    labourHoursPerUnit:
+      row.labour_hours_per_unit ?? payload.labourHoursPerUnit ?? "",
+    isTaxable: row.is_taxable ?? payload.isTaxable ?? true,
+    isOptional: row.is_optional ?? payload.isOptional ?? false,
+    sortOrder: row.sort_order ?? payload.sortOrder ?? 0,
+  };
+}
+
 export function mapAssemblyToSupabaseRow(assembly) {
   return {
     id: assembly.id,
@@ -141,6 +251,7 @@ export function mapAssemblyRowToItem(row, childRows = []) {
 const libraryConfigs = {
   units: {
     table: "units",
+    orderBy: ["sort_order", "name"],
     mapItemToRow: (unit) => ({
       id: unit.id,
       name: unit.name || "",
@@ -158,6 +269,7 @@ const libraryConfigs = {
   },
   trades: {
     table: "trades",
+    orderBy: ["sort_order", "name"],
     mapItemToRow: (trade) => ({
       id: trade.id,
       name: trade.name || "",
@@ -177,6 +289,7 @@ const libraryConfigs = {
   },
   costCodes: {
     table: "cost_codes",
+    orderBy: ["sort_order", "name"],
     mapItemToRow: (costCode) => ({
       id: costCode.id,
       code: costCode.code || "",
@@ -202,6 +315,7 @@ const libraryConfigs = {
   },
   itemFamilies: {
     table: "item_families",
+    orderBy: ["sort_order", "name"],
     mapItemToRow: (itemFamily) => ({
       id: itemFamily.id,
       name: itemFamily.name || "",
@@ -217,6 +331,7 @@ const libraryConfigs = {
   },
   stages: {
     table: "stages",
+    orderBy: ["sort_order", "name"],
     mapItemToRow: (stage) => ({
       id: stage.id,
       name: stage.name || "",
@@ -234,6 +349,7 @@ const libraryConfigs = {
   },
   elements: {
     table: "elements",
+    orderBy: ["sort_order", "name"],
     mapItemToRow: (element) => ({
       id: element.id,
       name: element.name || "",
@@ -249,78 +365,13 @@ const libraryConfigs = {
   },
   costs: {
     table: "cost_items",
-    mapItemToRow: (cost) => ({
-      id: cost.id || undefined,
-      internal_id: cost.internalId || null,
-      item_name: cost.itemName || "",
-      core_name: cost.coreName || "",
-      item_type: cost.costType || "",
-      work_type: cost.deliveryType || "",
-      item_family: cost.itemFamily || cost.family || "",
-      trade_id: cost.tradeId || null,
-      trade: cost.trade || "",
-      cost_code_id: cost.costCodeId || null,
-      cost_code: cost.costCode || "",
-      specification: cost.specification || cost.spec || "",
-      grade_or_quality: cost.gradeOrQuality || cost.grade || "",
-      finish_or_variant: cost.finishOrVariant || cost.finish || "",
-      brand: cost.brand || "",
-      unit_id: cost.unitId || null,
-      unit: cost.unit || "",
-      unit_cost:
-        cost.rate === "" || cost.rate === null || cost.rate === undefined
-          ? 0
-          : Number(cost.rate),
-      image_url: cost.imageUrl || "",
-      is_active: cost.isActive !== false,
-      internal_note: cost.notes || "",
-      source_link: cost.sourceLink || "",
-      labour_hours_per_unit:
-        cost.labourHoursPerUnit === "" ||
-        cost.labourHoursPerUnit === null ||
-        cost.labourHoursPerUnit === undefined
-          ? null
-          : Number(cost.labourHoursPerUnit),
-      is_taxable: cost.isTaxable ?? true,
-      is_optional: cost.isOptional ?? false,
-      sort_order: cost.sortOrder ?? 0,
-    }),
-    mapRowToItem: (row) => ({
-      id: row.id ?? "",
-      internalId: row.internal_id ?? "",
-      itemName: row.item_name ?? "",
-      coreName: row.core_name ?? "",
-      costType: row.item_type ?? "",
-      deliveryType: row.work_type ?? "",
-      itemFamily: row.item_family ?? "",
-      family: row.item_family ?? "",
-      tradeId: row.trade_id ?? "",
-      trade: row.trade ?? "",
-      costCodeId: row.cost_code_id ?? "",
-      costCode: row.cost_code ?? "",
-      specification: row.specification ?? "",
-      spec: row.specification ?? "",
-      gradeOrQuality: row.grade_or_quality ?? "",
-      grade: row.grade_or_quality ?? "",
-      finishOrVariant: row.finish_or_variant ?? "",
-      finish: row.finish_or_variant ?? "",
-      brand: row.brand ?? "",
-      unitId: row.unit_id ?? "",
-      unit: row.unit ?? "",
-      rate: row.unit_cost ?? "",
-      imageUrl: row.image_url ?? "",
-      status: row.is_active === false ? "Inactive" : "Active",
-      isActive: row.is_active !== false,
-      notes: row.internal_note ?? "",
-      sourceLink: row.source_link ?? "",
-      labourHoursPerUnit: row.labour_hours_per_unit ?? "",
-      isTaxable: row.is_taxable ?? true,
-      isOptional: row.is_optional ?? false,
-      sortOrder: row.sort_order ?? 0,
-    }),
+    orderBy: ["sort_order", "item_name"],
+    mapItemToRow: mapCostItemToSupabaseRow,
+    mapRowToItem: mapSupabaseCostRowToItem,
   },
   parameters: {
     table: "parameters",
+    orderBy: ["sort_order", "label"],
     mapItemToRow: (parameter) => ({
       id: parameter.id,
       key: parameter.key || "",
@@ -357,6 +408,7 @@ const libraryConfigs = {
   },
   roomTypes: {
     table: "room_types",
+    orderBy: ["sort_order", "name"],
     mapItemToRow: (roomType) => ({
       id: roomType.id,
       name: roomType.name || "",
@@ -374,6 +426,7 @@ const libraryConfigs = {
   },
   roomTemplates: {
     table: "room_templates",
+    orderBy: ["name"],
     mapItemToRow: (roomTemplate) => ({
       id: roomTemplate.id,
       name: roomTemplate.name || "",
@@ -399,6 +452,7 @@ const libraryConfigs = {
   },
   assemblyLineTemplates: {
     table: "assembly_line_templates",
+    orderBy: ["sort_order", "name"],
     mapItemToRow: (template) => ({
       id: template.id,
       name: template.name || "",
@@ -448,6 +502,7 @@ const libraryConfigs = {
   },
   assemblies: {
     table: "assemblies",
+    orderBy: ["sort_order", "assembly_name"],
     mapItemToRow: mapAssemblyToSupabaseRow,
     mapRowToItem: mapAssemblyRowToItem,
   },
@@ -463,14 +518,13 @@ function getLibraryConfig(libraryKey) {
   return config;
 }
 
-async function fetchCollection(table, mapRowToItem) {
+async function fetchCollection(table, mapRowToItem, orderBy = []) {
   if (!hasSupabaseCredentials || !supabase) {
     return null;
   }
 
   let query = supabase.from(table).select("*");
-  const orderColumns = ["sort_order", "name", "label", "assembly_name"];
-  orderColumns.forEach((column) => {
+  orderBy.forEach((column) => {
     query = query.order(column, { ascending: true, nullsFirst: false });
   });
 
@@ -574,13 +628,42 @@ export async function fetchLibraryItems(libraryKey) {
   if (libraryKey === "assemblies") {
     return fetchAssembliesCollection();
   }
-  const { table, mapRowToItem } = getLibraryConfig(libraryKey);
-  return fetchCollection(table, mapRowToItem);
+  const { table, mapRowToItem, orderBy = [] } = getLibraryConfig(libraryKey);
+  return fetchCollection(table, mapRowToItem, orderBy);
 }
 
 export async function replaceLibraryItems(libraryKey, items) {
   const { table, mapItemToRow } = getLibraryConfig(libraryKey);
   return replaceCollection(table, items, mapItemToRow);
+}
+
+export async function fetchCostItemsFromSupabase() {
+  const items = await fetchLibraryItems("costs");
+  return Array.isArray(items) ? items : [];
+}
+
+export async function saveCostItemToSupabase(cost) {
+  if (!hasSupabaseCredentials || !supabase) {
+    const fallbackId = cost.id || cost.internalId || `cost-${Date.now()}`;
+    return {
+      ...cost,
+      id: fallbackId,
+      internalId: cost.internalId || fallbackId,
+    };
+  }
+
+  const payload = mapCostItemToSupabaseRow(cost);
+  const { data, error } = await supabase
+    .from("cost_items")
+    .upsert(payload, { onConflict: "id" })
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return mapSupabaseCostRowToItem(data);
 }
 
 export async function saveAssemblyWithItems(assembly) {
@@ -741,11 +824,24 @@ export async function fetchDynexLibraryState() {
     "costs",
   ];
 
-  const entries = await Promise.all(
-    libraryKeys.map(async (libraryKey) => [libraryKey, await fetchLibraryItems(libraryKey)])
+  const results = await Promise.allSettled(
+    libraryKeys.map(async (libraryKey) => ({
+      libraryKey,
+      value: await fetchLibraryItems(libraryKey),
+    }))
   );
 
-  return Object.fromEntries(entries.filter(([, value]) => Array.isArray(value)));
+  return Object.fromEntries(
+    results.flatMap((result) => {
+      if (result.status === "fulfilled") {
+        const { libraryKey, value } = result.value;
+        return Array.isArray(value) ? [[libraryKey, value]] : [];
+      }
+
+      console.error("[Dynex] Failed to fetch Supabase library", result.reason);
+      return [];
+    })
+  );
 }
 
 export function getSupabaseLibraryLabel(libraryKey) {
