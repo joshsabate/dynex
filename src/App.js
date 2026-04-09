@@ -45,12 +45,13 @@ import { mergeSeededParameters } from "./utils/parameters";
 import { getStageIntegrity, normalizeStageBoundRecord } from "./utils/stageIntegrity";
 import { buildCanonicalStageId, canonicalStageLibrary, normalizeStages } from "./utils/stages";
 import { fetchDynexLibraryState } from "./lib/librarySupabase";
-import { hasSupabaseCredentials } from "./lib/supabase";
+import { hasSupabaseCredentials, supabase } from "./lib/supabase";
 import useSupabaseCollectionSync from "./hooks/useSupabaseCollectionSync";
 import { buildEstimatePresentationModel, defaultPresentationOptions } from "./utils/presentationModel";
 import EstimateShareView from "./pages/EstimateShareView";
 import { buildShareUrl, createEstimateShareLink } from "./lib/shareLinks";
 import { EstimatePDFPrintLayer } from "./components/pdf/EstimatePDF";
+import SignInPage from "./components/auth/SignInPage";
 
 const legacyLocalStorageKey = "estimator-app-project";
 const globalLibrariesStorageKey = "estimator-app-global-libraries";
@@ -893,6 +894,7 @@ function normalizeImportedProjectFile(fileData) {
 }
 
 function App() {
+  const shouldBypassAuth = process.env.NODE_ENV === "test";
   const initialLoadResult = useMemo(() => loadAppState(), []);
   const initialProjectState = useMemo(
     () => normalizeAppState(initialLoadResult.appState),
@@ -905,6 +907,12 @@ function App() {
   const initialSavedSnapshot = useMemo(
     () => buildComparableAppState(initialProjectState),
     [initialProjectState]
+  );
+  const [authSession, setAuthSession] = useState(
+    shouldBypassAuth ? { user: { id: "test-user" } } : null
+  );
+  const [isAuthLoading, setIsAuthLoading] = useState(
+    hasSupabaseCredentials && !shouldBypassAuth
   );
   const [routeInfo, setRouteInfo] = useState(getCurrentRoute);
   const [activePage, setActivePage] = useState("estimate-builder");
@@ -970,6 +978,7 @@ function App() {
     url: "",
   });
   const [printJob, setPrintJob] = useState(null);
+  const isAuthenticated = Boolean(authSession);
   const currentAppState = useMemo(
     () => ({
       localProjectId,
@@ -1044,7 +1053,8 @@ function App() {
       lastFileName,
     ]
   );
-  const isSupabaseLibrarySyncEnabled = hasSupabaseCredentials && supabaseLibrariesReady;
+  const isSupabaseLibrarySyncEnabled =
+    hasSupabaseCredentials && supabaseLibrariesReady && isAuthenticated;
 
   useSupabaseCollectionSync({
     items: roomTypes,
@@ -1354,12 +1364,76 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (shouldBypassAuth) {
+      setIsAuthLoading(false);
+      return undefined;
+    }
+
+    if (!hasSupabaseCredentials || !supabase) {
+      setIsAuthLoading(false);
+      return undefined;
+    }
+
+    let isMounted = true;
+    const authStateSubscription = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!isMounted) {
+        return;
+      }
+
+      setAuthSession(session || null);
+      setIsAuthLoading(false);
+    });
+    const subscription = authStateSubscription?.data?.subscription;
+
+    async function loadAuthSession() {
+      try {
+        const sessionResult =
+          typeof supabase.auth.getSession === "function"
+            ? await supabase.auth.getSession()
+            : null;
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (sessionResult?.error) {
+          console.error("Failed to load auth session:", sessionResult.error);
+        }
+
+        setAuthSession(sessionResult?.data?.session || null);
+        setIsAuthLoading(false);
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        console.error("Failed to load auth session:", error);
+        setAuthSession(null);
+        setIsAuthLoading(false);
+      }
+    }
+
+    loadAuthSession();
+
+    return () => {
+      isMounted = false;
+      subscription?.unsubscribe?.();
+    };
+  }, [shouldBypassAuth]);
+
+  useEffect(() => {
     if (!hasSupabaseCredentials) {
       setSupabaseLibrariesReady(true);
       return undefined;
     }
 
+    if (!isAuthenticated) {
+      setSupabaseLibrariesReady(false);
+      return undefined;
+    }
+
     let isMounted = true;
+    setSupabaseLibrariesReady(false);
 
     async function hydrateLibrariesFromSupabase() {
       try {
@@ -1424,7 +1498,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     persistAppStateToLocalStorage(currentAppState);
@@ -1583,6 +1657,36 @@ function App() {
 
   if (routeInfo.type === "share") {
     return <EstimateShareView shareId={routeInfo.shareId} />;
+  }
+
+  if (!shouldBypassAuth && (!hasSupabaseCredentials || !supabase)) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card">
+          <div className="auth-card__brand">dynex</div>
+          <h1>Supabase auth is not configured.</h1>
+          <p>
+            Add <code>REACT_APP_SUPABASE_URL</code> and <code>REACT_APP_SUPABASE_ANON_KEY</code>
+            {" "}to run the private auth gate.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isAuthLoading) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card auth-card--loading">
+          <div className="auth-card__brand">dynex</div>
+          <p>Loading session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <SignInPage />;
   }
 
   const handleStagesChange = (nextStages) => {
@@ -1754,6 +1858,17 @@ function App() {
   };
 
   const projectMenuLabel = `${projectName || "Project"} (${revision || "Rev 0"})`;
+  const handleSignOut = async () => {
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      setProjectStatus(error.message || "Unable to sign out.");
+      return;
+    }
+
+    setIsProjectMenuOpen(false);
+    setProjectStatus("Signed out.");
+  };
 
   return (
     <div>
@@ -1842,6 +1957,13 @@ function App() {
             <div className="app-header__center" ref={setWorkspaceTopbarPortalTarget} />
 
             <div className="app-header__right">
+              <button
+                type="button"
+                className="auth-sign-out-button"
+                onClick={handleSignOut}
+              >
+                Sign out
+              </button>
               <div className="project-menu" ref={projectMenuRef}>
                 <button
                   type="button"

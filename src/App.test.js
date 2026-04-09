@@ -1,9 +1,15 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { fetchDynexLibraryState } from "./lib/librarySupabase";
 import App from "./App";
+
+jest.mock("./lib/librarySupabase", () => ({
+  fetchDynexLibraryState: jest.fn(async () => null),
+}));
 
 beforeEach(() => {
   window.localStorage.clear();
+  fetchDynexLibraryState.mockClear();
 });
 
 afterEach(() => {
